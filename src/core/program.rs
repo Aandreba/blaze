@@ -11,11 +11,11 @@ pub struct Program (pub(crate) cl_program);
 impl Program {
     #[inline(always)]
     pub fn from_source (source: &str) -> Result<Self> {
-        Self::from_source_with(&Global, source)
+        Self::from_source_in(&Global, source)
     }
 
     #[inline]
-    pub fn from_source_with<C: Context> (ctx: &C, source: &str) -> Result<Self> {
+    pub fn from_source_in<C: Context> (ctx: &C, source: &str) -> Result<Self> {
         let len = [source.len()].as_ptr();
         let strings = [source.as_ptr().cast()].as_ptr();
 

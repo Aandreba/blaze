@@ -48,3 +48,4 @@ pub mod core;
 /// RSCL context's
 pub mod context;
 pub mod kernel;
+pub mod buffer;

@@ -17,10 +17,12 @@ impl Context for Global {
         unsafe { __rscl__global__context_id() } 
     }
 
+    #[inline(always)]
     fn queue_count (&self) -> usize {
         unsafe { __rscl__global__queue_count() } 
     }
 
+    #[inline(always)]
     fn next_queue (&self) -> cl_command_queue {
         unsafe { __rscl__global__next_queue() } 
     }
