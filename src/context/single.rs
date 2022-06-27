@@ -1,15 +1,15 @@
 use std::{borrow::Borrow, ptr::{addr_of_mut, addr_of}};
-use opencl_sys::{cl_context, cl_command_queue, clCreateContext, clCreateCommandQueue, clReleaseContext};
+use opencl_sys::{cl_context, cl_command_queue, clCreateContext, clCreateCommandQueue, clReleaseContext, clRetainContext, clRetainCommandQueue, clReleaseCommandQueue};
 use crate::{core::*};
 use super::Context;
 
 /// A simple RSCL context with a single command queue
-pub struct SingleContext {
+pub struct SimpleContext {
     ctx: cl_context,
     queue: cl_command_queue
 }
 
-impl SingleContext {
+impl SimpleContext {
     pub fn new (device: impl Borrow<Device>) -> Result<Self> {
         let device = device.borrow();
 
@@ -34,7 +34,7 @@ impl SingleContext {
     }
 }
 
-impl Context for SingleContext {
+impl Context for SimpleContext {
     #[inline(always)]
     fn context_id (&self) -> cl_context {
         self.ctx
@@ -51,5 +51,27 @@ impl Context for SingleContext {
     }
 }
 
-unsafe impl Send for SingleContext {}
-unsafe impl Sync for SingleContext {}
+impl Clone for SimpleContext {
+    #[inline(always)]
+    fn clone(&self) -> Self {
+        unsafe {
+            tri_panic!(clRetainContext(self.ctx));
+            tri_panic!(clRetainCommandQueue(self.queue))
+        }
+
+        Self { ctx: self.ctx, queue: self.queue }
+    }
+}
+
+impl Drop for SimpleContext {
+    #[inline(always)]
+    fn drop(&mut self) {
+        unsafe {
+            tri_panic!(clReleaseContext(self.ctx));
+            tri_panic!(clReleaseCommandQueue(self.queue))
+        }
+    }
+}
+
+unsafe impl Send for SimpleContext {}
+unsafe impl Sync for SimpleContext {}

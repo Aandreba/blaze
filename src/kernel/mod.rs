@@ -21,7 +21,7 @@ impl Kernel {
     }
 
     #[inline(always)]
-    pub fn build (&self) -> Build<'_> {
+    pub fn build (&self) -> Result<Build<'_>> {
         Build::new(self)
     }
 

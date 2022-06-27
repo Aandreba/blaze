@@ -1,4 +1,4 @@
-#![feature(new_uninit)]
+#![feature(new_uninit, is_some_with, fn_traits, vec_into_raw_parts)]
 
 macro_rules! flat_mod {
     ($($i:ident),+) => {
@@ -49,3 +49,4 @@ pub mod core;
 pub mod context;
 pub mod kernel;
 pub mod buffer;
+pub mod event;
