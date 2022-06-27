@@ -2,16 +2,16 @@ pub mod flags;
 pub mod events;
 mod manager;
 
-use std::{marker::PhantomData, ptr::{NonNull, addr_of_mut}, mem::MaybeUninit, ffi::c_void, ops::RangeBounds};
-use opencl_sys::{cl_mem, clCreateBuffer, cl_mem_flags, clGetMemObjectInfo, cl_mem_info, CL_MEM_OFFSET, cl_context, CL_MEM_CONTEXT, CL_MEM_REFERENCE_COUNT, CL_MEM_MAP_COUNT, CL_MEM_HOST_PTR, CL_MEM_SIZE};
+use std::{marker::PhantomData, ptr::{NonNull, addr_of_mut}, mem::MaybeUninit, ffi::c_void, ops::{RangeBounds, Deref, DerefMut}};
+use opencl_sys::{cl_mem, clCreateBuffer, cl_mem_flags, clGetMemObjectInfo, cl_mem_info, CL_MEM_OFFSET, cl_context, CL_MEM_CONTEXT, CL_MEM_REFERENCE_COUNT, CL_MEM_MAP_COUNT, CL_MEM_HOST_PTR, CL_MEM_SIZE, clReleaseMemObject};
 use crate::context::{Context, Global};
 use crate::core::*;
-use self::{flags::{MemFlags, FullMemFlags, HostPtr}, manager::{read_to_ptr, range_len}, events::ReadBuffer};
+use self::{flags::{MemFlags, FullMemFlags, HostPtr}, events::{ReadBuffer, WriteBuffer, WriteBufferStatic, ReadBufferInto}};
 
 #[cfg(not(debug_assertions))]
 use std::hint::unreachable_unchecked;
 
-pub struct Buffer<T, C: Context = Global> {
+pub struct Buffer<T: Copy, C: Context = Global> {
     pub(crate) inner: cl_mem, 
     ctx: C,
     phtm: PhantomData<T>
@@ -110,7 +110,7 @@ impl<T: Copy, C: Context> Buffer<T, C> {
 
     /// Return context specified when memory object is created.
     #[inline(always)]
-    pub unsafe fn context_id (&self) -> Result<cl_context> {
+    pub fn context_id (&self) -> Result<cl_context> {
         let ctx : cl_context = self.get_info(CL_MEM_CONTEXT)?;
         Ok(ctx)
     }
@@ -133,10 +133,54 @@ impl<T: Copy, C: Context> Buffer<T, C> {
 
 impl<T: Copy + Unpin, C: Context> Buffer<T, C> {
     #[inline(always)]
+    pub fn read_all (&self) -> Result<ReadBuffer<T>> {
+        self.read(..)
+    }
+
+    #[inline(always)]
     pub fn read (&self, range: impl RangeBounds<usize>) -> Result<ReadBuffer<T>> {
         ReadBuffer::new(self, range)
     }
+
+    #[inline(always)]
+    pub fn read_into<P: DerefMut<Target = [T]>> (&self, dst: P, offset: usize) -> Result<ReadBufferInto<T, P>> {
+        ReadBufferInto::new(self, dst, offset)
+    }
+
+    #[inline(always)]
+    pub fn read_into_slice<'a> (&self, dst: &'a mut [T], offset: usize) -> Result<ReadBufferInto<T, &'a mut [T]>> {
+        self.read_into(dst, offset)
+    }
+
+    #[inline(always)]
+    pub fn write<P: Deref<Target = [T]>> (&mut self, src: P, offset: usize) -> Result<WriteBuffer<T, P>> {
+        WriteBuffer::new(src, self, offset)
+    }
+
+    #[inline(always)]
+    pub fn write_slice<'a> (&mut self, src: &'a [T], offset: usize) -> Result<WriteBuffer<T, &'a [T]>> {
+        self.write(src, offset)
+    }
+
+    #[inline(always)]
+    pub fn write_static_slice (&mut self, src: &'static [T], offset: usize) -> Result<WriteBufferStatic> {
+        WriteBufferStatic::new_from_static(src, self, offset)
+    }
+
+    #[inline(always)]
+    pub unsafe fn write_ptr (&mut self, src: *const T, range: impl RangeBounds<usize>) -> Result<WriteBufferStatic> {
+        WriteBufferStatic::new_from_ptr(src, self, range)
+    }
 }
 
-unsafe impl<T: Send, C: Context + Send> Send for Buffer<T, C> {}
-unsafe impl<T: Sync, C: Context + Sync> Sync for Buffer<T, C> {}
+impl<T: Copy, C: Context> Drop for Buffer<T, C> {
+    #[inline(always)]
+    fn drop(&mut self) {
+        unsafe {
+            tri_panic!(clReleaseMemObject(self.inner))
+        }
+    }
+}
+
+unsafe impl<T: Copy + Send, C: Context + Send> Send for Buffer<T, C> {}
+unsafe impl<T: Copy + Sync, C: Context + Sync> Sync for Buffer<T, C> {}

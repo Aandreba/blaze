@@ -1,4 +1,4 @@
-flat_mod!(build);
+flat_mod!(build, event);
 
 use std::mem::MaybeUninit;
 use opencl_sys::{cl_kernel, clCreateKernel, cl_kernel_info, CL_KERNEL_ARG_NAME, CL_KERNEL_ARG_TYPE_QUALIFIER, CL_KERNEL_ARG_TYPE_NAME, CL_KERNEL_ARG_ACCESS_QUALIFIER, CL_KERNEL_ARG_ADDRESS_QUALIFIER, clRetainProgram, CL_KERNEL_PROGRAM, cl_context, CL_KERNEL_CONTEXT, CL_KERNEL_REFERENCE_COUNT, CL_KERNEL_NUM_ARGS, CL_KERNEL_FUNCTION_NAME, CL_KERNEL_ARG_ADDRESS_GLOBAL, CL_KERNEL_ARG_ADDRESS_LOCAL, CL_KERNEL_ARG_ADDRESS_CONSTANT, CL_KERNEL_ARG_ADDRESS_PRIVATE, CL_KERNEL_ARG_ACCESS_READ_ONLY, CL_KERNEL_ARG_ACCESS_WRITE_ONLY, CL_KERNEL_ARG_ACCESS_READ_WRITE, CL_KERNEL_ARG_ACCESS_NONE, cl_kernel_arg_type_qualifier, CL_KERNEL_ARG_TYPE_CONST, CL_KERNEL_ARG_TYPE_RESTRICT, CL_KERNEL_ARG_TYPE_VOLATILE, clGetKernelInfo, cl_kernel_arg_info, clGetKernelArgInfo};
@@ -45,7 +45,7 @@ impl Kernel {
 
     /// Return the context associated with _kernel_.
     #[inline(always)]
-    pub unsafe fn context_id (&self) -> Result<cl_context> {
+    pub fn context_id (&self) -> Result<cl_context> {
         let ctx : cl_context = self.get_info(CL_KERNEL_CONTEXT)?;
         Ok(ctx)
     }

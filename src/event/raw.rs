@@ -33,12 +33,6 @@ impl RawEvent {
         Ok(())
     }
 
-    #[cfg(feature = "futures")]
-    #[inline(always)]
-    pub fn wait_by_ref_async (&self) -> Result<super::EventWaitByRef<'_>> {
-        super::EventWaitByRef::new(self)
-    }
-
     #[inline(always)]
     pub fn wait_all (v: &[RawEvent]) -> Result<()> {
         let len = u32::try_from(v.len()).unwrap();

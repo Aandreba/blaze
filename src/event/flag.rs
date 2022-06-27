@@ -1,4 +1,4 @@
-use std::{ops::{Deref, DerefMut}, ptr::addr_of_mut};
+use std::{ptr::addr_of_mut};
 use opencl_sys::{clSetUserEventStatus, CL_COMPLETE, clCreateUserEvent};
 
 use super::{RawEvent, Event};
@@ -55,21 +55,5 @@ impl AsRef<RawEvent> for FlagEvent {
     #[inline(always)]
     fn as_ref(&self) -> &RawEvent {
         &self.0
-    }
-}
-
-impl Deref for FlagEvent {
-    type Target = RawEvent;
-
-    #[inline(always)]
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl DerefMut for FlagEvent {
-    #[inline(always)]
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
     }
 }

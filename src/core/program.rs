@@ -42,7 +42,7 @@ impl Program {
 
     /// Return the context specified when the program object is created
     #[inline(always)]
-    pub unsafe fn context_id (&self) -> Result<cl_context> {
+    pub fn context_id (&self) -> Result<cl_context> {
         let ctx : cl_context = self.get_info(CL_PROGRAM_CONTEXT)?;
         Ok(ctx)
     }

@@ -1,4 +1,4 @@
-use std::{pin::Pin, ops::{RangeBounds, Deref, DerefMut}};
+use std::{pin::Pin, ops::{RangeBounds, DerefMut}};
 use crate::{core::*, event::{RawEvent, Event}, context::Context, buffer::{Buffer, manager::{range_len, read_to_ptr}}};
 
 pub struct ReadBuffer<T: Copy> {
@@ -23,7 +23,9 @@ impl<T: Copy + Unpin> Event for ReadBuffer<T> {
 
     #[inline(always)]
     fn consume (self) -> Self::Output {
-        Pin::into_inner(self.result)
+        let mut result = Pin::into_inner(self.result);
+        unsafe { result.set_len(result.capacity()) }
+        result
     }
 }
 
@@ -34,18 +36,36 @@ impl<T: Copy> AsRef<RawEvent> for ReadBuffer<T> {
     }
 }
 
-impl<T: Copy> Deref for ReadBuffer<T> {
-    type Target = RawEvent;
+pub struct ReadBufferInto<T: Copy, P: DerefMut<Target = [T]>> {
+    event: RawEvent,
+    #[allow(unused)]
+    dst: Pin<P>
+}
 
-    #[inline(always)]
-    fn deref(&self) -> &Self::Target {
-        &self.event
+impl<T: Copy + Unpin, P: DerefMut<Target = [T]>> ReadBufferInto<T, P> {
+    pub fn new<C: Context> (src: &Buffer<T, C>, dst: P, offset: usize) -> Result<Self> {
+        let mut dst = Pin::new(dst);
+        let range = offset..(offset + dst.len());
+
+        unsafe {
+            let event = read_to_ptr(src, range, dst.as_mut_ptr()).map(RawEvent::from_ptr)?;
+            Ok(Self { event, dst })
+        }
     }
 }
 
-impl<T: Copy> DerefMut for ReadBuffer<T> {
+impl<T: Copy + Unpin, P: DerefMut<Target = [T]>> Event for ReadBufferInto<T, P> {
+    type Output = ();
+
     #[inline(always)]
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.event
+    fn consume (self) -> Self::Output {
+       ()
+    }
+}
+
+impl<T: Copy, P: DerefMut<Target = [T]>> AsRef<RawEvent> for ReadBufferInto<T, P> {
+    #[inline(always)]
+    fn as_ref(&self) -> &RawEvent {
+        &self.event
     }
 }

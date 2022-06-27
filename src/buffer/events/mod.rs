@@ -1,1 +1,1 @@
-flat_mod!(read);
+flat_mod!(read, write);

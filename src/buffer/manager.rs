@@ -50,7 +50,7 @@ pub fn range_len<T: Copy, C: Context> (buffer: &Buffer<T, C>, range: &impl Range
     let end = match range.end_bound() {
         Bound::Excluded(x) => *x,
         Bound::Included(x) => x + 1,
-        Bound::Unbounded => buffer.byte_size()?
+        Bound::Unbounded => buffer.len()?
     };
 
     Ok(end - start)
