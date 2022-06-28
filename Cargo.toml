@@ -7,8 +7,8 @@ edition = "2021"
 [features]
 defaults = ["cl2"]
 svm = ["cl2"]
+atomics = ["svm"]
 cl2 = ["opencl-sys/CL_VERSION_2_0"]
-
 
 [dependencies]
 rscl-proc = { path = "rscl-proc", version = "0.1.0" }

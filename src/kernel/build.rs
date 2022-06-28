@@ -1,14 +1,14 @@
 use std::{ffi::c_void, ptr::addr_of};
-use opencl_sys::{cl_mem, clSetKernelArg};
+use opencl_sys::{cl_mem, clSetKernelArg, clSetKernelArgSVMPointer};
 use super::{Kernel, NdKernelEvent};
-use crate::{core::*, buffer::Buffer, context::Context};
+use crate::{core::*, buffer::Buffer, context::Context, svm::{SvmPointer}};
 
 #[derive(Clone)]
 pub struct Build<'a, C: Context, const N: usize> {
     pub(super) parent: &'a Kernel<C>,
     pub(super) global_work_dims: [usize; N],
     pub(super) local_work_dims: Option<[usize; N]>,
-    pub(super) args: Box<[Option<ArgumentType>]>
+    pub(super) args: Box<[Option<ArgumentType<C>>]>
 }
 
 impl<'a, C: Context, const N: usize> Build<'a, C, N> {
@@ -64,6 +64,12 @@ impl<'a, C: Context, const N: usize> Build<'a, C, N> {
     }
 
     #[inline(always)]
+    pub fn set_svm<P: SvmPointer> (&mut self, idx: usize, svm: &'a P) -> &mut Self {
+        self.args[idx] = Some(ArgumentType::Svm(svm.as_ptr().cast()));
+        self
+    }
+
+    #[inline(always)]
     pub fn set_alloc<T: Copy> (&mut self, idx: usize, len: usize) -> &mut Self {
         let bytes = len.checked_mul(core::mem::size_of::<T>()).unwrap();
         self.args[idx] = Some(ArgumentType::Alloc(bytes));
@@ -77,18 +83,20 @@ impl<'a, C: Context, const N: usize> Build<'a, C, N> {
 }
 
 #[derive(Clone)]
-pub(super) enum ArgumentType {
+pub(super) enum ArgumentType<C> {
     Value (Box<[u8]>),
     Buffer (cl_mem),
+    Svm (*const C),
     Alloc (usize)
 }
 
-impl ArgumentType {
+impl<C: Context> ArgumentType<C> {
     #[inline(always)]
     pub fn arg_size (&self) -> usize {
         match self {
             Self::Value (x) => x.len(),
             Self::Buffer (_) => core::mem::size_of::<cl_mem>(),
+            Self::Svm(_) => unimplemented!(),
             Self::Alloc (x) => *x 
         }
     }
@@ -98,13 +106,23 @@ impl ArgumentType {
         match self {
             Self::Value (x) => x.as_ptr().cast(),
             Self::Buffer (x) => x as *const _ as *const _,
-            Self::Alloc (_) => core::ptr::null()
+            Self::Alloc (_) => core::ptr::null(),
+            Self::Svm(_) => unimplemented!(),
         }
     }
 
     #[inline(always)]
-    pub unsafe fn set_argument<C: Context> (&self, idx: u32, kernel: &Kernel<C>) -> Result<()> {
-        tri!(clSetKernelArg(kernel.inner, idx, self.arg_size(), self.arg_value()));
+    pub unsafe fn set_argument (&self, idx: u32, kernel: &Kernel<C>) -> Result<()> {
+        match self {
+            Self::Svm (ptr) => {
+                tri!(clSetKernelArgSVMPointer(kernel.inner, idx, ptr.cast()))
+            },
+
+            _ => {
+                tri!(clSetKernelArg(kernel.inner, idx, self.arg_size(), self.arg_value()));
+            }
+        }
+        
         Ok(())
     }
 }

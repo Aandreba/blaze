@@ -360,8 +360,12 @@ impl Device {
     }
 
     #[inline(always)]
-    pub fn svm_capabilities (&self) -> Result<SvmCapability> {
-        self.get_info_bits(CL_DEVICE_SVM_CAPABILITIES)
+    pub fn svm_capabilities (&self) -> Result<Option<SvmCapability>> {
+        match self.get_info_bits(CL_DEVICE_SVM_CAPABILITIES) {
+            Ok(x) => Ok(Some(x)),
+            Err(Error::InvalidValue) => Ok(None),
+            Err(e) => Err(e)
+        }
     }
 
     /// The OpenCL device type.

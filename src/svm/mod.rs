@@ -1,4 +1,6 @@
 flat_mod!(flags, utils);
+
+#[cfg(feature = "atomics")]
 pub mod atomics;
 
 use std::{alloc::{Layout, Allocator, GlobalAlloc}, ptr::NonNull};

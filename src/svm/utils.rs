@@ -1,21 +1,67 @@
-use std::collections::VecDeque;
-use crate::context::Global;
+use std::{collections::VecDeque, ops::{Deref, DerefMut}};
+use crate::context::{Global, Context};
 use super::{Svm};
 use sealed::Sealed;
 
-mod sealed {
+pub(super) mod sealed {
     pub trait Sealed {}
 }
 
 const ALLOC : Svm = Svm::new();
 
+pub trait SvmPointer: Sealed {
+    type Type: ?Sized;
+
+    fn as_ptr (&self) -> *const Self::Type;
+    fn as_mut_ptr (&mut self) -> *mut Self::Type; 
+    fn len (&self) -> usize;
+}
+
 pub type SvmBox<T, C = Global> = Box<T, Svm<C>>;
 pub type SvmVec<T, C = Global> = Vec<T, Svm<C>>;
 pub type SvmVecDeque<T, C = Global> = VecDeque<T, Svm<C>>;
 
-impl<T: ?Sized> Sealed for SvmBox<T> {}
-impl<T> Sealed for SvmVec<T> {}
-impl<T> Sealed for SvmVecDeque<T> {}
+impl<T: ?Sized, C: Context> Sealed for SvmBox<T, C> {}
+impl<T, C: Context> Sealed for SvmVec<T, C> {}
+impl<T, C: Context> Sealed for SvmVecDeque<T, C> {}
+
+impl<T: ?Sized, C: Context> SvmPointer for SvmBox<T, C> {
+    type Type = T;
+
+    #[inline(always)]
+    fn as_ptr (&self) -> *const T {
+        self.deref()
+    }
+
+    #[inline(always)]
+    fn as_mut_ptr (&mut self) -> *mut T {
+        self.deref_mut()
+    }
+
+    #[inline(always)]
+    fn len (&self) -> usize {
+        1
+    }
+}
+
+impl<T, C: Context> SvmPointer for SvmVec<T, C> {
+    type Type = T;
+
+    #[inline(always)]
+    fn as_ptr (&self) -> *const T {
+        Vec::as_ptr(self)
+    }
+
+    #[inline(always)]
+    fn as_mut_ptr (&mut self) -> *mut T {
+        Vec::as_mut_ptr(self)
+    }
+
+    #[inline(always)]
+    fn len (&self) -> usize {
+        Vec::len(self)
+    }
+}
 
 // BOX
 pub trait SvmBoxExt<T: ?Sized>: Sealed {

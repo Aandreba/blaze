@@ -1,5 +1,5 @@
 #![feature(allocator_api)]
-use rscl::{macros::global_context, core::*, context::{SimpleContext}, buffer::{Buffer, flags::{MemFlags, MemAccess}}, event::{Event, WaitList}, svm::{SvmBox, SvmBoxExt}};
+use rscl::{macros::global_context, core::*, context::{SimpleContext}, buffer::{Buffer, flags::{MemFlags, MemAccess}}, event::{Event, WaitList}, svm::{SvmBox, SvmBoxExt, atomics::SvmAtomicU32}};
 
 static PROGRAM : &str = "void kernel add (const ulong n, __global const float* rhs, __global const float* in, __global float* out) {
     for (ulong id = get_global_id(0); id<n; id += get_global_size(0)) {
@@ -32,8 +32,25 @@ fn test () -> Result<()> {
     Ok(())
 }
 
+static ATOMIC_PROGRAM : &str = "void kernel add_atomic (const ulong n, volatile __global atomic_uint* out) {
+    for (ulong id = 0; id < n; i++) {
+        atomic_add(out, 1);
+    }
+}";
+
 #[test]
-fn svm () {
-    let alex = SvmBox::new(());
-    println!("{:?}", alex)
+fn atomic () {
+    println!("{:?}", Device::first().unwrap().svm_capabilities());
+
+    let alex = SvmAtomicU32::new(&[0]);
+    let (_, kernel) = Program::from_source(ATOMIC_PROGRAM).unwrap();
+
+    let kernel = &kernel[0];
+    let build = kernel.build([10, 1, 1]).unwrap()
+        .set_value(0, 10u64)
+        .set_svm(1, &alex)
+        .build().unwrap();
+
+    build.wait().unwrap();
+    println!("{:?}", alex[0]);
 }
