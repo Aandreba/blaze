@@ -1,6 +1,7 @@
 use core::{mem::MaybeUninit, num::NonZeroUsize};
-use opencl_sys::{cl_program, clReleaseProgram, clCreateProgramWithSource, clRetainProgram, clBuildProgram, cl_program_info, clGetProgramInfo, CL_PROGRAM_REFERENCE_COUNT, CL_PROGRAM_CONTEXT, CL_PROGRAM_NUM_DEVICES, CL_PROGRAM_DEVICES, CL_PROGRAM_SOURCE, cl_context};
-use crate::context::{Context, Global};
+use opencl_sys::{cl_program, clReleaseProgram, clCreateProgramWithSource, clRetainProgram, clBuildProgram, cl_program_info, clGetProgramInfo, CL_PROGRAM_REFERENCE_COUNT, CL_PROGRAM_CONTEXT, CL_PROGRAM_NUM_DEVICES, CL_PROGRAM_DEVICES, CL_PROGRAM_SOURCE, cl_context, cl_kernel, clCreateKernelsInProgram};
+use parking_lot::{RawFairMutex, lock_api::RawMutex};
+use crate::{context::{Context, Global}, kernel::Kernel};
 use super::*;
 
 /// OpenCL program
@@ -10,12 +11,12 @@ pub struct Program (pub(crate) cl_program);
 
 impl Program {
     #[inline(always)]
-    pub fn from_source (source: &str) -> Result<Self> {
-        Self::from_source_in(&Global, source)
+    pub fn from_source (source: &str) -> Result<(Self, Box<[Kernel]>)> {
+        Self::from_source_in(Global, source)
     }
 
     #[inline]
-    pub fn from_source_in<C: Context> (ctx: &C, source: &str) -> Result<Self> {
+    pub fn from_source_in<C: Context + Clone> (ctx: C, source: &str) -> Result<(Self, Box<[Kernel<C>]>)> {
         let len = [source.len()].as_ptr();
         let strings = [source.as_ptr().cast()].as_ptr();
 
@@ -29,9 +30,26 @@ impl Program {
         }
 
         let this = Self(id);
-        this.build(ctx)?;
+        this.build(&ctx)?;
 
-        Ok(this)
+        let kernels = this.kernels()?.into_iter().map(|x| Kernel {
+            inner: *x,
+            ctx: ctx.clone(),
+            lock: RawFairMutex::INIT
+        }).collect::<Box<[_]>>();
+
+        Ok((this, kernels))
+    }
+
+    #[inline]
+    fn kernels (&self) -> Result<Box<[cl_kernel]>> {
+        let mut len = 0;
+        unsafe {
+            tri!(clCreateKernelsInProgram(self.0, 0, core::ptr::null_mut(), &mut len));
+            let mut kernels = Box::new_uninit_slice(len as usize);
+            tri!(clCreateKernelsInProgram(self.0, len, kernels.as_mut_ptr().cast(), core::ptr::null_mut()));
+            Ok(kernels.assume_init())
+        }
     }
 
     /// Return the program reference count.
@@ -95,7 +113,7 @@ impl Program {
     }
 
     #[inline(always)]
-    fn build<C: Context> (&self, _cx: &C) -> Result<()> {
+    fn build<C: Context> (&self, _ctx: &C) -> Result<()> {
         let build_result = unsafe {
             clBuildProgram(self.0, 0, core::ptr::null(), core::ptr::null(), None, core::ptr::null_mut())
         };

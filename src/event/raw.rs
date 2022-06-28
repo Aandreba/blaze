@@ -7,27 +7,17 @@ use super::{EventStatus, Event};
 pub struct RawEvent (pub(crate) cl_event);
 
 impl RawEvent {
+    pub const NO_WAIT : [Self;0] = [];
+
     #[inline(always)]
     pub const fn from_ptr (inner: cl_event) -> Self {
         Self(inner)
     }
 
     #[inline(always)]
-    pub(super) fn get_info<T> (&self, id: cl_event_info) -> Result<T> {
-        let mut result = MaybeUninit::<T>::uninit();
-        
-        unsafe {
-            tri!(clGetEventInfo(self.0, id, core::mem::size_of::<T>(), result.as_mut_ptr().cast(), core::ptr::null_mut()));
-            Ok(result.assume_init())
-        }
-    }
-}
-
-impl RawEvent {
-    #[inline(always)]
     pub fn wait_by_ref (&self) -> Result<()> {
         unsafe {
-            tri!(clWaitForEvents(1, self as *const Self as *const _))
+            tri!(clWaitForEvents(1, self as *const _ as *const _))
         }
 
         Ok(())
@@ -42,6 +32,16 @@ impl RawEvent {
         }
 
         Ok(())
+    }
+
+    #[inline(always)]
+    pub(super) fn get_info<T> (&self, id: cl_event_info) -> Result<T> {
+        let mut result = MaybeUninit::<T>::uninit();
+        
+        unsafe {
+            tri!(clGetEventInfo(self.0, id, core::mem::size_of::<T>(), result.as_mut_ptr().cast(), core::ptr::null_mut()));
+            Ok(result.assume_init())
+        }
     }
 }
 

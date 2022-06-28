@@ -1,4 +1,4 @@
-#![feature(new_uninit, is_some_with, fn_traits, vec_into_raw_parts)]
+#![feature(new_uninit, const_nonnull_new, const_option, const_slice_from_raw_parts, ptr_metadata, is_some_with, fn_traits, vec_into_raw_parts)]
 
 macro_rules! flat_mod {
     ($($i:ident),+) => {

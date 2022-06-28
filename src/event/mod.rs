@@ -1,4 +1,6 @@
-use opencl_sys::{CL_COMMAND_NDRANGE_KERNEL, CL_COMMAND_TASK, CL_COMMAND_NATIVE_KERNEL, CL_COMMAND_READ_BUFFER, CL_COMMAND_WRITE_BUFFER, CL_COMMAND_COPY_BUFFER, CL_COMMAND_READ_IMAGE, CL_COMMAND_WRITE_IMAGE, CL_COMMAND_COPY_IMAGE, CL_COMMAND_COPY_IMAGE_TO_BUFFER, CL_COMMAND_COPY_BUFFER_TO_IMAGE, CL_COMMAND_MAP_BUFFER, CL_COMMAND_MAP_IMAGE, CL_COMMAND_UNMAP_MEM_OBJECT, CL_COMMAND_MARKER, CL_COMMAND_ACQUIRE_GL_OBJECTS, CL_COMMAND_RELEASE_GL_OBJECTS, CL_EVENT_COMMAND_TYPE, CL_EVENT_COMMAND_EXECUTION_STATUS, cl_command_queue, CL_EVENT_COMMAND_QUEUE};
+use std::{num::NonZeroU32, intrinsics::transmute, ptr::NonNull};
+
+use opencl_sys::{CL_COMMAND_NDRANGE_KERNEL, CL_COMMAND_TASK, CL_COMMAND_NATIVE_KERNEL, CL_COMMAND_READ_BUFFER, CL_COMMAND_WRITE_BUFFER, CL_COMMAND_COPY_BUFFER, CL_COMMAND_READ_IMAGE, CL_COMMAND_WRITE_IMAGE, CL_COMMAND_COPY_IMAGE, CL_COMMAND_COPY_IMAGE_TO_BUFFER, CL_COMMAND_COPY_BUFFER_TO_IMAGE, CL_COMMAND_MAP_BUFFER, CL_COMMAND_MAP_IMAGE, CL_COMMAND_UNMAP_MEM_OBJECT, CL_COMMAND_MARKER, CL_COMMAND_ACQUIRE_GL_OBJECTS, CL_COMMAND_RELEASE_GL_OBJECTS, CL_EVENT_COMMAND_TYPE, CL_EVENT_COMMAND_EXECUTION_STATUS, cl_command_queue, CL_EVENT_COMMAND_QUEUE, cl_event};
 use crate::core::*;
 
 flat_mod!(status, raw, flag);
@@ -37,6 +39,41 @@ pub trait Event: AsRef<RawEvent> {
     fn command_queue (&self) -> Result<cl_command_queue> {
         let queue : cl_command_queue = self.as_ref().get_info(CL_EVENT_COMMAND_QUEUE)?;
         Ok(queue)
+    }
+}
+
+#[repr(transparent)]
+pub struct WaitList (Box<[cl_event]>);
+
+impl WaitList {
+    pub const EMPTY : Self = unsafe { transmute(NonNull::new(core::slice::from_raw_parts_mut::<cl_event>(core::ptr::null_mut(), 0)).unwrap()) };
+
+    #[inline(always)]
+    pub fn from_iter (wait: impl IntoIterator<Item = impl AsRef<RawEvent>>) -> Self {
+        let wait = wait.into_iter().map(|x| x.as_ref().0).collect::<Box<[_]>>();
+        Self::from_boxed_slice(wait)
+    }
+
+    #[inline(always)]
+    pub fn from_raw (wait: impl Into<Box<[RawEvent]>>) -> Self {
+        Self::from_boxed_slice(unsafe { transmute(wait.into()) })
+    }
+
+    #[inline(always)]
+    pub fn from_boxed_slice (wait: Box<[cl_event]>) -> Self {
+        Self(wait)
+    }
+
+    #[inline(always)]
+    pub fn raw_parts (&self) -> (u32, *const cl_event) {
+        (u32::try_from(self.0.len()).unwrap(), self.0.as_ptr())
+    }
+}
+
+impl<I: IntoIterator> From<I> for WaitList where I::Item: AsRef<RawEvent> {
+    #[inline(always)]
+    fn from(wait: I) -> Self {
+        Self::from_iter(wait)
     }
 }
 

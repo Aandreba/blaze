@@ -173,6 +173,20 @@ impl Default for MemAccess {
     }
 }
 
+impl Into<MemFlags> for MemAccess {
+    #[inline(always)]
+    fn into(self) -> MemFlags {
+        MemFlags::new(self, false)
+    }
+}
+
+impl Into<FullMemFlags> for MemAccess {
+    #[inline(always)]
+    fn into(self) -> FullMemFlags {
+        FullMemFlags::new(self, HostPtr::default())
+    }
+}
+
 impl From<cl_mem_flags> for MemAccess {
     #[inline(always)]
     fn from(x: cl_mem_flags) -> Self {
@@ -194,6 +208,7 @@ pub enum HostPtr {
 }
 
 impl HostPtr {
+    pub const NONE : Self = Self::new(false, false);
     /// This flag is valid only if host_ptr is not NULL. If specified, it indicates that the application wants the OpenCL implementation to use memory referenced by host_ptr as the storage bits for the memory object.
     pub const USE : Self = Self::Use;
     /// This flag specifies that the application wants the OpenCL implementation to allocate memory from host accessible memory.
@@ -259,7 +274,7 @@ impl HostPtr {
 impl Default for HostPtr {
     #[inline(always)]
     fn default() -> Self {
-        Self::Other(false, false)
+        Self::NONE
     }
 }
 

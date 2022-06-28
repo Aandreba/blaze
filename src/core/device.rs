@@ -350,7 +350,7 @@ impl Device {
     #[cfg(feature = "cl2")]
     #[inline(always)]
     pub fn reference_count (&self) -> Result<u32> {
-        self.get_info_bits(CL_DEVICE_REFERENCE_COUNT)
+        self.get_info_bits(opencl_sys::CL_DEVICE_REFERENCE_COUNT)
     }
 
     /// Describes single precision floating-point capability of the device.

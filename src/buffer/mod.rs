@@ -4,9 +4,9 @@ mod manager;
 
 use std::{marker::PhantomData, ptr::{NonNull, addr_of_mut}, mem::MaybeUninit, ffi::c_void, ops::{RangeBounds, Deref, DerefMut}};
 use opencl_sys::{cl_mem, clCreateBuffer, cl_mem_flags, clGetMemObjectInfo, cl_mem_info, CL_MEM_OFFSET, cl_context, CL_MEM_CONTEXT, CL_MEM_REFERENCE_COUNT, CL_MEM_MAP_COUNT, CL_MEM_HOST_PTR, CL_MEM_SIZE, clReleaseMemObject};
-use crate::context::{Context, Global};
+use crate::{context::{Context, Global}, event::{RawEvent, WaitList}};
 use crate::core::*;
-use self::{flags::{MemFlags, FullMemFlags, HostPtr}, events::{ReadBuffer, WriteBuffer, WriteBufferStatic, ReadBufferInto}};
+use self::{flags::{MemFlags, FullMemFlags, HostPtr}, events::{ReadBuffer, WriteBuffer, ReadBufferInto, write_from_static, write_from_ptr}};
 
 #[cfg(not(debug_assertions))]
 use std::hint::unreachable_unchecked;
@@ -133,43 +133,43 @@ impl<T: Copy, C: Context> Buffer<T, C> {
 
 impl<T: Copy + Unpin, C: Context> Buffer<T, C> {
     #[inline(always)]
-    pub fn read_all (&self) -> Result<ReadBuffer<T>> {
-        self.read(..)
+    pub fn read_all (&self, wait: impl Into<WaitList>) -> Result<ReadBuffer<T>> {
+        self.read(.., wait)
     }
 
     #[inline(always)]
-    pub fn read (&self, range: impl RangeBounds<usize>) -> Result<ReadBuffer<T>> {
-        ReadBuffer::new(self, range)
+    pub fn read (&self, range: impl RangeBounds<usize>, wait: impl Into<WaitList>) -> Result<ReadBuffer<T>> {
+        ReadBuffer::new(self, range, wait)
     }
 
     #[inline(always)]
-    pub fn read_into<P: DerefMut<Target = [T]>> (&self, dst: P, offset: usize) -> Result<ReadBufferInto<T, P>> {
-        ReadBufferInto::new(self, dst, offset)
+    pub fn read_into<P: DerefMut<Target = [T]>> (&self, dst: P, offset: usize, wait: impl Into<WaitList>) -> Result<ReadBufferInto<T, P>> {
+        ReadBufferInto::new(self, dst, offset, wait)
     }
 
     #[inline(always)]
-    pub fn read_into_slice<'a> (&self, dst: &'a mut [T], offset: usize) -> Result<ReadBufferInto<T, &'a mut [T]>> {
-        self.read_into(dst, offset)
+    pub fn read_into_slice<'a> (&self, dst: &'a mut [T], offset: usize, wait: impl Into<WaitList>) -> Result<ReadBufferInto<T, &'a mut [T]>> {
+        self.read_into(dst, offset, wait)
     }
 
     #[inline(always)]
-    pub fn write<P: Deref<Target = [T]>> (&mut self, src: P, offset: usize) -> Result<WriteBuffer<T, P>> {
-        WriteBuffer::new(src, self, offset)
+    pub fn write<P: Deref<Target = [T]>> (&mut self, src: P, offset: usize, wait: impl Into<WaitList>) -> Result<WriteBuffer<T, P>> {
+        WriteBuffer::new(src, self, offset, wait)
     }
 
     #[inline(always)]
-    pub fn write_slice<'a> (&mut self, src: &'a [T], offset: usize) -> Result<WriteBuffer<T, &'a [T]>> {
-        self.write(src, offset)
+    pub fn write_slice<'a> (&mut self, src: &'a [T], offset: usize, wait: impl Into<WaitList>) -> Result<WriteBuffer<T, &'a [T]>> {
+        self.write(src, offset, wait)
     }
 
     #[inline(always)]
-    pub fn write_static_slice (&mut self, src: &'static [T], offset: usize) -> Result<WriteBufferStatic> {
-        WriteBufferStatic::new_from_static(src, self, offset)
+    pub fn write_static_slice (&mut self, src: &'static [T], offset: usize, wait: impl Into<WaitList>) -> Result<RawEvent> {
+        write_from_static(src, self, offset, wait)
     }
 
     #[inline(always)]
-    pub unsafe fn write_ptr (&mut self, src: *const T, range: impl RangeBounds<usize>) -> Result<WriteBufferStatic> {
-        WriteBufferStatic::new_from_ptr(src, self, range)
+    pub unsafe fn write_ptr (&mut self, src: *const T, range: impl RangeBounds<usize>, wait: impl Into<WaitList>) -> Result<RawEvent> {
+        write_from_ptr(src, self, range, wait)
     }
 }
 
