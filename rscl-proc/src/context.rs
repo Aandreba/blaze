@@ -12,19 +12,19 @@ pub fn global_context (input: ItemStatic) -> TokenStream {
 
         #[doc(hidden)]
         #[no_mangle]
-        pub extern "Rust" fn __rscl__global__context_id () -> *mut ::std::ffi::c_void {
+        extern "Rust" fn __rscl__global__context_id () -> *mut ::std::ffi::c_void {
             ::rscl::context::Context::context_id(::rscl::once_cell::sync::Lazy::force(&#ident))
         }
 
         #[doc(hidden)]
         #[no_mangle]
-        pub extern "Rust" fn __rscl__global__queue_count () -> usize {
+        extern "Rust" fn __rscl__global__queue_count () -> usize {
             ::rscl::context::Context::queue_count(::rscl::once_cell::sync::Lazy::force(&#ident))
         }
 
         #[doc(hidden)]
         #[no_mangle]
-        pub extern "Rust" fn __rscl__global__next_queue () -> *mut ::std::ffi::c_void {
+        extern "Rust" fn __rscl__global__next_queue () -> *mut ::std::ffi::c_void {
             ::rscl::context::Context::next_queue(::rscl::once_cell::sync::Lazy::force(&#ident))
         }
     }

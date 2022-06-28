@@ -1,5 +1,4 @@
-use std::{num::NonZeroU32, intrinsics::transmute, ptr::NonNull};
-
+use std::{mem::transmute, pin::Pin, ptr::NonNull, ops::Deref};
 use opencl_sys::{CL_COMMAND_NDRANGE_KERNEL, CL_COMMAND_TASK, CL_COMMAND_NATIVE_KERNEL, CL_COMMAND_READ_BUFFER, CL_COMMAND_WRITE_BUFFER, CL_COMMAND_COPY_BUFFER, CL_COMMAND_READ_IMAGE, CL_COMMAND_WRITE_IMAGE, CL_COMMAND_COPY_IMAGE, CL_COMMAND_COPY_IMAGE_TO_BUFFER, CL_COMMAND_COPY_BUFFER_TO_IMAGE, CL_COMMAND_MAP_BUFFER, CL_COMMAND_MAP_IMAGE, CL_COMMAND_UNMAP_MEM_OBJECT, CL_COMMAND_MARKER, CL_COMMAND_ACQUIRE_GL_OBJECTS, CL_COMMAND_RELEASE_GL_OBJECTS, CL_EVENT_COMMAND_TYPE, CL_EVENT_COMMAND_EXECUTION_STATUS, cl_command_queue, CL_EVENT_COMMAND_QUEUE, cl_event};
 use crate::core::*;
 
@@ -11,6 +10,11 @@ pub trait Event: AsRef<RawEvent> {
     type Output;
 
     fn consume (self) -> Self::Output;
+
+    #[inline(always)]
+    fn raw (&self) -> RawEvent {
+        self.as_ref().clone()
+    }
 
     #[inline(always)]
     fn wait (self) -> Result<Self::Output> where Self: Sized {
@@ -42,38 +46,74 @@ pub trait Event: AsRef<RawEvent> {
     }
 }
 
+enum WaitListInner {
+    Box (Box<[RawEvent]>),
+    Vector (Vec<RawEvent>)
+}
+
 #[repr(transparent)]
-pub struct WaitList (Box<[cl_event]>);
+pub struct WaitList (Option<WaitListInner>);
 
 impl WaitList {
-    pub const EMPTY : Self = unsafe { transmute(NonNull::new(core::slice::from_raw_parts_mut::<cl_event>(core::ptr::null_mut(), 0)).unwrap()) };
+    pub const EMPTY : Self = WaitList(None);
 
     #[inline(always)]
-    pub fn from_iter (wait: impl IntoIterator<Item = impl AsRef<RawEvent>>) -> Self {
-        let wait = wait.into_iter().map(|x| x.as_ref().0).collect::<Box<[_]>>();
-        Self::from_boxed_slice(wait)
+    pub fn from_boxed (wait: Box<[RawEvent]>) -> Self {
+        if wait.len() == 0 {
+            return Self::EMPTY;
+        }
+
+        Self(Some(WaitListInner::Box(wait)))
     }
 
     #[inline(always)]
-    pub fn from_raw (wait: impl Into<Box<[RawEvent]>>) -> Self {
-        Self::from_boxed_slice(unsafe { transmute(wait.into()) })
+    pub fn from_vec (wait: Vec<RawEvent>) -> Self {
+        if wait.len() == 0 {
+            return Self::EMPTY;
+        }
+
+        Self(Some(WaitListInner::Vector(wait)))
     }
 
     #[inline(always)]
-    pub fn from_boxed_slice (wait: Box<[cl_event]>) -> Self {
-        Self(wait)
+    pub fn from_array<const N: usize> (wait: [RawEvent;N]) -> Self {
+        Self::from_boxed(Box::new(wait) as Box<[RawEvent]>)
     }
 
     #[inline(always)]
     pub fn raw_parts (&self) -> (u32, *const cl_event) {
-        (u32::try_from(self.0.len()).unwrap(), self.0.as_ptr())
+        match self.0 {
+            Some(WaitListInner::Box(ref x)) => {
+                (u32::try_from(x.len()).unwrap(), x.as_ptr().cast())
+            },
+
+            Some(WaitListInner::Vector(ref x)) => {
+                (u32::try_from(x.len()).unwrap(), x.as_ptr().cast())
+            },
+            
+            None => (0, core::ptr::null())
+        }
     }
 }
 
-impl<I: IntoIterator> From<I> for WaitList where I::Item: AsRef<RawEvent> {
+impl From<Box<[RawEvent]>> for WaitList {
     #[inline(always)]
-    fn from(wait: I) -> Self {
-        Self::from_iter(wait)
+    fn from(x: Box<[RawEvent]>) -> Self {
+        Self::from_boxed(x)
+    }
+}
+
+impl From<Vec<RawEvent>> for WaitList {
+    #[inline(always)]
+    fn from(x: Vec<RawEvent>) -> Self {
+        Self::from_vec(x)
+    }
+}
+
+impl<const N: usize> From<[RawEvent; N]> for WaitList {
+    #[inline(always)]
+    fn from(x: [RawEvent; N]) -> Self {
+        Self::from_array(x)
     }
 }
 

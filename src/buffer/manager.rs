@@ -8,10 +8,11 @@ use super::Buffer;
 
 pub unsafe fn inner_read_to_ptr<T: Copy, C: Context> (src: &Buffer<T, C>, src_range: impl RangeBounds<usize>, dst: *mut T, wait: impl Into<WaitList>) -> Result<cl_event> {
     let (offset, cb) = offset_cb(src, src_range)?;
-    let (num_events_in_wait_list, event_wait_list) = wait.into().raw_parts();
+    let wait : WaitList = wait.into();
+    let (num_events_in_wait_list, event_wait_list) = wait.raw_parts();
 
     let mut event = core::ptr::null_mut();
-    tri!(clEnqueueReadBuffer(src.ctx.next_queue(), src.inner, CL_FALSE, offset, cb, dst.cast(), num_events_in_wait_list, event_wait_list, addr_of_mut!(event)));
+    tri!(clEnqueueReadBuffer(src.ctx.next_queue(), src.inner, CL_FALSE, offset, cb, dst.cast(), num_events_in_wait_list, event_wait_list, &mut event));
     return Ok(event)
 }
 

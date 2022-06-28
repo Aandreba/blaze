@@ -7,11 +7,14 @@ use super::{EventStatus, Event};
 pub struct RawEvent (pub(crate) cl_event);
 
 impl RawEvent {
-    pub const NO_WAIT : [Self;0] = [];
-
     #[inline(always)]
     pub const fn from_ptr (inner: cl_event) -> Self {
         Self(inner)
+    }
+
+    #[inline(always)]
+    pub const fn id (&self) -> cl_event {
+        self.0
     }
 
     #[inline(always)]
