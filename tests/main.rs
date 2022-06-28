@@ -1,4 +1,5 @@
-use rscl::{macros::global_context, core::*, context::{SimpleContext}, buffer::{Buffer, flags::{MemFlags, MemAccess}}, event::{Event, WaitList}};
+#![feature(allocator_api)]
+use rscl::{macros::global_context, core::*, context::{SimpleContext}, buffer::{Buffer, flags::{MemFlags, MemAccess}}, event::{Event, WaitList}, svm::{SvmBox, SvmBoxExt}};
 
 static PROGRAM : &str = "void kernel add (const ulong n, __global const float* rhs, __global const float* in, __global float* out) {
     for (ulong id = get_global_id(0); id<n; id += get_global_size(0)) {
@@ -25,10 +26,14 @@ fn test () -> Result<()> {
         .set_mem_buffer(3, &gamma)
         .build()?;
 
-    // todo fix waiting events
-    //let wait = WaitList::from_boxed_slice(Box::new([evt.as_ref().id()]));
     let gamma = gamma.read_all([evt.raw()])?.wait()?;
     println!("{gamma:?}");
 
     Ok(())
+}
+
+#[test]
+fn svm () {
+    let alex = SvmBox::new(());
+    println!("{:?}", alex)
 }

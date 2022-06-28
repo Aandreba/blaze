@@ -6,7 +6,9 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [features]
 defaults = ["cl2"]
+svm = ["cl2"]
 cl2 = ["opencl-sys/CL_VERSION_2_0"]
+
 
 [dependencies]
 rscl-proc = { path = "rscl-proc", version = "0.1.0" }

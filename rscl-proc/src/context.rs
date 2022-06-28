@@ -3,8 +3,13 @@ use quote::quote;
 use syn::{ItemStatic};
 
 #[inline(always)]
-pub fn global_context (input: ItemStatic) -> TokenStream {
+pub fn global_context (input: ItemStatic, alloc: bool) -> TokenStream {
     let ItemStatic { attrs, vis, static_token, mutability, ident, colon_token, ty, eq_token, expr, semi_token } = input;
+
+    let alloc = alloc.then(|| quote! {
+        #[global_allocator]
+        static ALLOC : ::rscl::svm::Svm = ::rscl::svm::Svm::new();
+    });
 
     quote! {
         #(#attrs)*
@@ -27,5 +32,7 @@ pub fn global_context (input: ItemStatic) -> TokenStream {
         extern "Rust" fn __rscl__global__next_queue () -> *mut ::std::ffi::c_void {
             ::rscl::context::Context::next_queue(::rscl::once_cell::sync::Lazy::force(&#ident))
         }
+
+        #alloc
     }
 }
