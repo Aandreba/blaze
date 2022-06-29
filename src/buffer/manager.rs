@@ -1,50 +1,109 @@
 use std::ops::{RangeBounds, Bound};
 use std::ptr::addr_of_mut;
 use opencl_sys::{cl_event, clEnqueueReadBuffer, CL_FALSE, clEnqueueWriteBuffer};
-use crate::context::Context;
 use crate::{core::*};
-use crate::event::{WaitList};
-use super::Buffer;
+use crate::event::{WaitList, RawEvent};
+use super::{RawBuffer};
 
-pub unsafe fn inner_read_to_ptr<T: Copy, C: Context> (src: &Buffer<T, C>, src_range: impl RangeBounds<usize>, dst: *mut T, wait: impl Into<WaitList>) -> Result<cl_event> {
-    let (offset, cb) = offset_cb(src, src_range)?;
+#[derive(Clone)]
+pub enum AccessManager {
+    None,
+    Reading (Vec<RawEvent>),
+    Writing (RawEvent)
+}
+
+impl AccessManager {
+    #[inline]
+    pub fn extend_list (&self, wait: &mut WaitList) {
+        match self {
+            Self::Reading(x) => wait.extend(x.into_iter().cloned()),
+            Self::Writing(x) => wait.push(x.clone()),
+            Self::None => {},
+        }
+    }
+
+    #[inline]
+    pub fn read (&mut self, evt: RawEvent) -> WaitList {
+        match self {
+            Self::None => {
+                *self = Self::Reading(vec![evt]);
+                WaitList::EMPTY
+            },
+
+            Self::Reading(x) => {
+                x.push(evt);
+                WaitList::EMPTY
+            },
+
+            Self::Writing(x) => {
+                let wait = WaitList::from_event(x.clone());
+                *self = Self::Reading(vec![evt]);
+                wait
+            }
+        }
+    }
+
+    #[inline]
+    pub fn write (&mut self, evt: RawEvent) -> WaitList {
+        match self {
+            Self::None => {
+                *self = Self::Writing(evt);
+                WaitList::EMPTY
+            },
+
+            Self::Reading(x) => {
+                let wait = WaitList::new(core::mem::take(x));
+                *self = Self::Writing(evt);
+                wait
+            },
+
+            Self::Writing(x) => WaitList::from_event(core::mem::replace(x, evt))
+        }
+    }
+}
+
+pub unsafe fn inner_read_to_ptr<T: Copy> (src: &RawBuffer, src_range: impl RangeBounds<usize>, dst: *mut T, queue: &CommandQueue, wait: impl Into<WaitList>) -> Result<cl_event> {
+    let (offset, cb) = offset_cb(&src, core::mem::size_of::<T>(), src_range)?;
     let wait : WaitList = wait.into();
     let (num_events_in_wait_list, event_wait_list) = wait.raw_parts();
 
     let mut event = core::ptr::null_mut();
-    tri!(clEnqueueReadBuffer(src.ctx.next_queue(), src.inner, CL_FALSE, offset, cb, dst.cast(), num_events_in_wait_list, event_wait_list, &mut event));
+    tri!(clEnqueueReadBuffer(queue.id(), src.id(), CL_FALSE, offset, cb, dst.cast(), num_events_in_wait_list, event_wait_list, &mut event));
 
     return Ok(event)
 }
 
-pub unsafe fn inner_write_from_ptr<T: Copy, C: Context> (dst: &Buffer<T, C>, dst_range: impl RangeBounds<usize>, src: *const T, wait: impl Into<WaitList>) -> Result<cl_event> {
-    let (offset, cb) = offset_cb(dst, dst_range)?;
-    let (num_events_in_wait_list, event_wait_list) = wait.into().raw_parts();
+pub unsafe fn inner_write_from_ptr<T: Copy> (dst: &mut RawBuffer, dst_range: impl RangeBounds<usize>, src: *const T, queue: &CommandQueue, wait: impl Into<WaitList>) -> Result<cl_event> {
+    let (offset, cb) = offset_cb(&dst, core::mem::size_of::<T>(), dst_range)?;
+    let wait : WaitList = wait.into();
+    let (num_events_in_wait_list, event_wait_list) = wait.raw_parts();
 
     let mut event = core::ptr::null_mut();
-    tri!(clEnqueueWriteBuffer(dst.ctx.next_queue(), dst.inner, CL_FALSE, offset, cb, src.cast(), num_events_in_wait_list, event_wait_list, addr_of_mut!(event)));
+    tri!(clEnqueueWriteBuffer(queue.id(), dst.id(), CL_FALSE, offset, cb, src.cast(), num_events_in_wait_list, event_wait_list, addr_of_mut!(event)));
 
     return Ok(event)
 }
 
-pub fn offset_cb<T: Copy, C: Context> (buffer: &Buffer<T, C>, range: impl RangeBounds<usize>) -> Result<(usize, usize)> {
+#[inline]
+pub fn offset_cb (buffer: &RawBuffer, size: usize, range: impl RangeBounds<usize>) -> Result<(usize, usize)> {
     let start = match range.start_bound() {
-        Bound::Excluded(x) => *x + 1,
-        Bound::Included(x) => *x,
+        Bound::Excluded(x) => x.checked_add(1).and_then(|x| x.checked_mul(size)).unwrap(),
+        Bound::Included(x) => x.checked_mul(size).unwrap(),
         Bound::Unbounded => 0
-    }.checked_mul(core::mem::size_of::<T>()).unwrap();
+    };
 
     let end = match range.end_bound() {
-        Bound::Excluded(x) => x.checked_mul(core::mem::size_of::<T>()).unwrap(),
-        Bound::Included(x) => (x + 1).checked_mul(core::mem::size_of::<T>()).unwrap(),
-        Bound::Unbounded => buffer.byte_size()?
+        Bound::Excluded(x) => x.checked_mul(size).unwrap(),
+        Bound::Included(x) => x.checked_add(1).and_then(|x| x.checked_mul(size)).unwrap(),
+        Bound::Unbounded => buffer.size()?
     };
 
     let len = end - start;
     Ok((start, len))
 }
 
-pub fn range_len<T: Copy, C: Context> (buffer: &Buffer<T, C>, range: &impl RangeBounds<usize>) -> Result<usize> {
+#[inline]
+pub fn range_len (buffer: &RawBuffer, len: usize, range: &impl RangeBounds<usize>) -> usize {
     let start = match range.start_bound() {
         Bound::Excluded(x) => *x + 1,
         Bound::Included(x) => *x,
@@ -54,8 +113,8 @@ pub fn range_len<T: Copy, C: Context> (buffer: &Buffer<T, C>, range: &impl Range
     let end = match range.end_bound() {
         Bound::Excluded(x) => *x,
         Bound::Included(x) => x + 1,
-        Bound::Unbounded => buffer.len()?
+        Bound::Unbounded => len
     };
 
-    Ok(end - start)
+    end - start
 }

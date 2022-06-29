@@ -1,14 +1,14 @@
 use crate::core::*;
-use std::{ffi::c_void, mem::MaybeUninit, ptr::addr_of};
-use opencl_sys::{cl_event, cl_int, clRetainEvent, clReleaseEvent, clGetEventInfo, cl_event_info, clWaitForEvents};
-use super::{EventStatus, Event};
+use std::{mem::MaybeUninit, ptr::addr_of};
+use opencl_sys::{cl_event, clRetainEvent, clReleaseEvent, clGetEventInfo, cl_event_info, clWaitForEvents};
+use super::{Event};
 
 #[repr(transparent)]
-pub struct RawEvent (pub(crate) cl_event);
+pub struct RawEvent (cl_event);
 
 impl RawEvent {
     #[inline(always)]
-    pub const fn from_ptr (inner: cl_event) -> Self {
+    pub const fn from_id (inner: cl_event) -> Self {
         Self(inner)
     }
 
@@ -49,44 +49,47 @@ impl RawEvent {
 }
 
 #[cfg(feature = "cl1_1")]
+use {std::ffi::c_void, opencl_sys::cl_int, super::EventStatus};
+
+#[cfg(feature = "cl1_1")]
 impl RawEvent {
     #[inline(always)]
-    pub fn on_submit (&self, f: impl 'static + FnOnce() + Send) -> Result<()> {
+    pub fn on_submit (&self, f: impl 'static + FnOnce(RawEvent, Result<EventStatus>) + Send) -> Result<()> {
         self.on_status(EventStatus::Submitted, f)
     }
 
     #[inline(always)]
-    pub fn on_run (&self, f: impl 'static + FnOnce() + Send) -> Result<()> {
+    pub fn on_run (&self, f: impl 'static + FnOnce(RawEvent, Result<EventStatus>) + Send) -> Result<()> {
         self.on_status(EventStatus::Running, f)
     }
 
     #[inline(always)]
-    pub fn on_complete (&self, f: impl 'static + FnOnce() + Send) -> Result<()> {
+    pub fn on_complete (&self, f: impl 'static + FnOnce(RawEvent, Result<EventStatus>) + Send) -> Result<()> {
         self.on_status(EventStatus::Complete, f)
     }
 
     #[inline(always)]
-    pub fn on_status (&self, status: EventStatus, f: impl 'static + FnOnce() + Send) -> Result<()> {
-        self.on_status_boxed(status, Box::new(f) as Box<dyn FnOnce() + Send>)
+    pub fn on_status (&self, status: EventStatus, f: impl 'static + FnOnce(RawEvent, Result<EventStatus>) + Send) -> Result<()> {
+        self.on_status_boxed(status, Box::new(f) as Box<dyn FnOnce(RawEvent, Result<EventStatus>) + Send>)
     }
 
     #[inline(always)]
-    pub fn on_submit_boxed (&self, f: Box<dyn FnOnce() + Send>) -> Result<()> {
+    pub fn on_submit_boxed (&self, f: Box<dyn FnOnce(RawEvent, Result<EventStatus>) + Send>) -> Result<()> {
         self.on_status_boxed(EventStatus::Submitted, f)
     }
 
     #[inline(always)]
-    pub fn on_run_boxed (&self, f: Box<dyn FnOnce() + Send>) -> Result<()> {
+    pub fn on_run_boxed (&self, f: Box<dyn FnOnce(RawEvent, Result<EventStatus>) + Send>) -> Result<()> {
         self.on_status_boxed(EventStatus::Running, f)
     }
 
     #[inline(always)]
-    pub fn on_complete_boxed (&self, f: Box<dyn FnOnce() + Send>) -> Result<()> {
+    pub fn on_complete_boxed (&self, f: Box<dyn FnOnce(RawEvent, Result<EventStatus>) + Send>) -> Result<()> {
         self.on_status_boxed(EventStatus::Complete, f)
     }
 
     #[inline(always)]
-    pub fn on_status_boxed (&self, status: EventStatus, f: Box<dyn FnOnce() + Send>) -> Result<()> {
+    pub fn on_status_boxed (&self, status: EventStatus, f: Box<dyn FnOnce(RawEvent, Result<EventStatus>) + Send>) -> Result<()> {
         let user_data = Box::into_raw(Box::new(f));
         unsafe {
             self.on_status_raw(status, event_listener, user_data.cast())
@@ -163,8 +166,12 @@ impl Drop for RawEvent {
 unsafe impl Send for RawEvent {}
 unsafe impl Sync for RawEvent {}
 
-unsafe extern "C" fn event_listener (_event: cl_event, _event_command_status: cl_int, user_data: *mut c_void) {
-    let user_data : *mut Box<dyn FnOnce() + Send> = user_data.cast();
+#[cfg(feature = "cl1_1")]
+unsafe extern "C" fn event_listener (event: cl_event, event_command_status: cl_int, user_data: *mut c_void) {
+    let user_data : *mut Box<dyn FnOnce(RawEvent, Result<EventStatus>) + Send> = user_data.cast();
     let f = *Box::from_raw(user_data);
-    f()
+    
+    let event = RawEvent::from_id(event);
+    let status = EventStatus::try_from(event_command_status);
+    f(event, status)
 }

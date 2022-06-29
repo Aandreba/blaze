@@ -46,7 +46,7 @@ impl<C: Context> Kernel<C> {
     #[inline(always)]
     pub fn program (&self) -> Result<Program> {
         let prog : Program = self.get_info(CL_KERNEL_PROGRAM)?;
-        unsafe { tri_panic!(clRetainProgram(prog.0)); }
+        unsafe { tri_panic!(clRetainProgram(prog.id())); }
         Ok(prog)
     }
 
@@ -76,7 +76,7 @@ impl<C: Context> Kernel<C> {
 }
 
 #[cfg(feature = "cl1_2")]
-use opencl_sys::{CL_KERNEL_ARG_NAME, CL_KERNEL_ARG_TYPE_QUALIFIER, CL_KERNEL_ARG_TYPE_NAME, cl_kernel_arg_info, clGetKernelArgInfo};
+use opencl_sys::{CL_KERNEL_ARG_NAME, CL_KERNEL_ARG_ADDRESS_QUALIFIER, CL_KERNEL_ARG_ACCESS_QUALIFIER, CL_KERNEL_ARG_TYPE_QUALIFIER, CL_KERNEL_ARG_TYPE_NAME, cl_kernel_arg_info, clGetKernelArgInfo};
 
 #[cfg(feature = "cl1_2")]
 impl Kernel {

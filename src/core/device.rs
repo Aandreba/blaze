@@ -8,11 +8,11 @@ lazy_static! {
 
         for platform in Platform::all() {
             let mut cnt = 0;
-            tri_panic!(clGetDeviceIDs(platform.0, CL_DEVICE_TYPE_ALL, 0, core::ptr::null_mut(), &mut cnt));
+            tri_panic!(clGetDeviceIDs(platform.id(), CL_DEVICE_TYPE_ALL, 0, core::ptr::null_mut(), &mut cnt));
             let cnt_size = usize::try_from(cnt).unwrap();
 
             result.reserve(cnt_size);
-            tri_panic!(clGetDeviceIDs(platform.0, CL_DEVICE_TYPE_ALL, cnt, result.as_mut_ptr().add(result.len()).cast(), core::ptr::null_mut()));
+            tri_panic!(clGetDeviceIDs(platform.id(), CL_DEVICE_TYPE_ALL, cnt, result.as_mut_ptr().add(result.len()).cast(), core::ptr::null_mut()));
             result.set_len(result.len() + cnt_size);
         }
 
@@ -28,9 +28,14 @@ lazy_static! {
 /// OpenCL device
 #[derive(PartialEq, Eq, Hash)]
 #[repr(transparent)]
-pub struct Device (pub(crate) cl_device_id);
+pub struct Device (cl_device_id);
 
 impl Device {
+    #[inline(always)]
+    pub const fn id (&self) -> cl_device_id {
+        self.0
+    }
+
     /// The default compute device address space size specified as an unsigned integer value in bits. Currently supported values are 32 or 64 bits.
     #[inline(always)]
     pub fn address_bits (&self) -> Result<u32> {
@@ -360,12 +365,8 @@ impl Device {
     }
 
     #[inline(always)]
-    pub fn svm_capabilities (&self) -> Result<Option<SvmCapability>> {
-        match self.get_info_bits(CL_DEVICE_SVM_CAPABILITIES) {
-            Ok(x) => Ok(Some(x)),
-            Err(Error::InvalidValue) => Ok(None),
-            Err(e) => Err(e)
-        }
+    pub fn svm_capabilities (&self) -> Result<SvmCapability> {
+        self.get_info_bits(CL_DEVICE_SVM_CAPABILITIES)
     }
 
     /// The OpenCL device type.
@@ -411,6 +412,30 @@ impl Device {
         Version::from_str(&driver).map_err(|_| Error::InvalidValue)
     }
 
+    /// The maximum size of the device queue in bytes.\
+    /// The minimum value is 256 KB for the full profile and 64 KB for the embedded profile for devices supporting on-device queues, and must be 0 for devices that do not support on-device queues.
+    #[cfg(feature = "cl2")]
+    #[inline(always)]
+    pub fn queue_max_size (&self) -> Result<Option<NonZeroU32>> {
+        self.get_info_bits(opencl_sys::CL_DEVICE_QUEUE_ON_DEVICE_MAX_SIZE).map(NonZeroU32::new)
+    }
+
+    #[cfg(feature = "cl2")]
+    #[inline(always)]
+    pub fn queue_preferred_size (&self) -> Result<Option<NonZeroU32>> {
+        self.get_info_bits(opencl_sys::CL_DEVICE_QUEUE_ON_DEVICE_PREFERRED_SIZE).map(NonZeroU32::new)
+    }
+
+    #[cfg(feature = "cl2_1")]
+    #[inline(always)]
+    pub fn set_default_command_queue (&self, ctx: crate::context::RawContext, queue: CommandQueue) -> Result<()> {
+        unsafe {
+            tri!(opencl_sys::clSetDefaultDeviceCommandQueue(ctx.id(), self.0, queue.id()));
+        }
+
+        Ok(())
+    }
+
     #[inline(always)]
     pub fn has_f16 (&self) -> Result<bool> {
         let ext = self.extensions_string()?;
@@ -431,16 +456,6 @@ impl Device {
     #[inline(always)]
     pub fn first () -> Option<&'static Device> {
         DEVICES.first()
-    }
-
-    #[inline(always)]
-    pub fn from_platform (platform: Platform) -> impl Iterator<Item = Device> {
-        DEVICES.iter().cloned().filter_map(move |x| {
-            match x.platform() {
-                Ok(plat) if plat == platform => Some(x),
-                _ => None
-            }
-        })
     }
 
     #[inline]

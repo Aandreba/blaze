@@ -1,4 +1,4 @@
-use std::{ffi::c_void, ptr::addr_of, marker::PhantomData, hint::unreachable_unchecked};
+use std::{ffi::c_void, ptr::addr_of};
 use opencl_sys::{cl_mem, clSetKernelArg};
 use super::{Kernel, NdKernelEvent};
 use crate::{core::*, buffer::Buffer, context::Context};
@@ -91,7 +91,8 @@ pub(super) enum ArgumentType<C> {
     Svm (*const C),
     #[doc(hidden)]
     #[cfg(not(feature = "svm"))]
-    Phantom (PhantomData<C>),
+    #[allow(dead_code)]
+    Phantom (core::marker::PhantomData<C>),
     Alloc (usize)
 }
 
@@ -105,7 +106,7 @@ impl<C: Context> ArgumentType<C> {
             #[cfg(debug_assertions)]
             _ => unreachable!(),
             #[cfg(not(debug_assertions))]
-            _ => unsafe { unreachable_unchecked() }
+            _ => unsafe { core::hint::unreachable_unchecked() }
         }
     }
 
@@ -118,7 +119,7 @@ impl<C: Context> ArgumentType<C> {
             #[cfg(debug_assertions)]
             _ => unreachable!(),
             #[cfg(not(debug_assertions))]
-            _ => unsafe { unreachable_unchecked() }
+            _ => unsafe { core::hint::unreachable_unchecked() }
         }
     }
 

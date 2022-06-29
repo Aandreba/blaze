@@ -1,3 +1,4 @@
+use std::{mem::ManuallyDrop};
 use opencl_sys::{CL_COMMAND_NDRANGE_KERNEL, CL_COMMAND_TASK, CL_COMMAND_NATIVE_KERNEL, CL_COMMAND_READ_BUFFER, CL_COMMAND_WRITE_BUFFER, CL_COMMAND_COPY_BUFFER, CL_COMMAND_READ_IMAGE, CL_COMMAND_WRITE_IMAGE, CL_COMMAND_COPY_IMAGE, CL_COMMAND_COPY_IMAGE_TO_BUFFER, CL_COMMAND_COPY_BUFFER_TO_IMAGE, CL_COMMAND_MAP_BUFFER, CL_COMMAND_MAP_IMAGE, CL_COMMAND_UNMAP_MEM_OBJECT, CL_COMMAND_MARKER, CL_COMMAND_ACQUIRE_GL_OBJECTS, CL_COMMAND_RELEASE_GL_OBJECTS, CL_EVENT_COMMAND_TYPE, CL_EVENT_COMMAND_EXECUTION_STATUS, cl_command_queue, CL_EVENT_COMMAND_QUEUE, cl_event};
 use crate::core::*;
 
@@ -49,53 +50,84 @@ pub trait Event: AsRef<RawEvent> {
     }
 }
 
-enum WaitListInner {
-    Box (Box<[RawEvent]>),
-    Vector (Vec<RawEvent>)
-}
-
+#[derive(Clone)]
 #[repr(transparent)]
-pub struct WaitList (Option<WaitListInner>);
+pub struct WaitList (pub(crate) Option<Vec<RawEvent>>);
 
 impl WaitList {
     pub const EMPTY : Self = WaitList(None);
 
     #[inline(always)]
-    pub fn from_boxed (wait: Box<[RawEvent]>) -> Self {
+    pub fn new (wait: Vec<RawEvent>) -> Self {
         if wait.len() == 0 {
             return Self::EMPTY;
         }
 
-        Self(Some(WaitListInner::Box(wait)))
-    }
-
-    #[inline(always)]
-    pub fn from_vec (wait: Vec<RawEvent>) -> Self {
-        if wait.len() == 0 {
-            return Self::EMPTY;
-        }
-
-        Self(Some(WaitListInner::Vector(wait)))
+        Self(Some(wait))
     }
 
     #[inline(always)]
     pub fn from_array<const N: usize> (wait: [RawEvent;N]) -> Self {
-        Self::from_boxed(Box::new(wait) as Box<[RawEvent]>)
+        Self(Some(wait.to_vec()))
+    }
+
+    #[inline(always)]
+    pub fn from_event (wait: RawEvent) -> Self {
+        Self::from_array([wait])
+    }
+
+    #[inline(always)]
+    pub fn push (&mut self, evt: RawEvent) {
+        match self.0 {
+            Some(ref mut x) => x.push(evt),
+            None => self.0 = Some(vec![evt])
+        }
     }
 
     #[inline(always)]
     pub fn raw_parts (&self) -> (u32, *const cl_event) {
         match self.0 {
-            Some(WaitListInner::Box(ref x)) => {
-                (u32::try_from(x.len()).unwrap(), x.as_ptr().cast())
-            },
-
-            Some(WaitListInner::Vector(ref x)) => {
+            Some(ref x) => {
                 (u32::try_from(x.len()).unwrap(), x.as_ptr().cast())
             },
             
             None => (0, core::ptr::null())
         }
+    }
+
+    pub fn extend_self (&mut self, wait: WaitList) {
+        if let Some(y) = wait.0 {
+            match self.0 {
+                Some(ref mut x) => {
+                    let y = ManuallyDrop::new(y);
+                    let (y_len, y_ptr) = (y.len(), y.as_ptr());
+
+                    unsafe {
+                        x.reserve(y_len);
+                        core::ptr::copy_nonoverlapping(y_ptr, x.as_mut_ptr().add(x.len()), y_len);
+                        x.set_len(x.len() + y_len)
+                    }
+                }
+
+                None => self.0 = Some(y)
+            }
+        }
+    }
+}
+
+impl Extend<RawEvent> for WaitList {
+    fn extend<T: IntoIterator<Item = RawEvent>>(&mut self, iter: T) {
+        let iter = iter.into_iter();
+
+        match self.0 {
+            Some(ref mut x) => x.extend(iter),
+            None => *self = Self::new(iter.collect::<Vec<_>>())
+        }
+    }
+
+    #[inline(always)]
+    fn extend_one(&mut self, item: RawEvent) {
+        self.push(item)
     }
 }
 
@@ -106,17 +138,10 @@ impl<T: AsRef<RawEvent>> From<T> for WaitList {
     }
 }
 
-impl From<Box<[RawEvent]>> for WaitList {
-    #[inline(always)]
-    fn from(x: Box<[RawEvent]>) -> Self {
-        Self::from_boxed(x)
-    }
-}
-
 impl From<Vec<RawEvent>> for WaitList {
     #[inline(always)]
     fn from(x: Vec<RawEvent>) -> Self {
-        Self::from_vec(x)
+        Self::new(x)
     }
 }
 

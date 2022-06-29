@@ -17,8 +17,8 @@ pub fn global_context (input: ItemStatic, alloc: bool) -> TokenStream {
 
         #[doc(hidden)]
         #[no_mangle]
-        extern "Rust" fn __rscl__global__context_id () -> *mut ::std::ffi::c_void {
-            ::rscl::context::Context::context_id(::rscl::once_cell::sync::Lazy::force(&#ident))
+        extern "Rust" fn __rscl__global__context () -> &'static ::rscl::context::RawContext {
+            ::rscl::context::Context::context(::rscl::once_cell::sync::Lazy::force(&#ident))
         }
 
         #[doc(hidden)]
@@ -29,7 +29,7 @@ pub fn global_context (input: ItemStatic, alloc: bool) -> TokenStream {
 
         #[doc(hidden)]
         #[no_mangle]
-        extern "Rust" fn __rscl__global__next_queue () -> *mut ::std::ffi::c_void {
+        extern "Rust" fn __rscl__global__next_queue () -> &'static ::rscl::core::CommandQueue {
             ::rscl::context::Context::next_queue(::rscl::once_cell::sync::Lazy::force(&#ident))
         }
 

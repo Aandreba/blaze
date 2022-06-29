@@ -1,18 +1,21 @@
+flat_mod!(raw);
 pub mod flags;
 pub mod events;
 mod manager;
 
-use std::{marker::PhantomData, ptr::{NonNull, addr_of_mut}, mem::MaybeUninit, ffi::c_void, ops::{RangeBounds, Deref, DerefMut}};
-use opencl_sys::{cl_mem, clCreateBuffer, cl_mem_flags, clGetMemObjectInfo, cl_mem_info, CL_MEM_OFFSET, cl_context, CL_MEM_CONTEXT, CL_MEM_REFERENCE_COUNT, CL_MEM_MAP_COUNT, CL_MEM_HOST_PTR, CL_MEM_SIZE, clReleaseMemObject};
-use crate::{context::{Context, Global}, event::{RawEvent, WaitList}};
+use std::{marker::PhantomData, ptr::{NonNull, addr_of_mut}, ops::{RangeBounds, Deref, DerefMut}, ffi::c_void};
+use opencl_sys::{clCreateBuffer, cl_mem_flags};
+use parking_lot::{FairMutex};
+use crate::{context::{Context, Global, RawContext}, event::{RawEvent, WaitList}};
 use crate::core::*;
-use self::{flags::{MemFlags, FullMemFlags, HostPtr}, events::{ReadBuffer, WriteBuffer, ReadBufferInto, write_from_static, write_from_ptr}};
+use self::{flags::{MemFlags, FullMemFlags, HostPtr}, events::{ReadBuffer, WriteBuffer, ReadBufferInto, write_from_static, write_from_ptr}, manager::AccessManager};
 
 #[cfg(not(debug_assertions))]
 use std::hint::unreachable_unchecked;
 
 pub struct Buffer<T: Copy, C: Context = Global> {
-    pub(crate) inner: cl_mem, 
+    inner: RawBuffer, 
+    manager: FairMutex<AccessManager>,
     ctx: C,
     phtm: PhantomData<T>
 }
@@ -67,14 +70,15 @@ impl<T: Copy, C: Context> Buffer<T, C> {
 
         let size = len.checked_mul(core::mem::size_of::<T>()).unwrap();
         let mut err = 0;
-        let id = clCreateBuffer(ctx.context_id(), flags.into(), size, host_ptr, addr_of_mut!(err));
+        let id = clCreateBuffer(ctx.context().id(), flags.into(), size, host_ptr, addr_of_mut!(err));
 
         if err != 0 {
             return Err(Error::from(err))
         }
 
         Ok(Self {
-            inner: id,
+            inner: RawBuffer::from_id(id),
+            manager: FairMutex::new(AccessManager::None),
             ctx,
             phtm: PhantomData
         })
@@ -82,52 +86,41 @@ impl<T: Copy, C: Context> Buffer<T, C> {
 
     #[inline(always)]
     pub fn len (&self) -> Result<usize> {
-        let bytes = self.byte_size()?;
+        let bytes = self.size()?;
         Ok(bytes / core::mem::size_of::<T>())
     }
 
     #[inline(always)]
-    pub fn byte_size (&self) -> Result<usize> {
-        self.get_info(CL_MEM_SIZE)
+    pub fn size (&self) -> Result<usize> {
+        self.inner.size()
     }
 
     #[inline(always)]
     pub fn host_ptr (&self) -> Result<Option<NonNull<c_void>>> {
-        self.get_info(CL_MEM_HOST_PTR).map(NonNull::new)
+        self.inner.host_ptr()
     }
 
     /// Map count. The map count returned should be considered immediately stale. It is unsuitable for general use in applications. This feature is provided for debugging.
     #[inline(always)]
     pub fn map_count (&self) -> Result<u32> {
-        self.get_info(CL_MEM_MAP_COUNT)
+        self.inner.map_count()
     }
 
     /// Return _memobj_ reference count. The reference count returned should be considered immediately stale. It is unsuitable for general use in applications. This feature is provided for identifying memory leaks. 
     #[inline(always)]
     pub fn reference_count (&self) -> Result<u32> {
-        self.get_info(CL_MEM_REFERENCE_COUNT)
+        self.inner.reference_count()
     }
 
     /// Return context specified when memory object is created.
     #[inline(always)]
-    pub fn context_id (&self) -> Result<cl_context> {
-        let ctx : cl_context = self.get_info(CL_MEM_CONTEXT)?;
-        Ok(ctx)
+    pub fn context (&self) -> Result<RawContext> {
+        self.inner.context()
     }
 
     #[inline(always)]
     pub fn offset (&self) -> Result<usize> {
-        self.get_info(CL_MEM_OFFSET)
-    }
-
-    #[inline]
-    pub(super) fn get_info<O> (&self, ty: cl_mem_info) -> Result<O> {
-        let mut result = MaybeUninit::<O>::uninit();
-
-        unsafe {
-            tri!(clGetMemObjectInfo(self.inner, ty, core::mem::size_of::<O>(), result.as_mut_ptr().cast(), core::ptr::null_mut()));
-            Ok(result.assume_init())
-        }
+        self.inner.offset()
     }
 }
 
@@ -164,15 +157,3 @@ impl<T: Copy + Unpin, C: Context> Buffer<T, C> {
         write_from_ptr(src, self, range, wait)
     }
 }
-
-impl<T: Copy, C: Context> Drop for Buffer<T, C> {
-    #[inline(always)]
-    fn drop(&mut self) {
-        unsafe {
-            tri_panic!(clReleaseMemObject(self.inner))
-        }
-    }
-}
-
-unsafe impl<T: Copy + Send, C: Context + Send> Send for Buffer<T, C> {}
-unsafe impl<T: Copy + Sync, C: Context + Sync> Sync for Buffer<T, C> {}

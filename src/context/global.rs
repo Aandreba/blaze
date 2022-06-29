@@ -1,10 +1,10 @@
-use opencl_sys::{cl_context, cl_command_queue};
-use super::Context;
+use crate::core::CommandQueue;
+use super::{Context, RawContext};
 
 extern "Rust" {
-    fn __rscl__global__context_id () -> cl_context;
+    fn __rscl__global__context () -> &'static RawContext;
     fn __rscl__global__queue_count () -> usize;
-    fn __rscl__global__next_queue () -> cl_command_queue;
+    fn __rscl__global__next_queue () -> &'static CommandQueue;
 }
 
 /// RSCL's global context
@@ -13,8 +13,8 @@ pub struct Global;
 
 impl Context for Global {
     #[inline(always)]
-    fn context_id (&self) -> cl_context {
-        unsafe { __rscl__global__context_id() } 
+    fn context (&self) -> &RawContext {
+        unsafe { __rscl__global__context () } 
     }
 
     #[inline(always)]
@@ -23,7 +23,7 @@ impl Context for Global {
     }
 
     #[inline(always)]
-    fn next_queue (&self) -> cl_command_queue {
+    fn next_queue (&self) -> &CommandQueue {
         unsafe { __rscl__global__next_queue() } 
     }
 }

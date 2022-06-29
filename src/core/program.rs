@@ -7,7 +7,7 @@ use super::*;
 /// OpenCL program
 #[derive(PartialEq, Eq, Hash)]
 #[repr(transparent)]
-pub struct Program (pub(crate) cl_program);
+pub struct Program (cl_program);
 
 impl Program {
     #[inline(always)]
@@ -22,7 +22,7 @@ impl Program {
 
         let mut err = 0;
         let id = unsafe {
-            clCreateProgramWithSource(ctx.context_id(), 1, strings, len, &mut err)
+            clCreateProgramWithSource(ctx.context().id(), 1, strings, len, &mut err)
         };
 
         if err != 0 {
@@ -39,6 +39,11 @@ impl Program {
         }).collect::<Box<[_]>>();
 
         Ok((this, kernels))
+    }
+
+    #[inline(always)]
+    pub const fn id (&self) -> cl_kernel {
+        self.0
     }
 
     #[inline]

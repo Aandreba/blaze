@@ -38,11 +38,11 @@ impl NdKernelEvent {
             }
 
             let mut event = core::ptr::null_mut();
-            let err = clEnqueueNDRangeKernel(builder.parent.ctx.next_queue(), builder.parent.inner, work_dim, core::ptr::null(), global_work_dims, local_work_dims, num_events_in_wait_list, event_wait_list, addr_of_mut!(event));
+            let err = clEnqueueNDRangeKernel(builder.parent.ctx.next_queue().id(), builder.parent.inner, work_dim, core::ptr::null(), global_work_dims, local_work_dims, num_events_in_wait_list, event_wait_list, addr_of_mut!(event));
             
             builder.parent.lock.unlock();
             if err != 0 { return Err(Error::from(err)); }
-            let raw = RawEvent::from_ptr(event);
+            let raw = RawEvent::from_id(event);
             Ok(Self { raw })
         }
     }

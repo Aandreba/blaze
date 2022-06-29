@@ -19,9 +19,14 @@ lazy_static! {
 /// OpenCL platform
 #[repr(transparent)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
-pub struct Platform (pub(crate) cl_platform_id);
+pub struct Platform (cl_platform_id);
 
 impl Platform {
+    #[inline(always)]
+    pub const fn id (&self) -> cl_platform_id {
+        self.0
+    }
+
     /// OpenCL profile string.
     #[inline(always)]
     pub fn profile (&self) -> Result<String> {

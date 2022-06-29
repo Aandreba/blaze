@@ -8,6 +8,8 @@ edition = "2021"
 cl1_1 = ["opencl-sys/CL_VERSION_1_1"]
 cl1_2 = ["cl1_1", "opencl-sys/CL_VERSION_1_2"]
 cl2 = ["cl1_2", "opencl-sys/CL_VERSION_2_0"]
+cl2_1 = ["cl2", "opencl-sys/CL_VERSION_2_1"]
+cl3 = ["cl2_1", "opencl-sys/CL_VERSION_3_0"]
 
 # Rscl features
 svm = ["cl2"]
@@ -22,6 +24,7 @@ once_cell = "1.12.0"
 parking_lot = "0.12.1"
 bitflags = "1"
 cfg-if = "1"
+elor = "1"
 
 [dev-dependencies]
 tokio = { version = "1.19.2", features = ["full"] }
