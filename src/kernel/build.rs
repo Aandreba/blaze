@@ -1,7 +1,7 @@
-use std::{ffi::c_void, ptr::addr_of};
-use opencl_sys::{cl_mem, clSetKernelArg, clSetKernelArgSVMPointer};
+use std::{ffi::c_void, ptr::addr_of, marker::PhantomData, hint::unreachable_unchecked};
+use opencl_sys::{cl_mem, clSetKernelArg};
 use super::{Kernel, NdKernelEvent};
-use crate::{core::*, buffer::Buffer, context::Context, svm::{SvmPointer}};
+use crate::{core::*, buffer::Buffer, context::Context};
 
 #[derive(Clone)]
 pub struct Build<'a, C: Context, const N: usize> {
@@ -63,8 +63,9 @@ impl<'a, C: Context, const N: usize> Build<'a, C, N> {
         self
     }
 
+    #[cfg(feature = "svm")]
     #[inline(always)]
-    pub fn set_svm<P: SvmPointer> (&mut self, idx: usize, svm: &'a P) -> &mut Self {
+    pub fn set_svm<P: crate::svm::SvmPointer> (&mut self, idx: usize, svm: &'a P) -> &mut Self {
         self.args[idx] = Some(ArgumentType::Svm(svm.as_ptr().cast()));
         self
     }
@@ -86,7 +87,11 @@ impl<'a, C: Context, const N: usize> Build<'a, C, N> {
 pub(super) enum ArgumentType<C> {
     Value (Box<[u8]>),
     Buffer (cl_mem),
+    #[cfg(feature = "svm")]
     Svm (*const C),
+    #[doc(hidden)]
+    #[cfg(not(feature = "svm"))]
+    Phantom (PhantomData<C>),
     Alloc (usize)
 }
 
@@ -96,8 +101,11 @@ impl<C: Context> ArgumentType<C> {
         match self {
             Self::Value (x) => x.len(),
             Self::Buffer (_) => core::mem::size_of::<cl_mem>(),
-            Self::Svm(_) => unimplemented!(),
-            Self::Alloc (x) => *x 
+            Self::Alloc (x) => *x,
+            #[cfg(debug_assertions)]
+            _ => unreachable!(),
+            #[cfg(not(debug_assertions))]
+            _ => unsafe { unreachable_unchecked() }
         }
     }
 
@@ -107,15 +115,19 @@ impl<C: Context> ArgumentType<C> {
             Self::Value (x) => x.as_ptr().cast(),
             Self::Buffer (x) => x as *const _ as *const _,
             Self::Alloc (_) => core::ptr::null(),
-            Self::Svm(_) => unimplemented!(),
+            #[cfg(debug_assertions)]
+            _ => unreachable!(),
+            #[cfg(not(debug_assertions))]
+            _ => unsafe { unreachable_unchecked() }
         }
     }
 
     #[inline(always)]
     pub unsafe fn set_argument (&self, idx: u32, kernel: &Kernel<C>) -> Result<()> {
         match self {
+            #[cfg(feature = "svm")]
             Self::Svm (ptr) => {
-                tri!(clSetKernelArgSVMPointer(kernel.inner, idx, ptr.cast()))
+                tri!(opencl_sys::clSetKernelArgSVMPointer(kernel.inner, idx, ptr.cast()))
             },
 
             _ => {

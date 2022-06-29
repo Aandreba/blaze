@@ -1,6 +1,6 @@
 use crate::core::*;
 use std::{ffi::c_void, mem::MaybeUninit, ptr::addr_of};
-use opencl_sys::{cl_event, cl_int, clSetEventCallback, clRetainEvent, clReleaseEvent, clGetEventInfo, cl_event_info, clWaitForEvents};
+use opencl_sys::{cl_event, cl_int, clRetainEvent, clReleaseEvent, clGetEventInfo, cl_event_info, clWaitForEvents};
 use super::{EventStatus, Event};
 
 #[repr(transparent)]
@@ -48,6 +48,7 @@ impl RawEvent {
     }
 }
 
+#[cfg(feature = "cl1_1")]
 impl RawEvent {
     #[inline(always)]
     pub fn on_submit (&self, f: impl 'static + FnOnce() + Send) -> Result<()> {
@@ -109,7 +110,7 @@ impl RawEvent {
 
     #[inline(always)]
     pub unsafe fn on_status_raw (&self, status: EventStatus, f: unsafe extern "C" fn(event: cl_event, event_command_status: cl_int, user_data: *mut c_void), user_data: *mut c_void) -> Result<()> {
-        tri!(clSetEventCallback(self.0, status as i32, Some(f), user_data));
+        tri!(opencl_sys::clSetEventCallback(self.0, status as i32, Some(f), user_data));
         Ok(())
     }
 }

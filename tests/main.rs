@@ -23,8 +23,10 @@ fn write_after_free () -> Result<()> {
     let mut buffer = Buffer::new(&[1, 2, 3, 4, 5], MemFlags::default())?;
     let event = FlagEvent::new()?;
 
+    println!("{}", buffer.reference_count()?);
     let write = buffer.write(vec![1, 2, 3], 0, &event)?;
     println!("{}", buffer.reference_count()?);
+    
     drop(buffer);
     event.set_complete(None)?;
     write.wait()?;

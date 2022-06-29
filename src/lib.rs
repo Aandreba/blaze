@@ -26,6 +26,16 @@ macro_rules! tri {
             return Err($crate::core::Error::from(err));
         }
     }};
+
+    ($($e:expr);+) => {{
+        let mut err;
+        $(
+            err = $e;
+            if err != 0 {
+                return Err($crate::core::Error::from(err));
+            }
+        )+
+    }};
 }
 
 macro_rules! tri_panic {

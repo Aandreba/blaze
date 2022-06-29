@@ -1,7 +1,7 @@
 flat_mod!(build, event);
 
 use std::{mem::MaybeUninit};
-use opencl_sys::{cl_kernel, cl_kernel_info, CL_KERNEL_ARG_NAME, CL_KERNEL_ARG_TYPE_QUALIFIER, CL_KERNEL_ARG_TYPE_NAME, CL_KERNEL_ARG_ACCESS_QUALIFIER, CL_KERNEL_ARG_ADDRESS_QUALIFIER, clRetainProgram, CL_KERNEL_PROGRAM, cl_context, CL_KERNEL_CONTEXT, CL_KERNEL_REFERENCE_COUNT, CL_KERNEL_NUM_ARGS, CL_KERNEL_FUNCTION_NAME, CL_KERNEL_ARG_ADDRESS_GLOBAL, CL_KERNEL_ARG_ADDRESS_LOCAL, CL_KERNEL_ARG_ADDRESS_CONSTANT, CL_KERNEL_ARG_ADDRESS_PRIVATE, CL_KERNEL_ARG_ACCESS_READ_ONLY, CL_KERNEL_ARG_ACCESS_WRITE_ONLY, CL_KERNEL_ARG_ACCESS_READ_WRITE, CL_KERNEL_ARG_ACCESS_NONE, cl_kernel_arg_type_qualifier, CL_KERNEL_ARG_TYPE_CONST, CL_KERNEL_ARG_TYPE_RESTRICT, CL_KERNEL_ARG_TYPE_VOLATILE, clGetKernelInfo, cl_kernel_arg_info, clGetKernelArgInfo};
+use opencl_sys::{cl_kernel, cl_kernel_info, clRetainProgram, CL_KERNEL_PROGRAM, cl_context, CL_KERNEL_CONTEXT, CL_KERNEL_REFERENCE_COUNT, CL_KERNEL_NUM_ARGS, CL_KERNEL_FUNCTION_NAME, CL_KERNEL_ARG_ADDRESS_GLOBAL, CL_KERNEL_ARG_ADDRESS_LOCAL, CL_KERNEL_ARG_ADDRESS_CONSTANT, CL_KERNEL_ARG_ADDRESS_PRIVATE, CL_KERNEL_ARG_ACCESS_READ_ONLY, CL_KERNEL_ARG_ACCESS_WRITE_ONLY, CL_KERNEL_ARG_ACCESS_READ_WRITE, CL_KERNEL_ARG_ACCESS_NONE, cl_kernel_arg_type_qualifier, CL_KERNEL_ARG_TYPE_CONST, CL_KERNEL_ARG_TYPE_RESTRICT, CL_KERNEL_ARG_TYPE_VOLATILE, clGetKernelInfo};
 use parking_lot::{RawFairMutex};
 use crate::{core::*, context::{Context, Global}};
 
@@ -50,6 +50,36 @@ impl<C: Context> Kernel<C> {
         Ok(prog)
     }
 
+    #[inline]
+    fn get_info_string (&self, ty: cl_kernel_info) -> Result<String> {
+        unsafe {
+            let mut len = 0;
+            tri!(clGetKernelInfo(self.inner, ty, 0, core::ptr::null_mut(), &mut len));
+
+            let mut result = Vec::<u8>::with_capacity(len);
+            tri!(clGetKernelInfo(self.inner, ty, len, result.as_mut_ptr().cast(), core::ptr::null_mut()));
+
+            result.set_len(len - 1);
+            Ok(String::from_utf8(result).unwrap())
+        }
+    }
+
+    #[inline]
+    fn get_info<T> (&self, ty: cl_kernel_info) -> Result<T> {
+        let mut value = MaybeUninit::<T>::uninit();
+        
+        unsafe {
+            tri!(clGetKernelInfo(self.inner, ty, core::mem::size_of::<T>(), value.as_mut_ptr().cast(), core::ptr::null_mut()));
+            Ok(value.assume_init())
+        }
+    }
+}
+
+#[cfg(feature = "cl1_2")]
+use opencl_sys::{CL_KERNEL_ARG_NAME, CL_KERNEL_ARG_TYPE_QUALIFIER, CL_KERNEL_ARG_TYPE_NAME, cl_kernel_arg_info, clGetKernelArgInfo};
+
+#[cfg(feature = "cl1_2")]
+impl Kernel {
     /// Returns the address qualifier specified for the argument given by ```idx```.
     #[inline(always)]
     pub fn arg_address_qualifier (&self, idx: u32) -> Result<AddrQualifier> {
@@ -78,30 +108,6 @@ impl<C: Context> Kernel<C> {
     #[inline(always)]
     pub fn arg_name (&self, idx: u32) -> Result<String> {
         self.get_arg_info_string(CL_KERNEL_ARG_NAME, idx)
-    }
-
-    #[inline]
-    fn get_info_string (&self, ty: cl_kernel_info) -> Result<String> {
-        unsafe {
-            let mut len = 0;
-            tri!(clGetKernelInfo(self.inner, ty, 0, core::ptr::null_mut(), &mut len));
-
-            let mut result = Vec::<u8>::with_capacity(len);
-            tri!(clGetKernelInfo(self.inner, ty, len, result.as_mut_ptr().cast(), core::ptr::null_mut()));
-
-            result.set_len(len - 1);
-            Ok(String::from_utf8(result).unwrap())
-        }
-    }
-
-    #[inline]
-    fn get_info<T> (&self, ty: cl_kernel_info) -> Result<T> {
-        let mut value = MaybeUninit::<T>::uninit();
-        
-        unsafe {
-            tri!(clGetKernelInfo(self.inner, ty, core::mem::size_of::<T>(), value.as_mut_ptr().cast(), core::ptr::null_mut()));
-            Ok(value.assume_init())
-        }
     }
 
     #[inline]
