@@ -62,6 +62,7 @@ pub mod context;
 pub mod kernel;
 pub mod buffer;
 pub mod event;
+mod utils;
 
 #[cfg(feature = "svm")]
 pub mod svm;

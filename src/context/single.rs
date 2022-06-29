@@ -18,7 +18,7 @@ impl SimpleContext {
 
 impl Context for SimpleContext {
     #[inline(always)]
-    fn context (&self) -> &RawContext {
+    fn raw_context (&self) -> &RawContext {
         &self.ctx
     }
 

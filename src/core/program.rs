@@ -22,7 +22,7 @@ impl Program {
 
         let mut err = 0;
         let id = unsafe {
-            clCreateProgramWithSource(ctx.context().id(), 1, strings, len, &mut err)
+            clCreateProgramWithSource(ctx.raw_context().id(), 1, strings, len, &mut err)
         };
 
         if err != 0 {

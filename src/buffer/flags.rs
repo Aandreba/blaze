@@ -1,6 +1,7 @@
 use opencl_sys::{cl_mem_flags, CL_MEM_READ_WRITE, CL_MEM_WRITE_ONLY, CL_MEM_READ_ONLY, CL_MEM_USE_HOST_PTR, CL_MEM_ALLOC_HOST_PTR, CL_MEM_COPY_HOST_PTR};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[non_exhaustive]
 pub struct MemFlags {
     pub access: MemAccess,
     pub alloc: bool
@@ -53,6 +54,7 @@ impl From<cl_mem_flags> for MemFlags {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[non_exhaustive]
 pub struct FullMemFlags {
     pub access: MemAccess,
     pub host: HostPtr
@@ -187,20 +189,6 @@ impl Into<FullMemFlags> for MemAccess {
     }
 }
 
-impl From<cl_mem_flags> for MemAccess {
-    #[inline(always)]
-    fn from(x: cl_mem_flags) -> Self {
-        Self::from_bits(x)
-    }
-}
-
-impl Into<cl_mem_flags> for MemAccess {
-    #[inline(always)]
-    fn into(self) -> cl_mem_flags {
-        self.to_bits()
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum HostPtr {
     Use,
@@ -278,16 +266,9 @@ impl Default for HostPtr {
     }
 }
 
-impl From<cl_mem_flags> for HostPtr {
+impl Into<FullMemFlags> for HostPtr {
     #[inline(always)]
-    fn from(v: cl_mem_flags) -> Self {
-        Self::from_bits(v)
-    }
-}
-
-impl Into<cl_mem_flags> for HostPtr {
-    #[inline(always)]
-    fn into(self) -> cl_mem_flags {
-        self.to_bits()
+    fn into(self) -> FullMemFlags {
+        FullMemFlags::new(MemAccess::default(), self)
     }
 }

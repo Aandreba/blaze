@@ -17,7 +17,7 @@ impl AccessManager {
     pub fn extend_list (&self, wait: &mut WaitList) {
         match self {
             Self::Reading(x) => wait.extend(x.into_iter().cloned()),
-            Self::Writing(x) => wait.push(x.clone()),
+            Self::Writing(x) => wait.extend_one(x.clone()),
             Self::None => {},
         }
     }
@@ -103,7 +103,7 @@ pub fn offset_cb (buffer: &RawBuffer, size: usize, range: impl RangeBounds<usize
 }
 
 #[inline]
-pub fn range_len (buffer: &RawBuffer, len: usize, range: &impl RangeBounds<usize>) -> usize {
+pub fn range_len (len: usize, range: &impl RangeBounds<usize>) -> usize {
     let start = match range.start_bound() {
         Bound::Excluded(x) => *x + 1,
         Bound::Included(x) => *x,

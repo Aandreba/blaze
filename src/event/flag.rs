@@ -19,7 +19,7 @@ impl<C: Context> FlagEvent<C> {
         let mut err = 0;
 
         unsafe {
-            let id = clCreateUserEvent(ctx.context().id(), addr_of_mut!(err));
+            let id = clCreateUserEvent(ctx.raw_context().id(), addr_of_mut!(err));
             if err != 0 { return Err(Error::from(err)); }
             Ok(Self(RawEvent::from_id(id), ctx))
         }

@@ -1,5 +1,5 @@
 use std::{pin::Pin, ops::{RangeBounds, Deref}};
-use crate::{core::*, event::{RawEvent, Event, WaitList}, context::Context, buffer::{manager::{inner_write_from_ptr}, RawBuffer}};
+use crate::{core::*, event::{RawEvent, Event, WaitList}, buffer::{manager::{inner_write_from_ptr}, RawBuffer}};
 
 pub struct WriteBuffer<T: Copy, P: Deref<Target = [T]>> {
     event: RawEvent,
@@ -9,11 +9,11 @@ pub struct WriteBuffer<T: Copy, P: Deref<Target = [T]>> {
 
 impl<T: Copy + Unpin, P: Deref<Target = [T]>> WriteBuffer<T, P> {
     #[inline(always)]
-    pub fn new<C: Context> (src: P, dst: &mut RawBuffer, offset: usize, queue: &CommandQueue, wait: impl Into<WaitList>) -> Result<Self> {
+    pub unsafe fn new (src: P, dst: &mut RawBuffer, offset: usize, queue: &CommandQueue, wait: impl Into<WaitList>) -> Result<Self> {
         let src = Pin::new(src);
         let range = offset..(offset + src.len());
 
-        let event = unsafe { inner_write_from_ptr(dst, range, src.as_ptr(), queue, wait).map(RawEvent::from_id)? };
+        let event = inner_write_from_ptr(dst, range, src.as_ptr(), queue, wait).map(RawEvent::from_id)?;
         Ok(Self { event, src })
     }
 }
@@ -40,7 +40,7 @@ pub unsafe fn write_from_ptr<T: Copy> (src: *const T, dst: &mut RawBuffer, range
 }
 
 #[inline(always)]
-pub fn write_from_static<T: Copy> (src: &'static [T], dst: &mut RawBuffer, offset: usize, queue: &CommandQueue, wait: impl Into<WaitList>) -> Result<RawEvent> {
+pub unsafe fn write_from_static<T: Copy> (src: &'static [T], dst: &mut RawBuffer, offset: usize, queue: &CommandQueue, wait: impl Into<WaitList>) -> Result<RawEvent> {
     let range = offset..(offset + src.len());
-    unsafe { write_from_ptr(src.as_ptr(), dst, range, queue, wait) }
+    write_from_ptr(src.as_ptr(), dst, range, queue, wait)
 }

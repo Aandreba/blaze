@@ -6,7 +6,7 @@ use crate::core::CommandQueue;
 /// their various command queues. This allows RSCL contexts to manage the load between the various devices in an
 /// OpenCL context. 
 pub trait Context {
-    fn context (&self) -> &RawContext;
+    fn raw_context (&self) -> &RawContext;
     fn queue_count (&self) -> usize;
     fn next_queue (&self) -> &CommandQueue;
 }

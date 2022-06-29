@@ -1,11 +1,31 @@
-use std::{mem::MaybeUninit, ptr::NonNull, ffi::c_void};
-use opencl_sys::{cl_mem, clRetainMemObject, clReleaseMemObject, clGetMemObjectInfo, CL_MEM_OFFSET, CL_MEM_CONTEXT, CL_MEM_REFERENCE_COUNT, CL_MEM_MAP_COUNT, CL_MEM_HOST_PTR, CL_MEM_SIZE, cl_mem_info};
+use std::{mem::MaybeUninit, ptr::{NonNull, addr_of_mut}, ffi::c_void};
+use opencl_sys::{cl_mem, clRetainMemObject, clReleaseMemObject, clGetMemObjectInfo, CL_MEM_OFFSET, CL_MEM_CONTEXT, CL_MEM_REFERENCE_COUNT, CL_MEM_MAP_COUNT, CL_MEM_HOST_PTR, CL_MEM_SIZE, cl_mem_info, clCreateBuffer, CL_MEM_FLAGS};
 use crate::{core::*, context::RawContext};
+use super::{flags::FullMemFlags};
 
 #[repr(transparent)]
 pub struct RawBuffer (cl_mem);
 
 impl RawBuffer {
+    #[inline]
+    pub fn new<T> (size: usize, flags: FullMemFlags, host_ptr: Option<NonNull<T>>, ctx: &RawContext) -> Result<Self> {
+        let host_ptr = match host_ptr {
+            Some(x) => x.as_ptr().cast(),
+            None => core::ptr::null_mut()
+        };
+
+        let mut err = 0;
+        let id = unsafe {
+            clCreateBuffer(ctx.id(), flags.to_bits(), size, host_ptr, addr_of_mut!(err))
+        };
+
+        if err != 0 {
+            return Err(Error::from(err))
+        }
+
+        Ok(Self::from_id(id))
+    }
+
     #[inline(always)]
     pub const fn from_id (id: cl_mem) -> Self {
         Self(id)
@@ -14,6 +34,12 @@ impl RawBuffer {
     #[inline(always)]
     pub const fn id (&self) -> cl_mem {
         self.0
+    }
+
+    #[inline(always)]
+    pub fn flags (&self) -> Result<FullMemFlags> {
+        let flags = self.get_info(CL_MEM_FLAGS)?;
+        Ok(FullMemFlags::from_bits(flags))
     }
 
     #[inline(always)]
@@ -67,7 +93,7 @@ impl Clone for RawBuffer {
             tri_panic!(clRetainMemObject(self.0))
         }
 
-        Self(self.0.clone())
+        Self(self.0)
     }
 }
 
@@ -79,3 +105,6 @@ impl Drop for RawBuffer {
         }
     }
 }
+
+unsafe impl Send for RawBuffer {}
+unsafe impl Sync for RawBuffer {}
