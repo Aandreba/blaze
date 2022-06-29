@@ -148,25 +148,17 @@ impl<T: Copy + Unpin, C: Context> Buffer<T, C> {
     }
 
     #[inline(always)]
-    pub fn read_into_slice<'a> (&self, dst: &'a mut [T], offset: usize, wait: impl Into<WaitList>) -> Result<ReadBufferInto<T, &'a mut [T]>> {
-        self.read_into(dst, offset, wait)
-    }
-
-    #[inline(always)]
     pub fn write<P: Deref<Target = [T]>> (&mut self, src: P, offset: usize, wait: impl Into<WaitList>) -> Result<WriteBuffer<T, P>> {
         WriteBuffer::new(src, self, offset, wait)
     }
 
+    // TODO check safety
     #[inline(always)]
-    pub fn write_slice<'a> (&mut self, src: &'a [T], offset: usize, wait: impl Into<WaitList>) -> Result<WriteBuffer<T, &'a [T]>> {
-        self.write(src, offset, wait)
-    }
-
-    #[inline(always)]
-    pub fn write_static_slice (&mut self, src: &'static [T], offset: usize, wait: impl Into<WaitList>) -> Result<RawEvent> {
+    pub fn write_static (&mut self, src: &'static [T], offset: usize, wait: impl Into<WaitList>) -> Result<RawEvent> {
         write_from_static(src, self, offset, wait)
     }
 
+    // TODO check safety
     #[inline(always)]
     pub unsafe fn write_ptr (&mut self, src: *const T, range: impl RangeBounds<usize>, wait: impl Into<WaitList>) -> Result<RawEvent> {
         write_from_ptr(src, self, range, wait)

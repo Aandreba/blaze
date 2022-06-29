@@ -1,7 +1,9 @@
 use std::{borrow::Borrow, ptr::{addr_of_mut, addr_of}};
-use opencl_sys::{cl_context, cl_command_queue, clCreateContext, clCreateCommandQueue, clReleaseContext, clRetainContext, clRetainCommandQueue, clReleaseCommandQueue};
+use opencl_sys::{cl_context, cl_command_queue, clCreateContext, clReleaseContext, clRetainContext, clRetainCommandQueue, clReleaseCommandQueue};
 use crate::{core::*};
 use super::Context;
+
+
 
 /// A simple RSCL context with a single command queue
 pub struct SimpleContext {
@@ -11,26 +13,27 @@ pub struct SimpleContext {
 
 impl SimpleContext {
     pub fn new (device: impl Borrow<Device>) -> Result<Self> {
-        let device = device.borrow();
+        let device : &Device = device.borrow();
 
         let mut err = 0;
         let errcode_addr = addr_of_mut!(err);
 
-        let ctx; let queue;
         unsafe {
-            ctx = clCreateContext(core::ptr::null_mut(), 1, addr_of!(device.0), None, core::ptr::null_mut(), errcode_addr);
+            let ctx = clCreateContext(core::ptr::null_mut(), 1, addr_of!(device.0), None, core::ptr::null_mut(), errcode_addr);
             if err != 0 {
                 return Err(Error::from(err));
             }
 
-            queue = clCreateCommandQueue(ctx, device.0, 0, errcode_addr);
+            #[allow(deprecated)]
+            let queue = opencl_sys::clCreateCommandQueue(ctx, device.0, 0, errcode_addr);
+            
             if err != 0 {
                 clReleaseContext(ctx);
                 return Err(Error::from(err));
             }
-        }
 
-        Ok(Self { ctx, queue })
+            Ok(Self { ctx, queue })
+        }
     }
 }
 
@@ -48,6 +51,13 @@ impl Context for SimpleContext {
     #[inline(always)]
     fn next_queue (&self) -> cl_command_queue {
         self.queue
+    }
+}
+
+impl Default for SimpleContext {
+    #[inline(always)]
+    fn default() -> Self {
+        Self::new(Device::first().unwrap()).unwrap()
     }
 }
 

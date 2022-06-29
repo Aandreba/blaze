@@ -26,8 +26,8 @@ impl<C: Context> FlagEvent<C> {
     }
 
     #[inline(always)]
-    pub fn set_status (&self, status: Option<Error>) -> Result<()> {
-        let status = status.map_or(CL_COMPLETE, Into::into);
+    pub fn set_complete (&self, error: Option<Error>) -> Result<()> {
+        let status = error.map_or(CL_COMPLETE, Into::into);
 
         unsafe {
             tri!(clSetUserEventStatus(self.0.0, status));

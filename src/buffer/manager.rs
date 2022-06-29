@@ -1,6 +1,7 @@
 use std::ops::{RangeBounds, Bound};
 use std::ptr::addr_of_mut;
-use opencl_sys::{cl_event, clEnqueueReadBuffer, CL_FALSE, clEnqueueWriteBuffer};
+use opencl_sys::{cl_event, clEnqueueReadBuffer, CL_FALSE, clEnqueueWriteBuffer, clRetainMemObject, clSetEventCallback, CL_COMPLETE};
+use crate::buffer::events::drop_buffer;
 use crate::context::Context;
 use crate::{core::*};
 use crate::event::{WaitList};
@@ -12,7 +13,11 @@ pub unsafe fn inner_read_to_ptr<T: Copy, C: Context> (src: &Buffer<T, C>, src_ra
     let (num_events_in_wait_list, event_wait_list) = wait.raw_parts();
 
     let mut event = core::ptr::null_mut();
+    
+    tri!(clRetainMemObject(src.inner));
     tri!(clEnqueueReadBuffer(src.ctx.next_queue(), src.inner, CL_FALSE, offset, cb, dst.cast(), num_events_in_wait_list, event_wait_list, &mut event));
+    tri!(clSetEventCallback(event, CL_COMPLETE, Some(drop_buffer), src.inner));
+
     return Ok(event)
 }
 
@@ -21,7 +26,11 @@ pub unsafe fn inner_write_from_ptr<T: Copy, C: Context> (dst: &Buffer<T, C>, dst
     let (num_events_in_wait_list, event_wait_list) = wait.into().raw_parts();
 
     let mut event = core::ptr::null_mut();
+    
+    tri!(clRetainMemObject(dst.inner));
     tri!(clEnqueueWriteBuffer(dst.ctx.next_queue(), dst.inner, CL_FALSE, offset, cb, src.cast(), num_events_in_wait_list, event_wait_list, addr_of_mut!(event)));
+    tri!(clSetEventCallback(event, CL_COMPLETE, Some(drop_buffer), dst.inner));
+
     return Ok(event)
 }
 
