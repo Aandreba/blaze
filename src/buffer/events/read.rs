@@ -8,9 +8,8 @@ pub struct ReadBuffer<T: Copy> {
 
 impl<T: Copy + Unpin> ReadBuffer<T> {
     pub fn new<C: Context> (src: &RawBuffer, range: impl RangeBounds<usize>, queue: &CommandQueue, wait: impl Into<WaitList>) -> Result<Self> {
-        let len = range_len(src, &range)?;
+        let len = range_len(src, core::mem::size_of::<T>(), &range);
         let mut result = Pin::new(Vec::with_capacity(len));
-        let mut manager = src.manager.lock();
 
         unsafe {
             let event = inner_read_to_ptr(src, range, result.as_mut_ptr(), queue, wait).map(RawEvent::from_id)?;
