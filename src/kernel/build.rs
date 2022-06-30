@@ -1,15 +1,17 @@
 use std::{ffi::c_void, ptr::addr_of, sync::Arc};
 use opencl_sys::{clSetKernelArg};
-use parking_lot::{FairMutex, ReentrantMutexGuard};
+use parking_lot::{FairMutex};
 use super::{Kernel, NdKernelEvent};
-use crate::{core::*, buffer::{RawBuffer, flags::MemAccess, Buffer, manager::AccessManager}, context::Context, event::RawEvent, utils::{OwnedMutexGuard, OwnedMutex}};
+use crate::{core::*, buffer::{RawBuffer, flags::MemAccess, Buffer, manager::AccessManager}, context::Context, event::{WaitList}, utils::{OwnedMutexGuard, OwnedMutex}};
 
 #[derive(Clone)]
+#[non_exhaustive]
 pub struct Build<'a, C: Context, const N: usize> {
     pub(super) parent: &'a Kernel<C>,
-    pub(super) global_work_dims: [usize; N],
-    pub(super) local_work_dims: Option<[usize; N]>,
-    pub(super) args: Box<[Option<ArgumentType<C>>]>
+    pub global_work_dims: [usize; N],
+    pub local_work_dims: Option<[usize; N]>,
+    pub(super) args: Box<[Option<ArgumentType<C>>]>,
+    pub wait: WaitList,
 }
 
 impl<'a, C: Context, const N: usize> Build<'a, C, N> {
@@ -26,7 +28,8 @@ impl<'a, C: Context, const N: usize> Build<'a, C, N> {
             parent,
             global_work_dims,
             local_work_dims: None,
-            args: unsafe { args.assume_init() }
+            args: unsafe { args.assume_init() },
+            wait: WaitList::EMPTY,
         })
     }
 
@@ -87,6 +90,12 @@ impl<'a, C: Context, const N: usize> Build<'a, C, N> {
     }
 
     #[inline(always)]
+    pub fn wait (&mut self, wait: WaitList) -> &mut Self {
+        self.wait = wait;
+        self
+    }
+
+    #[inline(always)]
     pub fn build (&self) -> Result<NdKernelEvent> {
         NdKernelEvent::new(self)
     }
@@ -135,16 +144,6 @@ impl<C: Context> ArgumentType<C> {
     }
 
     #[inline(always)]
-    pub fn apply_effects (v: &[Option<ArgumentType<C>>], evt: RawEvent) {
-        let managers = v.into_iter().filter_map(|x| match x {
-            Some(ArgumentType::Buffer(_, x @ ArgumentBuffer::Regular(_, _))) => Some(x),
-            _ => None
-        });
-
-        let managers = ArgumentBuffer::managers(managers);
-    }
-
-    #[inline(always)]
     pub unsafe fn set_argument (&self, idx: u32, kernel: &Kernel<C>) -> Result<()> {
         match self {
             #[cfg(feature = "svm")]
@@ -175,7 +174,15 @@ impl ArgumentBuffer {
     }
 
     #[inline(always)]
-    pub fn managers (v: impl IntoIterator<Item = Arc<FairMutex<AccessManager>>>) -> Vec<OwnedMutexGuard<parking_lot::RawFairMutex, AccessManager>> {
-        v.into_iter().map(|x| x.lock_owned()).collect::<Vec<_>>()
+    pub fn managers<C: Context> (v: &[Option<ArgumentType<C>>], wait: &mut WaitList) -> Vec<(MemAccess, OwnedMutexGuard<parking_lot::RawFairMutex, AccessManager>)> {
+        v.into_iter().filter_map(|x| match x {
+            Some(ArgumentType::Buffer(_, ArgumentBuffer::Regular(access, manager))) if access.read | access.write => {
+                let manager = manager.clone().lock_owned();
+                manager.extend_list(wait);
+                return Some((*access, manager))
+            },
+
+            _ => None
+        }).collect::<Vec<_>>()
     }
 }

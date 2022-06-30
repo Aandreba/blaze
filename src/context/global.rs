@@ -2,7 +2,7 @@ use crate::core::CommandQueue;
 use super::{Context, RawContext};
 
 extern "Rust" {
-    fn __rscl__global__context () -> &'static RawContext;
+    fn __rscl__global__raw_context () -> &'static RawContext;
     fn __rscl__global__queue_count () -> usize;
     fn __rscl__global__next_queue () -> &'static CommandQueue;
 }
@@ -14,7 +14,7 @@ pub struct Global;
 impl Context for Global {
     #[inline(always)]
     fn raw_context (&self) -> &RawContext {
-        unsafe { __rscl__global__context () } 
+        unsafe { __rscl__global__raw_context () } 
     }
 
     #[inline(always)]

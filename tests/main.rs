@@ -6,7 +6,7 @@ static CONTEXT : SimpleContext = SimpleContext::default();
 
 #[test]
 fn read_after_free () -> Result<()> {
-    let buffer = Buffer::new(&[1, 2, 3, 4, 5], MemFlags::default())?;
+    let buffer = Buffer::new(&[1, 2, 3, 4, 5], false)?;
     let event = FlagEvent::new()?;
 
     let read = buffer.read_all(&event)?;
@@ -20,7 +20,7 @@ fn read_after_free () -> Result<()> {
 
 #[test]
 fn write_after_free () -> Result<()> {
-    let mut buffer = Buffer::new(&[1, 2, 3, 4, 5], MemFlags::default())?;
+    let mut buffer = Buffer::new(&[1, 2, 3, 4, 5], false)?;
     let event = FlagEvent::new()?;
 
     println!("{}", buffer.reference_count()?);

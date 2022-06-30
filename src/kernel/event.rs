@@ -3,7 +3,7 @@ use opencl_sys::{clEnqueueNDRangeKernel};
 use parking_lot::lock_api::RawMutex;
 
 use crate::{event::{RawEvent, Event}, context::Context};
-use super::Build;
+use super::{Build, ArgumentBuffer};
 use crate::core::*;
 
 pub struct NdKernelEvent {
@@ -20,6 +20,8 @@ impl NdKernelEvent {
             None => core::ptr::null()
         };
 
+        let mut wait = builder.wait.clone();
+        let managers = ArgumentBuffer::managers(&builder.args, &mut wait);
         builder.parent.lock.lock();
 
         unsafe { 
@@ -43,6 +45,16 @@ impl NdKernelEvent {
             builder.parent.lock.unlock();
             if err != 0 { return Err(Error::from(err)); }
             let raw = RawEvent::from_id(event);
+
+            for (access, mut manager) in managers {
+                if access.write {
+                    manager.write(raw.clone());
+                    continue;
+                }
+
+                manager.read(raw.clone());
+            }
+
             Ok(Self { raw })
         }
     }
