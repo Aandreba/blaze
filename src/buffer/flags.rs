@@ -125,11 +125,12 @@ pub struct MemAccess {
 }
 
 impl MemAccess {
+    pub const NONE : Self = Self::new(false, false);
     /// This flag specifies that the memory object will be read and written by a kernel. This is the default.
     pub const READ_WRITE : Self = Self::new(true, true);
-    /// This flag specifies that the memory object is a read-only memory object when used inside a kernel. Writing to a buffer or image object created with CL_MEM_READ_ONLY inside a kernel is undefined.
+    /// This flag specifies that the memory object is a read-only memory object when used inside a kernel. Writing to a buffer or image object created with [read only](MemAccess::READ_ONLY) inside a kernel is undefined.
     pub const READ_ONLY : Self = Self::new(true, false);
-    /// This flags specifies that the memory object will be written but not read by a kernel. Reading from a buffer or image object created with CL_MEM_WRITE_ONLY inside a kernel is undefined.
+    /// This flags specifies that the memory object will be written but not read by a kernel. Reading from a buffer or image object created with [write only](MemAccess::WRITE_ONLY) inside a kernel is undefined.
     pub const WRITE_ONLY : Self = Self::new(false, true);
 
     #[inline(always)]

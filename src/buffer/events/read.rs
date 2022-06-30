@@ -1,22 +1,22 @@
 use std::{pin::Pin, ops::{RangeBounds, DerefMut}};
-use crate::{core::*, event::{RawEvent, Event, WaitList}, buffer::{manager::{range_len, inner_read_to_ptr}, RawBuffer}};
+use crate::{core::*, event::{RawEvent, Event, WaitList}, buffer::{RawBuffer, range_len}};
 
-pub struct ReadBuffer<T: Copy> {
+pub struct ReadBufferEvent<T: Copy> {
     event: RawEvent,
     result: Pin<Vec<T>>
 }
 
-impl<T: Copy + Unpin> ReadBuffer<T> {
+impl<T: Copy + Unpin> ReadBufferEvent<T> {
     pub unsafe fn new (src: &RawBuffer, range: impl RangeBounds<usize>, queue: &CommandQueue, wait: impl Into<WaitList>) -> Result<Self> {
         let len = range_len(core::mem::size_of::<T>(), &range);
         let mut result = Pin::new(Vec::with_capacity(len));
 
-        let event = inner_read_to_ptr(src, range, result.as_mut_ptr(), queue, wait).map(RawEvent::from_id)?;
+        let event = src.read_to_ptr(range, result.as_mut_ptr(), queue, wait)?;
         Ok(Self { event, result })
     }
 }
 
-impl<T: Copy + Unpin> Event for ReadBuffer<T> {
+impl<T: Copy + Unpin> Event for ReadBufferEvent<T> {
     type Output = Vec<T>;
 
     #[inline(always)]
@@ -27,7 +27,7 @@ impl<T: Copy + Unpin> Event for ReadBuffer<T> {
     }
 }
 
-impl<T: Copy> AsRef<RawEvent> for ReadBuffer<T> {
+impl<T: Copy> AsRef<RawEvent> for ReadBufferEvent<T> {
     #[inline(always)]
     fn as_ref(&self) -> &RawEvent {
         &self.event
@@ -45,7 +45,7 @@ impl<T: Copy + Unpin, P: DerefMut<Target = [T]>> ReadBufferInto<T, P> {
         let mut dst = Pin::new(dst);
         let range = offset..(offset + dst.len());
 
-        let event = inner_read_to_ptr(src, range, dst.as_mut_ptr(), queue, wait).map(RawEvent::from_id)?;
+        let event = src.read_to_ptr(range, dst.as_mut_ptr(), queue, wait)?;
         Ok(Self { event, dst })
     }
 }

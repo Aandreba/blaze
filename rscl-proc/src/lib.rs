@@ -1,5 +1,6 @@
 #![feature(is_some_with)]
 
+use cl::kernel::Kernel;
 use error::Error;
 use proc_macro2::Ident;
 use quote::ToTokens;
@@ -8,6 +9,7 @@ use syn::{parse_macro_input, ItemStatic};
 mod context;
 mod error;
 mod utils;
+mod cl;
 
 #[proc_macro_attribute]
 pub fn global_context (attrs: proc_macro::TokenStream, items: proc_macro::TokenStream) -> proc_macro::TokenStream {
@@ -22,4 +24,10 @@ pub fn global_context (attrs: proc_macro::TokenStream, items: proc_macro::TokenS
 pub fn error (items: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let input = parse_macro_input!(items as Error);
     input.to_token_stream().into()
+}
+
+#[proc_macro]
+pub fn rscl (items: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    let input = parse_macro_input!(items as Kernel);
+    todo!()
 }

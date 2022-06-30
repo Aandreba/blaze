@@ -1,13 +1,13 @@
 use std::{ffi::c_void, ptr::addr_of, sync::Arc};
 use opencl_sys::{clSetKernelArg};
 use parking_lot::{FairMutex};
-use super::{Kernel, NdKernelEvent};
-use crate::{core::*, buffer::{RawBuffer, flags::MemAccess, Buffer, manager::AccessManager}, context::Context, event::{WaitList}, utils::{OwnedMutexGuard, OwnedMutex}};
+use super::{RawKernel, NdKernelEvent};
+use crate::{core::*, buffer::{RawBuffer, flags::MemAccess, manager::AccessManager, MemObject}, context::Context, event::{WaitList}, utils::{OwnedMutexGuard, OwnedMutex}};
 
 #[derive(Clone)]
 #[non_exhaustive]
 pub struct Build<'a, C: Context, const N: usize> {
-    pub(super) parent: &'a Kernel<C>,
+    pub(super) parent: &'a RawKernel<C>,
     pub global_work_dims: [usize; N],
     pub local_work_dims: Option<[usize; N]>,
     pub(super) args: Box<[Option<ArgumentType<C>>]>,
@@ -16,7 +16,7 @@ pub struct Build<'a, C: Context, const N: usize> {
 
 impl<'a, C: Context, const N: usize> Build<'a, C, N> {
     #[inline(always)]
-    pub fn new (parent: &'a Kernel<C>, global_work_dims: [usize; N]) -> Result<Self> {
+    pub fn new (parent: &'a RawKernel<C>, global_work_dims: [usize; N]) -> Result<Self> {
         let arg_count = parent.num_args()? as usize;
         let mut args = Box::new_uninit_slice(arg_count);
         
@@ -67,11 +67,9 @@ impl<'a, C: Context, const N: usize> Build<'a, C, N> {
     }
 
     #[inline(always)]
-    pub fn set_buffer<T: Copy> (&mut self, idx: usize, buffer: &Buffer<T, C>, access: MemAccess) -> &mut Self {
-        let raw = unsafe { buffer.raw().clone() };
-        let access = ArgumentBuffer::from_regular(buffer, access);
-
-        self.args[idx] = Some(ArgumentType::Buffer(raw, access));
+    pub fn set_buffer<T: Copy + Unpin> (&mut self, idx: usize, buffer: &impl MemObject<T, C>) -> &mut Self {
+        let access = ArgumentBuffer::from_regular(buffer);
+        self.args[idx] = Some(ArgumentType::Buffer(buffer.as_ref().clone(), access));
         self
     }
 
@@ -96,7 +94,7 @@ impl<'a, C: Context, const N: usize> Build<'a, C, N> {
     }
 
     #[inline(always)]
-    pub fn build (&self) -> Result<NdKernelEvent> {
+    pub unsafe fn build (&self) -> Result<NdKernelEvent> {
         NdKernelEvent::new(self)
     }
 }
@@ -144,7 +142,7 @@ impl<C: Context> ArgumentType<C> {
     }
 
     #[inline(always)]
-    pub unsafe fn set_argument (&self, idx: u32, kernel: &Kernel<C>) -> Result<()> {
+    pub unsafe fn set_argument (&self, idx: u32, kernel: &RawKernel<C>) -> Result<()> {
         match self {
             #[cfg(feature = "svm")]
             Self::Svm (ptr) => {
@@ -169,8 +167,8 @@ pub(super) enum ArgumentBuffer {
 
 impl ArgumentBuffer {
     #[inline(always)]
-    pub fn from_regular<T: Copy, C: Context> (regular: &Buffer<T, C>, access: MemAccess) -> Self {
-        Self::Regular(access, regular.access_mananer())
+    pub fn from_regular<T: Copy + Unpin, C: Context, M: MemObject<T, C>> (regular: &M) -> Self {
+        Self::Regular(M::ACCESS, regular.access_mananer())
     }
 
     #[inline(always)]

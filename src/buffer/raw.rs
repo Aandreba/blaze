@@ -1,6 +1,6 @@
-use std::{mem::MaybeUninit, ptr::{NonNull, addr_of_mut}, ffi::c_void};
-use opencl_sys::{cl_mem, clRetainMemObject, clReleaseMemObject, clGetMemObjectInfo, CL_MEM_OFFSET, CL_MEM_CONTEXT, CL_MEM_REFERENCE_COUNT, CL_MEM_MAP_COUNT, CL_MEM_HOST_PTR, CL_MEM_SIZE, cl_mem_info, clCreateBuffer, CL_MEM_FLAGS};
-use crate::{core::*, context::RawContext};
+use std::{mem::MaybeUninit, ptr::{NonNull, addr_of_mut}, ffi::c_void, ops::{RangeBounds, Bound}};
+use opencl_sys::{cl_mem, clRetainMemObject, clReleaseMemObject, clGetMemObjectInfo, CL_MEM_OFFSET, CL_MEM_CONTEXT, CL_MEM_REFERENCE_COUNT, CL_MEM_MAP_COUNT, CL_MEM_HOST_PTR, CL_MEM_SIZE, cl_mem_info, clCreateBuffer, CL_MEM_FLAGS, CL_FALSE, clEnqueueReadBuffer, clEnqueueWriteBuffer};
+use crate::{core::*, context::RawContext, event::{WaitList, RawEvent}};
 use super::{flags::FullMemFlags};
 
 #[repr(transparent)]
@@ -86,6 +86,30 @@ impl RawBuffer {
     }
 }
 
+impl RawBuffer {
+    pub unsafe fn read_to_ptr<T: Copy> (&self, src_range: impl RangeBounds<usize>, dst: *mut T, queue: &CommandQueue, wait: impl Into<WaitList>) -> Result<RawEvent> {
+        let (offset, cb) = offset_cb(self, core::mem::size_of::<T>(), src_range)?;
+        let wait : WaitList = wait.into();
+        let (num_events_in_wait_list, event_wait_list) = wait.raw_parts();
+    
+        let mut event = core::ptr::null_mut();
+        tri!(clEnqueueReadBuffer(queue.id(), self.id(), CL_FALSE, offset, cb, dst.cast(), num_events_in_wait_list, event_wait_list, &mut event));
+    
+        return Ok(RawEvent::from_id(event))
+    }
+    
+    pub unsafe fn write_from_ptr<T: Copy> (&mut self, dst_range: impl RangeBounds<usize>, src: *const T, queue: &CommandQueue, wait: impl Into<WaitList>) -> Result<RawEvent> {
+        let (offset, cb) = offset_cb(self, core::mem::size_of::<T>(), dst_range)?;
+        let wait : WaitList = wait.into();
+        let (num_events_in_wait_list, event_wait_list) = wait.raw_parts();
+    
+        let mut event = core::ptr::null_mut();
+        tri!(clEnqueueWriteBuffer(queue.id(), self.id(), CL_FALSE, offset, cb, src.cast(), num_events_in_wait_list, event_wait_list, addr_of_mut!(event)));
+    
+        return Ok(RawEvent::from_id(event))
+    }
+}
+
 impl Clone for RawBuffer {
     #[inline(always)]
     fn clone(&self) -> Self {
@@ -108,3 +132,38 @@ impl Drop for RawBuffer {
 
 unsafe impl Send for RawBuffer {}
 unsafe impl Sync for RawBuffer {}
+
+#[inline]
+pub(crate) fn offset_cb (buffer: &RawBuffer, size: usize, range: impl RangeBounds<usize>) -> Result<(usize, usize)> {
+    let start = match range.start_bound() {
+        Bound::Excluded(x) => x.checked_add(1).and_then(|x| x.checked_mul(size)).unwrap(),
+        Bound::Included(x) => x.checked_mul(size).unwrap(),
+        Bound::Unbounded => 0
+    };
+
+    let end = match range.end_bound() {
+        Bound::Excluded(x) => x.checked_mul(size).unwrap(),
+        Bound::Included(x) => x.checked_add(1).and_then(|x| x.checked_mul(size)).unwrap(),
+        Bound::Unbounded => buffer.size()?
+    };
+
+    let len = end - start;
+    Ok((start, len))
+}
+
+#[inline]
+pub fn range_len (len: usize, range: &impl RangeBounds<usize>) -> usize {
+    let start = match range.start_bound() {
+        Bound::Excluded(x) => *x + 1,
+        Bound::Included(x) => *x,
+        Bound::Unbounded => 0
+    };
+
+    let end = match range.end_bound() {
+        Bound::Excluded(x) => *x,
+        Bound::Included(x) => x + 1,
+        Bound::Unbounded => len
+    };
+
+    end - start
+}
