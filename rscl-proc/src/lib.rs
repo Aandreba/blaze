@@ -1,5 +1,14 @@
 #![feature(is_some_with)]
 
+macro_rules! flat_mod {
+    ($($i:ident),+) => {
+        $(
+            mod $i;
+            pub use $i::*;
+        )+
+    }
+}
+
 use cl::kernel::Kernel;
 use error::Error;
 use proc_macro2::Ident;
@@ -28,6 +37,6 @@ pub fn error (items: proc_macro::TokenStream) -> proc_macro::TokenStream {
 
 #[proc_macro]
 pub fn rscl (items: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    let input = parse_macro_input!(items as Kernel);
-    todo!()
+    let items = parse_macro_input!(items as Kernel);
+    cl::rscl(items).into()
 }

@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use derive_syn_parse::Parse;
 use proc_macro2::Ident;
 use syn::{parse::Parse, custom_keyword, Token, Visibility, VisPublic, VisCrate};
@@ -11,8 +13,6 @@ pub struct FnArg {
     pub qualifier: AddrQualifier,
     pub ident: Ident,
     pub colon_token: Token![:],
-    pub reference: Option<Token![&]>,
-    pub mutability: Option<Token![mut]>,
     pub ty: Type
 }
 
@@ -37,5 +37,17 @@ impl Parse for AddrQualifier {
         };
 
         Ok(v)
+    }
+}
+
+impl Display for AddrQualifier {
+    #[inline]
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Global(_) => f.write_str("__global"),
+            Self::Local(_) => f.write_str("__local"),
+            Self::Const(_) => f.write_str("__constant"),
+            Self::Private => Ok(())
+        }
     }
 }
