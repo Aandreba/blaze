@@ -1,77 +1,162 @@
-mod parse;
-pub use parse::*;
+use std::{str::{SplitWhitespace, Chars, pattern::Pattern}, iter::Peekable, ops::{Range}, fmt::Debug};
+use derive_syn_parse::Parse;
+use proc_macro2::{Ident, TokenStream};
+use syn::{Token, LitStr};
 
-pub mod kernel;
-pub mod compile;
+flat_mod!(ty, kernel, access, arg);
 
-use proc_macro2::TokenStream;
-use quote::{quote, ToTokens};
-use syn::{Generics, Lifetime, parse_str, GenericParam, LifetimeDef};
-use self::{kernel::Kernel, signature::Signature, arg::FnArg, r#type::Type, compile::compile, expr::Block};
-
-pub fn rscl (items: Kernel) -> TokenStream {
-    let Kernel { sig, block } = items;
-    create_structure(&sig, block)
+pub fn rscl (rscl: Rscl) -> TokenStream {
+    let value = rscl.program.value();
+    let mut parser = Reader::new(&value);
+    let kernel : Kernel = parser.parse_next();
+    
+    panic!("{kernel:?}");
+    todo!()
 }
 
-fn create_structure (sig: &Signature, block: Block) -> TokenStream {
-    let Signature { vis, kernel_token, fn_token, ident, paren_token, inputs } = sig;
-    let mut lt = LifetimeCollector::new();
-    let define = inputs.iter().map(|x| define_field(x, &mut lt)).collect::<Vec<_>>();
-    let comp = compile(block);
+#[derive(Parse)]
+pub struct Rscl {
+    pub ident: Ident,
+    pub at_token: Token![@],
+    pub program: LitStr
+}
 
-    quote! {
-        #vis struct #ident #lt {
-            #(#define),*
+pub trait ClParse<'a>: Sized {
+    fn parse (buff: &mut Reader<'a>) -> Self;
+}
+
+pub struct Reader<'a> {
+    str: &'a str,
+    idx: usize
+}
+
+impl<'a> Reader<'a> {
+    #[inline]
+    pub fn new (str: &'a str) -> Self {
+        Self { str, idx: 0 }
+    }
+
+    #[inline(always)]
+    pub fn parse_next<T> (&mut self) -> T where T: ClParse<'a> {
+        <T as ClParse<'a>>::parse(self)
+    } 
+
+    #[inline(always)]
+    pub fn next_until (&mut self, predicate: impl Clone + Pattern<'a>, contain: Containment) -> &'a str {
+        let chars = self.str[self.idx..].char_indices();
+        
+        for (mut idx, _) in chars {
+            idx += self.idx;
+
+            if predicate.clone().is_contained_in(&self.str[self.idx..=idx]) {
+                let result;
+
+                match contain {
+                    Containment::Exclude => {
+                        result = &self.str[self.idx..idx];
+                        self.idx = idx
+                    },
+
+                    Containment::Include => {
+                        result = &self.str[self.idx..=idx];
+                        self.idx = idx + 1
+                    },
+
+                    Containment::Skip => {
+                        result = &self.str[self.idx..idx];
+                        self.idx = idx + 1
+                    },
+                }
+
+                return result.trim()
+            }
         }
 
-        impl #lt #ident #lt {
-            const SOURCE : &'static str = #comp;
+        todo!()
+    }
+
+    #[inline(always)]
+    pub fn peek_until (&mut self, predicate: impl Clone + Pattern<'a>, exclude: bool) -> &'a str {
+        let chars = self.str[self.idx..].char_indices();
+        
+        for (mut idx, _) in chars {
+            idx += self.idx;
+
+            if predicate.clone().is_contained_in(&self.str[self.idx..=idx]) {
+                let v = match exclude {
+                    true => &self.str[self.idx..idx],
+                    _ => &self.str[self.idx..=idx],
+                };
+
+                return v.trim();
+            }
         }
+
+        todo!()
     }
-}
 
-fn define_field (input: &FnArg, lt: &mut LifetimeCollector) -> TokenStream {
-    let FnArg { ident, colon_token, ty, .. } = input;
-    let ty = match ty {
-        Type::Buffer { mutability, .. } => {
-            let life = lt.push();
-            quote! { &#life #mutability ::rscl::buffer::RawBuffer }
-        },
-
-        ty => ty.to_token_stream()
-    };
-
-    quote! {
-        #ident #colon_token #ty
-    }
-}
-
-struct LifetimeCollector {
-    inner: Generics,
-    current: u8
-}
-
-impl LifetimeCollector {
     #[inline(always)]
-    pub fn new () -> Self {
-        Self { inner: Generics::default(), current: b'a' }
+    pub fn skip_until (&mut self, predicate: impl Clone + Pattern<'a>, exclude: bool) {
+        let chars = self.str[self.idx..].char_indices();
+        
+        for (mut idx, _) in chars {
+            idx += self.idx;
+
+            if predicate.clone().is_contained_in(&self.str[self.idx..=idx]) {
+                self.idx = match exclude {
+                    true => idx,
+                    _ => idx + 1
+                };
+
+                return
+            }
+        }
+
+        todo!()
     }
 
-    pub fn push (&mut self) -> Lifetime {
-        let current = self.current as char;
-        self.current = self.current + 1;
+    #[inline(always)]
+    pub fn next (&mut self) -> &'a str {
+        self.next_until(char::is_whitespace, Containment::Skip)
+    }
 
-        let lt : Lifetime = parse_str(&format!("'{current}")).unwrap();
-        let def = LifetimeDef::new(lt.clone());
-        self.inner.params.push(GenericParam::Lifetime(def));
-        lt
+    #[inline(always)]
+    pub fn peek (&mut self) -> &'a str {
+        self.peek_until(char::is_whitespace, true)
+    }
+
+    #[inline(always)]
+    pub fn peek_char (&self) -> char {
+        self.str[self.idx..].chars().next().expect("No more tokens to parse")
+    }
+
+    #[inline(always)]
+    pub fn skip (&mut self, n: usize) {
+        self.idx += n
+    }
+
+    #[inline(always)]
+    pub fn next_assert_any (&mut self, pat: &[&str]) {
+        let next = self.next();
+
+        for pat in pat {
+            if next == *pat { return; }
+        }
+
+        panic!("No matches found: {pat:?}")
     }
 }
 
-impl ToTokens for LifetimeCollector {
+impl Debug for Reader<'_> {
     #[inline(always)]
-    fn to_tokens(&self, tokens: &mut TokenStream) {
-        self.inner.to_tokens(tokens)
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        Debug::fmt(&self.str[self.idx..], f)
     }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum Containment {
+    Include,
+    Exclude,
+    Skip
 }

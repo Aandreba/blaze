@@ -1,4 +1,4 @@
-#![feature(is_some_with)]
+#![feature(is_some_with, iter_advance_by, pattern)]
 
 macro_rules! flat_mod {
     ($($i:ident),+) => {
@@ -9,7 +9,7 @@ macro_rules! flat_mod {
     }
 }
 
-use cl::kernel::Kernel;
+use cl::Rscl;
 use error::Error;
 use proc_macro2::Ident;
 use quote::ToTokens;
@@ -37,6 +37,6 @@ pub fn error (items: proc_macro::TokenStream) -> proc_macro::TokenStream {
 
 #[proc_macro]
 pub fn rscl (items: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    let items = parse_macro_input!(items as Kernel);
+    let items = parse_macro_input!(items as Rscl);
     cl::rscl(items).into()
 }
