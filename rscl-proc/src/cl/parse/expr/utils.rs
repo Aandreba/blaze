@@ -1,3 +1,4 @@
+use syn::Token;
 use crate::cl::r#type::Type;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -47,4 +48,35 @@ impl Inferr for Type {
     fn inferrence (&self) -> Inferrence {
         Inferrence::Strong(self.clone())
     }
+}
+
+pub fn peek_bin_op (input: syn::parse::ParseStream) -> bool {
+    return 
+        input.peek(Token![&&]) |
+        input.peek(Token![||]) |
+        input.peek(Token![<<]) |
+        input.peek(Token![>>]) |
+        input.peek(Token![==]) |
+        input.peek(Token![<=]) |
+        input.peek(Token![!=]) |
+        input.peek(Token![>=]) |
+        input.peek(Token![+]) |
+        input.peek(Token![-]) |
+        input.peek(Token![*]) |
+        input.peek(Token![/]) |
+        input.peek(Token![^]) |
+        input.peek(Token![&]) |
+        input.peek(Token![|]) |
+        input.peek(Token![<]) |
+        input.peek(Token![>]) |
+        input.peek(Token![+=]) |
+        input.peek(Token![-=]) |
+        input.peek(Token![*=]) |
+        input.peek(Token![/=]) |
+        input.peek(Token![%=]) |
+        input.peek(Token![^=]) |
+        input.peek(Token![&=]) |
+        input.peek(Token![|=]) |
+        input.peek(Token![<<=]) |
+        input.peek(Token![>>=])
 }

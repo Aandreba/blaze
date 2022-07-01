@@ -1,7 +1,7 @@
-flat_mod!(local, array, assign);
+flat_mod!(target, local, array, assign, call);
 pub mod utils;
 
-use self::{local::Local, utils::{Inferrence, Inferr}};
+use self::{local::Local, utils::{Inferrence, Inferr, peek_bin_op}};
 use std::{fmt::{Display, Write, Pointer}};
 use syn::{Token, parse::Parse, braced, LitInt, LitFloat, LitBool};
 use super::{r#type::Type};
@@ -71,8 +71,10 @@ impl Display for Stmt {
 #[non_exhaustive]
 pub enum Expr {
     Array (ExprArray),
-    Assign (ExprAssign),
-    AssignOp (ExprAssignOp),
+    Assign (ExprOp),
+    Break (Token![break]),
+    Call (ExprCall),
+    Variable (Variable),
     Lit (Lit)
 }
 
@@ -81,24 +83,35 @@ impl Inferr for Expr {
         match self {
             Self::Array(x) => x.inferrence(),
             Self::Assign(x) => x.inferrence(),
-            Self::AssignOp(x) => x.inferrence(),
-            Self::Lit(x) => x.inferrence()
+            Self::Lit(x) => x.inferrence(),
+            Self::Call(x) => x.inferrence(),
+            Self::Variable (x) => x.inferrence(),
+            Self::Break(_) => Inferrence::None
         }
     }
 }
 
 impl Parse for Expr {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        if input.peek(Token![break]) {
+            return input.parse().map(Self::Break)
+        }
+
         if input.peek(syn::token::Bracket) {
             return input.parse().map(Self::Array)
         }
 
         if input.peek(syn::Ident) {
-            if input.peek2(Token![=]) {
+            if input.peek2(syn::token::Paren) {
+                return input.parse().map(Self::Call)
+            }
+
+            panic!("{input:?}");
+            if input.peek2(Token![=]) || peek_bin_op(input) {
                 return input.parse().map(Self::Assign)
             }
 
-            return input.parse().map(Self::AssignOp)
+            return input.parse().map(Self::Variable)
         }
 
         input.parse().map(Self::Lit)
@@ -111,8 +124,10 @@ impl Display for Expr {
         match self {
             Self::Array(x) => x.fmt(f),
             Self::Assign(x) => x.fmt(f),
-            Self::AssignOp(x) => x.fmt(f),
-            Self::Lit(x) => x.fmt(f)
+            Self::Lit(x) => x.fmt(f),
+            Self::Call(x) => x.fmt(f),
+            Self::Variable(x) => x.fmt(f),
+            Self::Break(_) => f.write_str("break")
         }
     }
 }

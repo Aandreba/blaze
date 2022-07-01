@@ -1,41 +1,58 @@
 use std::fmt::Display;
-use derive_syn_parse::Parse;
 use proc_macro2::Ident;
 use crate::cl::arg::AddrQualifier;
 use super::*;
 
-#[derive(Parse)]
 pub struct Local {
     pub vis: AddrQualifier,
     pub let_token: Token![let],
     pub ident: Ident,
-    #[call(Local::parse_ty)]
-    pub ty: Option<(Token![:], Type)>,
+    pub ty: Type,
     pub eq_token: Token![=],
     pub expr: Expr,
     pub semi_token: Token![;]
 }
 
-impl Local {
-    pub fn parse_ty (input: syn::parse::ParseStream) -> syn::Result<Option<(Token![:], Type)>> {
+impl Parse for Local {
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        let vis = input.parse()?;
+        let let_token = input.parse()?;
+        let ident = input.parse()?;
+        
+        let mut ty : Option<Type> = None;
         if input.peek(Token![:]) {
-            let colon_token = input.parse()?;
-            let ty = input.parse()?;
-            return Ok(Some((colon_token, ty)))
+            let _ = input.parse::<Token![:]>()?;
+            ty = input.parse().map(Some)?;
         }
 
-        Ok(None)
+        let eq_token = input.parse()?;
+        let expr = input.parse::<Expr>()?;
+
+        if ty.is_none() {
+            match expr.inferrence() {
+                Inferrence::Weak(x) | Inferrence::Strong(x) => ty = Some(x),
+                Inferrence::None => return Err(syn::Error::new_spanned(ident, "variable type could not be inferred"))
+            }
+        }
+
+        let semi_token = input.parse()?;
+
+        Ok(Self {
+            vis,
+            let_token,
+            ident,
+            ty: ty.unwrap(),
+            eq_token,
+            expr,
+            semi_token
+        })
     }
 }
 
 impl Inferr for Local {
     #[inline(always)]
     fn inferrence (&self) -> Inferrence {
-        if let Some((_, ref ty)) = self.ty {
-            return Inferrence::Strong(ty.clone())
-        }
-
-        self.expr.inferrence()
+        self.ty.inferrence()
     }
 }
 
