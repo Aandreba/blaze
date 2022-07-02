@@ -32,3 +32,25 @@ impl ToTokens for AttributeList {
         tokens.append_all(self.outer());
     }
 }
+
+pub fn to_pascal_case (str: &str) -> String {
+    let mut result = String::with_capacity(str.len());
+    let mut capital = true;
+
+    for c in str.chars() {
+        if c == '_' || c == '-' {
+            capital = true;
+            continue
+        }
+
+        if capital {
+            result.extend(c.to_uppercase());
+            capital = false;
+            continue
+        }
+
+        result.extend(c.to_lowercase())
+    }
+
+    result
+}

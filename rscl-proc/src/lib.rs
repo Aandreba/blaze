@@ -9,7 +9,7 @@ macro_rules! flat_mod {
     }
 }
 
-use cl::Kernel;
+use cl::{Rscl};
 use error::Error;
 use proc_macro2::Ident;
 use quote::ToTokens;
@@ -38,6 +38,6 @@ pub fn error (items: proc_macro::TokenStream) -> proc_macro::TokenStream {
 #[proc_macro]
 pub fn rscl (items: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let str = items.to_string();
-    let items = parse_macro_input!(items as Kernel);
+    let items = parse_macro_input!(items as Rscl);
     cl::rscl(str, items).into()
 }
