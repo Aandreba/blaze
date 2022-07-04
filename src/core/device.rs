@@ -552,7 +552,7 @@ impl Device {
     }
 
     /// Describes the command-queue properties supported by the device.
-    #[cfg_attr(feature = "cl2", deprecated(note = "see [`queue_on_host_properties`](Device::queue_on_host_properties)"))]
+    #[cfg_attr(feature = "cl2", deprecated(note = "see `queue_on_host_properties`"))]
     #[inline(always)]
     pub fn queue_properties (&self) -> Result<CommandQueueProperties> {
         let v = self.get_info_bits::<cl_command_queue_properties>(CL_DEVICE_QUEUE_PROPERTIES)?;
