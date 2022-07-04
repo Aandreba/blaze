@@ -1,8 +1,7 @@
 use core::{mem::MaybeUninit, num::NonZeroUsize};
-use std::{borrow::Cow, ops::Deref};
+use std::borrow::Cow;
 use opencl_sys::{cl_program, clReleaseProgram, clCreateProgramWithSource, clRetainProgram, clBuildProgram, cl_program_info, clGetProgramInfo, CL_PROGRAM_REFERENCE_COUNT, CL_PROGRAM_CONTEXT, CL_PROGRAM_NUM_DEVICES, CL_PROGRAM_DEVICES, CL_PROGRAM_SOURCE, cl_context, cl_kernel, clCreateKernelsInProgram};
-use parking_lot::{RawFairMutex, lock_api::RawMutex};
-use crate::{context::{Context, Global}, kernel::RawKernel};
+use crate::{context::{Context, Global}, core::kernel::Kernel};
 use super::*;
 
 /// OpenCL program
@@ -12,12 +11,12 @@ pub struct Program (cl_program);
 
 impl Program {
     #[inline(always)]
-    pub fn from_source<'a> (source: &str, options: impl Into<Option<&'a str>>) -> Result<(Self, Box<[RawKernel]>)> {
-        Self::from_source_in(Global, source, options)
+    pub fn from_source<'a> (source: &str, options: impl Into<Option<&'a str>>) -> Result<(Self, Box<[Kernel]>)> {
+        Self::from_source_in(&Global, source, options)
     }
 
     #[inline]
-    pub fn from_source_in<'a, C: Context + Clone> (ctx: C, source: &str, options: impl Into<Option<&'a str>>) -> Result<(Self, Box<[RawKernel<C>]>)> {
+    pub fn from_source_in<'a, C: Context> (ctx: &C, source: &str, options: impl Into<Option<&'a str>>) -> Result<(Self, Box<[Kernel]>)> {
         let len = [source.len()].as_ptr();
         let strings = [source.as_ptr().cast()].as_ptr();
 
@@ -31,14 +30,9 @@ impl Program {
         }
 
         let this = Self(id);
-        this.build(options.into(), &ctx)?;
+        this.build(options.into(), ctx)?;
 
-        let kernels = this.kernels()?.into_iter().map(|x| RawKernel {
-            inner: *x,
-            ctx: ctx.clone(),
-            lock: RawFairMutex::INIT
-        }).collect::<Box<[_]>>();
-
+        let kernels = this.kernels()?.into_iter().map(|id| Kernel::from_id(*id)).collect::<Box<[_]>>();
         Ok((this, kernels))
     }
 

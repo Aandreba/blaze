@@ -35,7 +35,7 @@ impl<E: Event> EventWait<E> {
 impl<E: Event + Unpin> Future for EventWait<E> {
     type Output = Result<E::Output>;
 
-    #[inline(always)]
+    #[inline]
     fn poll(mut self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> std::task::Poll<Self::Output> {
         let event = self.event.as_ref().unwrap();
         self.waker.register(cx.waker());

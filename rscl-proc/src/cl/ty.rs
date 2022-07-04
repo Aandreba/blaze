@@ -40,6 +40,16 @@ pub enum Type {
     Pointer (Box<Type>)
 }
 
+impl Type {
+    #[inline(always)]
+    pub const fn is_pointer (&self) -> ::std::primitive::bool {
+        match self {
+            Self::Pointer(_) => true,
+            _ => false
+        }
+    }
+}
+
 impl Parse for Type {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
         let v;

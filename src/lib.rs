@@ -1,5 +1,5 @@
 #![feature(new_uninit, extend_one, const_nonnull_new, const_option_ext, const_option, const_slice_from_raw_parts, ptr_metadata, is_some_with, fn_traits, vec_into_raw_parts)]
-#![cfg_attr(feature = "svm", feature(allocator_api, strict_provenance))]
+#![cfg_attr(feature = "svm", feature(allocator_api, strict_provenance, layout_for_ptr))]
 #![cfg_attr(feature = "atomics", feature(cfg_target_has_atomic, core_intrinsics))]
 
 macro_rules! flat_mod {
@@ -59,7 +59,6 @@ pub mod macros {
 pub mod core;
 /// RSCL context's
 pub mod context;
-pub mod kernel;
 pub mod buffer;
 pub mod event;
 mod utils;

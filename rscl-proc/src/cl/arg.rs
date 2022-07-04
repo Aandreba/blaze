@@ -1,7 +1,6 @@
-use std::hint::unreachable_unchecked;
 use std::ops::Deref;
 use derive_syn_parse::Parse;
-use proc_macro2::Ident;
+use proc_macro2::{Ident};
 use quote::{format_ident, quote};
 use syn::ext::IdentExt;
 use syn::{Token, parse_quote, Generics, GenericParam};

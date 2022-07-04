@@ -37,7 +37,6 @@ pub fn error (items: proc_macro::TokenStream) -> proc_macro::TokenStream {
 
 #[proc_macro]
 pub fn rscl (items: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    let str = items.to_string();
     let items = parse_macro_input!(items as Rscl);
-    cl::rscl(str, items).into()
+    cl::rscl_c(items).into()
 }

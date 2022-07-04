@@ -68,6 +68,10 @@ impl WaitList {
 
     #[inline(always)]
     pub fn from_array<const N: usize> (wait: [RawEvent;N]) -> Self {
+        if N == 0 {
+            return Self::EMPTY;
+        }
+        
         Self(Some(wait.to_vec()))
     }
 

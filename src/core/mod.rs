@@ -1,1 +1,1 @@
-flat_mod!(error, platform, device, program, queue);
+flat_mod!(error, platform, device, program, queue, kernel);

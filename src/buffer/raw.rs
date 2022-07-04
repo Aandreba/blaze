@@ -37,6 +37,11 @@ impl RawBuffer {
     }
 
     #[inline(always)]
+    pub const fn id_ref (&self) -> &cl_mem {
+        &self.0
+    }
+
+    #[inline(always)]
     pub fn flags (&self) -> Result<FullMemFlags> {
         let flags = self.get_info(CL_MEM_FLAGS)?;
         Ok(FullMemFlags::from_bits(flags))
@@ -75,6 +80,12 @@ impl RawBuffer {
         self.get_info(CL_MEM_OFFSET)
     }
 
+    #[inline(always)]
+    pub unsafe fn clone (&self) -> Self {
+        tri_panic!(clRetainMemObject(self.0));
+        Self(self.0)
+    }
+
     #[inline]
     pub(super) fn get_info<O> (&self, ty: cl_mem_info) -> Result<O> {
         let mut result = MaybeUninit::<O>::uninit();
@@ -107,17 +118,6 @@ impl RawBuffer {
         tri!(clEnqueueWriteBuffer(queue.id(), self.id(), CL_FALSE, offset, cb, src.cast(), num_events_in_wait_list, event_wait_list, addr_of_mut!(event)));
     
         return Ok(RawEvent::from_id(event))
-    }
-}
-
-impl Clone for RawBuffer {
-    #[inline(always)]
-    fn clone(&self) -> Self {
-        unsafe {
-            tri_panic!(clRetainMemObject(self.0))
-        }
-
-        Self(self.0)
     }
 }
 
