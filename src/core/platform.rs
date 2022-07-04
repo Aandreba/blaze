@@ -1,5 +1,6 @@
-use core::{fmt::Debug, mem::MaybeUninit};
-use opencl_sys::{cl_platform_id, clGetPlatformInfo, cl_platform_info, CL_PLATFORM_PROFILE, CL_PLATFORM_VERSION, CL_PLATFORM_NAME, CL_PLATFORM_VENDOR, CL_PLATFORM_EXTENSIONS, CL_PLATFORM_HOST_TIMER_RESOLUTION, cl_uchar, clGetPlatformIDs};
+use core::{mem::MaybeUninit};
+use opencl_sys::{cl_platform_id, clGetPlatformInfo, cl_platform_info, CL_PLATFORM_PROFILE, CL_PLATFORM_VERSION, CL_PLATFORM_NAME, CL_PLATFORM_VENDOR, CL_PLATFORM_EXTENSIONS, cl_uchar, clGetPlatformIDs};
+use rscl_proc::docfg;
 use super::*;
 
 lazy_static! {
@@ -27,13 +28,13 @@ impl Platform {
         self.0
     }
 
-    /// OpenCL profile string.
+    /// Returns the profile name supported by the implementation.
     #[inline(always)]
     pub fn profile (&self) -> Result<String> {
         self.get_info_string(CL_PLATFORM_PROFILE)
     }
 
-    /// OpenCL version string.
+    /// Returns the OpenCL version supported by the implementation.
     #[inline(always)]
     pub fn version (&self) -> Result<String> {
         self.get_info_string(CL_PLATFORM_VERSION)
@@ -60,9 +61,10 @@ impl Platform {
             .collect::<Vec<_>>())
     }
 
+    #[docfg(feature = "cl3")]
     #[inline(always)]
     pub fn host_timer_resolution (&self) -> Result<u64> {
-        self.get_info_bits(CL_PLATFORM_HOST_TIMER_RESOLUTION)
+        self.get_info_bits(opencl_sys::CL_PLATFORM_HOST_TIMER_RESOLUTION)
     }
 
     #[inline(always)]
@@ -84,6 +86,7 @@ impl Platform {
         }
     }
 
+    #[allow(dead_code)]
     #[inline]
     fn get_info_bits<T> (&self, ty: cl_platform_info) -> Result<T> {
         let mut value = MaybeUninit::<T>::uninit();
@@ -92,20 +95,6 @@ impl Platform {
             tri!(clGetPlatformInfo(self.0, ty, core::mem::size_of::<T>(), value.as_mut_ptr().cast(), core::ptr::null_mut()));
             Ok(value.assume_init())
         }
-    }
-}
-
-impl Debug for Platform {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.debug_struct("Platform")
-        .field("id", &self.0)
-        .field("profile", &self.profile())
-        .field("version", &self.version())
-        .field("name", &self.name())
-        .field("vendor", &self.vendor())
-        .field("extensions", &self.extensions())
-        .field("host_timer_resolution", &self.host_timer_resolution())
-        .finish()
     }
 }
 

@@ -9,9 +9,11 @@ cl1_1 = ["opencl-sys/CL_VERSION_1_1"]
 cl1_2 = ["cl1_1", "opencl-sys/CL_VERSION_1_2"]
 cl2 = ["cl1_2", "opencl-sys/CL_VERSION_2_0"]
 cl2_1 = ["cl2", "opencl-sys/CL_VERSION_2_1"]
-cl3 = ["cl2_1", "opencl-sys/CL_VERSION_3_0"]
+cl2_2 = ["cl2_1", "opencl-sys/CL_VERSION_2_2"]
+cl3 = ["cl2_2", "opencl-sys/CL_VERSION_3_0"]
 
 # Rscl features
+half = []
 svm = ["cl2"]
 atomics = ["svm"]
 futures = ["cl1_1", "dep:futures"]

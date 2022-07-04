@@ -48,14 +48,12 @@ macro_rules! tri_panic {
     }};
 }
 
-pub(crate) use rscl_proc::docfg;
-
 #[doc(hidden)]
 pub extern crate once_cell;
 
 extern crate rscl_proc;
 pub mod macros {
-    pub use rscl_proc::*;
+    pub use rscl_proc::{global_context, rscl_c};
 }
 
 /// Core OpenCL types
