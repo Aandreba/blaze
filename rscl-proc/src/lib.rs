@@ -11,9 +11,9 @@ macro_rules! flat_mod {
 
 use cl::{Rscl};
 use error::Error;
-use proc_macro2::Ident;
-use quote::ToTokens;
-use syn::{parse_macro_input, ItemStatic};
+use proc_macro2::{Ident, TokenStream};
+use quote::{ToTokens, quote};
+use syn::{parse_macro_input, ItemStatic, Meta};
 
 mod context;
 mod error;
@@ -36,7 +36,19 @@ pub fn error (items: proc_macro::TokenStream) -> proc_macro::TokenStream {
 }
 
 #[proc_macro]
-pub fn rscl (items: proc_macro::TokenStream) -> proc_macro::TokenStream {
+pub fn rscl_c (items: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let items = parse_macro_input!(items as Rscl);
     cl::rscl_c(items).into()
+}
+
+#[proc_macro_attribute]
+pub fn docfg (attrs: proc_macro::TokenStream, items: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    let attrs = parse_macro_input!(attrs as Meta);
+    let items = parse_macro_input!(items as TokenStream);
+
+    quote! {
+        #[cfg_attr(docsrs, doc(cfg(#attrs)))]
+        #[cfg(#attrs)]
+        #items
+    }.into()
 }

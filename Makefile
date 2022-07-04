@@ -4,3 +4,6 @@ check:
 	cargo check --no-default-features
 	$(foreach x, $(features), cargo check --features $(x);)
 	cargo check --all-features
+
+docs:
+	cargo rustdoc --open --all-features -- --cfg docsrs

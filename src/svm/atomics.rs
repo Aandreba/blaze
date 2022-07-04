@@ -3,11 +3,12 @@ use crate::context::{Context, Global};
 use super::{SvmBox, Svm, SvmUtilsFlags};
 use crate::buffer::flags::MemAccess;
 use crate::svm::SvmFlags;
+use rscl_proc::docfg;
 
 macro_rules! impl_atomic {
     ($($len:literal in $ty:ty => $atomic:ty as $svm:ident),+) => {
         $(
-            #[cfg(target_has_atomic_load_store = $len)]
+            #[docfg(target_has_atomic_load_store = $len)]
             #[repr(transparent)]
             pub struct $svm<C: Context = Global> (SvmBox<[$ty], C>);
 

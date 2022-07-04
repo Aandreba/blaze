@@ -152,7 +152,7 @@ pub(crate) fn offset_cb (buffer: &RawBuffer, size: usize, range: impl RangeBound
 }
 
 #[inline]
-pub fn range_len (len: usize, range: &impl RangeBounds<usize>) -> usize {
+pub(crate) fn range_len (len: usize, range: &impl RangeBounds<usize>) -> usize {
     let start = match range.start_bound() {
         Bound::Excluded(x) => *x + 1,
         Bound::Included(x) => *x,

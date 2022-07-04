@@ -92,6 +92,8 @@ fn create_kernel (vis: &Visibility, parent: &Ident, kernel: &Kernel) -> TokenStr
     fn_generics.params.push(parse_quote! { const N: usize });
     let (fn_impl, _, _) = fn_generics.split_for_impl();
 
+    let define_len = define.len();
+
     quote! {
         #vis struct #big_name #r#type #r#where {
             inner: ::rscl::event::RawEvent,
@@ -103,10 +105,21 @@ fn create_kernel (vis: &Visibility, parent: &Ident, kernel: &Kernel) -> TokenStr
         impl<C: ::rscl::context::Context> #parent<C> {
             pub fn #name #fn_impl (&self, #(#new),*, global_work_dims: [usize; N], local_work_dims: impl Into<Option<[usize; N]>>, wait: impl Into<::rscl::event::WaitList>) -> ::rscl::core::Result<#big_name #r#type> #r#where {
                 let mut kernel = self.#name.lock().unwrap();
+                let mut wait = wait.into();
+                let mut managers = ::std::vec::Vec::with_capacity(#define_len);
                 #(#set);*;
-                
+
                 let inner = kernel.enqueue_with_context(&self.ctx, global_work_dims, local_work_dims, wait)?;
                 drop(kernel);
+
+                for (write, mut manager) in managers {
+                    if write {
+                        manager.write(inner.clone());
+                        continue
+                    }
+
+                    manager.read(inner.clone());
+                }
 
                 Ok(#big_name {
                     inner,
@@ -160,8 +173,12 @@ fn set_arg (arg: &Argument, idx: u32) -> TokenStream {
     let Argument { name, .. } = arg;
 
     if arg.ty.is_pointer() {
+        let mutability = arg.constness.is_none();
+
         return quote! {
-            unsafe { #name.set_argument(&mut kernel, #idx)? }
+            if let Some(manager) = unsafe { #name.set_argument(&mut kernel, #idx, &mut wait)? } {
+                managers.push((#mutability, manager));
+            }
         }
     }
 

@@ -1,5 +1,6 @@
 use core::{mem::MaybeUninit, intrinsics::transmute, num::{NonZeroUsize, NonZeroU32, NonZeroU64, IntErrorKind}, fmt::{Debug, Display}, str::FromStr};
 use opencl_sys::{cl_device_id, clGetDeviceIDs, CL_DEVICE_TYPE_ALL, cl_device_info, clGetDeviceInfo, CL_DEVICE_PLATFORM, CL_DEVICE_ADDRESS_BITS, cl_bool, CL_DEVICE_AVAILABLE, CL_FP_DENORM, CL_FP_INF_NAN, CL_FP_ROUND_TO_NEAREST, CL_FP_ROUND_TO_ZERO, CL_FP_ROUND_TO_INF, cl_device_fp_config, CL_DEVICE_DOUBLE_FP_CONFIG, CL_DEVICE_ENDIAN_LITTLE, CL_DEVICE_ERROR_CORRECTION_SUPPORT, cl_device_exec_capabilities, CL_EXEC_KERNEL, CL_EXEC_NATIVE_KERNEL, CL_DEVICE_EXECUTION_CAPABILITIES, CL_DEVICE_EXTENSIONS, CL_DEVICE_GLOBAL_MEM_CACHE_SIZE, CL_NONE, CL_READ_ONLY_CACHE, cl_device_mem_cache_type, CL_DEVICE_GLOBAL_MEM_CACHE_TYPE, CL_READ_WRITE_CACHE, CL_DEVICE_GLOBAL_MEM_CACHELINE_SIZE, CL_DEVICE_GLOBAL_MEM_SIZE, CL_DEVICE_HALF_FP_CONFIG, CL_DEVICE_IMAGE_SUPPORT, CL_DEVICE_IMAGE2D_MAX_HEIGHT, CL_DEVICE_IMAGE2D_MAX_WIDTH, CL_DEVICE_IMAGE3D_MAX_WIDTH, CL_DEVICE_IMAGE3D_MAX_HEIGHT, CL_DEVICE_IMAGE3D_MAX_DEPTH, CL_DEVICE_LOCAL_MEM_SIZE, CL_LOCAL, CL_GLOBAL, CL_DEVICE_LOCAL_MEM_TYPE, CL_DEVICE_MAX_CLOCK_FREQUENCY, CL_DEVICE_MAX_COMPUTE_UNITS, CL_DEVICE_MAX_CONSTANT_ARGS, CL_DEVICE_MAX_CONSTANT_BUFFER_SIZE, CL_DEVICE_MAX_MEM_ALLOC_SIZE, CL_DEVICE_MAX_PARAMETER_SIZE, CL_DEVICE_MAX_READ_IMAGE_ARGS, CL_DEVICE_MAX_SAMPLERS, CL_DEVICE_MAX_WORK_GROUP_SIZE, CL_DEVICE_MAX_WORK_ITEM_DIMENSIONS, CL_DEVICE_MAX_WORK_ITEM_SIZES, CL_DEVICE_MAX_WRITE_IMAGE_ARGS, CL_DEVICE_MEM_BASE_ADDR_ALIGN, CL_DEVICE_MIN_DATA_TYPE_ALIGN_SIZE, CL_DEVICE_NAME, CL_DEVICE_PREFERRED_VECTOR_WIDTH_CHAR, CL_DEVICE_PREFERRED_VECTOR_WIDTH_SHORT, CL_DEVICE_PREFERRED_VECTOR_WIDTH_INT, CL_DEVICE_PREFERRED_VECTOR_WIDTH_LONG, CL_DEVICE_PREFERRED_VECTOR_WIDTH_FLOAT, CL_DEVICE_PREFERRED_VECTOR_WIDTH_DOUBLE, CL_DEVICE_PROFILE, CL_DEVICE_PROFILING_TIMER_RESOLUTION, CL_DEVICE_SINGLE_FP_CONFIG, cl_device_type, CL_DEVICE_TYPE_CPU, CL_DEVICE_TYPE_GPU, CL_DEVICE_TYPE_ACCELERATOR, CL_DEVICE_TYPE_CUSTOM, CL_DEVICE_TYPE, CL_DEVICE_VENDOR, CL_DEVICE_VENDOR_ID, CL_DEVICE_VERSION, CL_DRIVER_VERSION, cl_device_svm_capabilities, CL_DEVICE_SVM_COARSE_GRAIN_BUFFER, CL_DEVICE_SVM_FINE_GRAIN_BUFFER, CL_DEVICE_SVM_FINE_GRAIN_SYSTEM, CL_DEVICE_SVM_ATOMICS, CL_DEVICE_SVM_CAPABILITIES, cl_version, CL_VERSION_PATCH_BITS, CL_VERSION_MINOR_BITS, CL_VERSION_MAJOR_MASK, CL_VERSION_MINOR_MASK, CL_VERSION_PATCH_MASK};
+use rscl_proc::docfg;
 use super::*;
 
 lazy_static! {
@@ -352,7 +353,7 @@ impl Device {
     }
     */
 
-    #[cfg(feature = "cl2")]
+    #[docfg(feature = "cl2")]
     #[inline(always)]
     pub fn reference_count (&self) -> Result<u32> {
         self.get_info_bits(opencl_sys::CL_DEVICE_REFERENCE_COUNT)
@@ -414,19 +415,19 @@ impl Device {
 
     /// The maximum size of the device queue in bytes.\
     /// The minimum value is 256 KB for the full profile and 64 KB for the embedded profile for devices supporting on-device queues, and must be 0 for devices that do not support on-device queues.
-    #[cfg(feature = "cl2")]
+    #[docfg(feature = "cl2")]
     #[inline(always)]
     pub fn queue_max_size (&self) -> Result<Option<NonZeroU32>> {
         self.get_info_bits(opencl_sys::CL_DEVICE_QUEUE_ON_DEVICE_MAX_SIZE).map(NonZeroU32::new)
     }
 
-    #[cfg(feature = "cl2")]
+    #[docfg(feature = "cl2")]
     #[inline(always)]
     pub fn queue_preferred_size (&self) -> Result<Option<NonZeroU32>> {
         self.get_info_bits(opencl_sys::CL_DEVICE_QUEUE_ON_DEVICE_PREFERRED_SIZE).map(NonZeroU32::new)
     }
 
-    #[cfg(feature = "cl2_1")]
+    #[docfg(feature = "cl2_1")]
     #[inline(always)]
     pub fn set_default_command_queue (&self, ctx: crate::context::RawContext, queue: CommandQueue) -> Result<()> {
         unsafe {
@@ -495,7 +496,7 @@ impl Debug for Device {
     }
 }
 
-#[cfg(feature = "cl1_2")]
+#[docfg(feature = "cl1_2")]
 impl Clone for Device {
     #[inline(always)]
     fn clone(&self) -> Self {
@@ -507,7 +508,7 @@ impl Clone for Device {
     }
 }
 
-#[cfg(feature = "cl1_2")]
+#[docfg(feature = "cl1_2")]
 impl Drop for Device {
     #[inline(always)]
     fn drop (&mut self) {

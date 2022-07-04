@@ -16,6 +16,9 @@ svm = ["cl2"]
 atomics = ["svm"]
 futures = ["cl1_1", "dep:futures"]
 
+[package.metadata.docs.rs]
+rustdoc-args = ["--cfg", "docsrs"]
+
 [dependencies]
 rscl-proc = { path = "rscl-proc", version = "0.1.0" }
 opencl-sys = { version = "0.2.1", default-features = false }

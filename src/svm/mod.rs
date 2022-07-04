@@ -1,5 +1,6 @@
 flat_mod!(flags, utils);
 
+#[cfg_attr(docsrs, doc(cfg(feature = "atomics")))]
 #[cfg(feature = "atomics")]
 pub mod atomics;
 

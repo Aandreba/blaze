@@ -1,15 +1,17 @@
 use opencl_sys::{cl_context_properties, CL_CONTEXT_PLATFORM};
+use rscl_proc::docfg;
 use crate::core::Platform;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub struct ContextProperties {
     pub platform: Option<Platform>,
+    #[cfg_attr(docsrs, doc(cfg(feature = "cl1_2")))]
     #[cfg(feature = "cl1_2")]
     pub interop_user_sync: bool
 }
 
-#[cfg(not(feature = "cl1_2"))]
+#[docfg(not(feature = "cl1_2"))]
 impl ContextProperties {
     const SIZE : usize = 1 * 2 + 1;
 
@@ -37,7 +39,7 @@ impl ContextProperties {
     }
 }
 
-#[cfg(feature = "cl1_2")]
+#[docfg(feature = "cl1_2")]
 impl ContextProperties {
     const SIZE : usize = 2 * 2 + 1;
 

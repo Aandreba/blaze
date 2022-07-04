@@ -1,5 +1,6 @@
 use std::{marker::PhantomData, ptr::{NonNull}, ops::{RangeBounds, Deref, DerefMut}, ffi::c_void, sync::Arc};
-use parking_lot::{FairMutex};
+use parking_lot::FairMutex;
+
 use crate::{context::{Context, Global, RawContext}, event::{RawEvent, WaitList}};
 use crate::core::*;
 use crate::buffer::{flags::{FullMemFlags, HostPtr, MemAccess}, events::{ReadBufferEvent, WriteBufferEvent, ReadBufferInto, write_from_static, write_from_ptr}, manager::AccessManager, RawBuffer};

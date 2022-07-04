@@ -1,5 +1,6 @@
 use std::{mem::MaybeUninit, ffi::c_void, ptr::addr_of_mut};
 use opencl_sys::{cl_kernel, cl_kernel_info, clRetainProgram, CL_KERNEL_PROGRAM, CL_KERNEL_CONTEXT, CL_KERNEL_REFERENCE_COUNT, CL_KERNEL_NUM_ARGS, CL_KERNEL_FUNCTION_NAME, CL_KERNEL_ARG_ADDRESS_GLOBAL, CL_KERNEL_ARG_ADDRESS_LOCAL, CL_KERNEL_ARG_ADDRESS_CONSTANT, CL_KERNEL_ARG_ADDRESS_PRIVATE, cl_kernel_arg_type_qualifier, CL_KERNEL_ARG_TYPE_CONST, CL_KERNEL_ARG_TYPE_RESTRICT, CL_KERNEL_ARG_TYPE_VOLATILE, clGetKernelInfo, clSetKernelArg, clEnqueueNDRangeKernel, clRetainKernel, clReleaseKernel};
+use rscl_proc::docfg;
 use crate::{core::*, context::{RawContext, Context, Global}, event::{RawEvent, WaitList}};
 
 #[repr(transparent)]
@@ -38,7 +39,7 @@ impl Kernel {
         unsafe { self.set_ptr_argument(idx, size, core::ptr::null()) }
     }
 
-    #[cfg(feature = "svm")]
+    #[docfg(feature = "svm")]
     pub unsafe fn set_svm_argument (&mut self, idx: u32, v: &impl crate::svm::SvmPointer) -> Result<()> {
         tri!(opencl_sys::clSetKernelArgSVMPointer(self.0, idx, v.as_ptr().cast()));
         Ok(())
@@ -145,10 +146,13 @@ impl Drop for Kernel {
     }
 }
 
+unsafe impl Send for Kernel {}
+unsafe impl Sync for Kernel {}
+
 #[cfg(feature = "cl1_2")]
 use {crate::buffer::flags::MemAccess, opencl_sys::{CL_KERNEL_ARG_NAME, CL_KERNEL_ARG_ADDRESS_QUALIFIER, CL_KERNEL_ARG_ACCESS_QUALIFIER, CL_KERNEL_ARG_TYPE_QUALIFIER, CL_KERNEL_ARG_TYPE_NAME, cl_kernel_arg_info, clGetKernelArgInfo}};
 
-#[cfg(feature = "cl1_2")]
+#[docfg(feature = "cl1_2")]
 impl Kernel {
     /// Returns the address qualifier specified for the argument given by ```idx```.
     #[inline(always)]

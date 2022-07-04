@@ -1,13 +1,14 @@
 use std::{mem::ManuallyDrop};
 use opencl_sys::{CL_COMMAND_NDRANGE_KERNEL, CL_COMMAND_TASK, CL_COMMAND_NATIVE_KERNEL, CL_COMMAND_READ_BUFFER, CL_COMMAND_WRITE_BUFFER, CL_COMMAND_COPY_BUFFER, CL_COMMAND_READ_IMAGE, CL_COMMAND_WRITE_IMAGE, CL_COMMAND_COPY_IMAGE, CL_COMMAND_COPY_IMAGE_TO_BUFFER, CL_COMMAND_COPY_BUFFER_TO_IMAGE, CL_COMMAND_MAP_BUFFER, CL_COMMAND_MAP_IMAGE, CL_COMMAND_UNMAP_MEM_OBJECT, CL_COMMAND_MARKER, CL_COMMAND_ACQUIRE_GL_OBJECTS, CL_COMMAND_RELEASE_GL_OBJECTS, CL_EVENT_COMMAND_TYPE, CL_EVENT_COMMAND_EXECUTION_STATUS, cl_command_queue, CL_EVENT_COMMAND_QUEUE, cl_event};
+use rscl_proc::docfg;
 use crate::core::*;
 
 flat_mod!(status, raw);
 
-#[cfg(feature = "cl1_1")]
+#[docfg(feature = "cl1_1")]
 flat_mod!(flag);
 
-#[cfg(feature = "futures")]
+#[docfg(feature = "futures")]
 flat_mod!(wait);
 
 pub trait Event: AsRef<RawEvent> {
@@ -27,7 +28,7 @@ pub trait Event: AsRef<RawEvent> {
     }
 
     #[inline(always)]
-    #[cfg(feature = "futures")]
+    #[docfg(feature = "futures")]
     fn wait_async (self) -> Result<crate::event::EventWait<Self>> where Self: Sized {
         crate::event::EventWait::new(self)
     }

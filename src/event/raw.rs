@@ -1,6 +1,7 @@
 use crate::core::*;
 use std::{mem::MaybeUninit, ptr::addr_of};
 use opencl_sys::{cl_event, clRetainEvent, clReleaseEvent, clGetEventInfo, cl_event_info, clWaitForEvents};
+use rscl_proc::docfg;
 use super::{Event};
 
 #[repr(transparent)]
@@ -51,7 +52,7 @@ impl RawEvent {
 #[cfg(feature = "cl1_1")]
 use {std::ffi::c_void, opencl_sys::cl_int, super::EventStatus};
 
-#[cfg(feature = "cl1_1")]
+#[docfg(feature = "cl1_1")]
 impl RawEvent {
     #[inline(always)]
     pub fn on_submit (&self, f: impl 'static + FnOnce(RawEvent, Result<EventStatus>) + Send) -> Result<()> {

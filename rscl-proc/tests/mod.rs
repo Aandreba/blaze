@@ -1,7 +1,7 @@
 use rscl::{context::SimpleContext, buffer::{Buffer, WriteBuffer, MemObject}, event::Event};
-use rscl_proc::{rscl, global_context};
+use rscl_proc::{global_context, rscl_c};
 
-rscl! {
+rscl_c! {
     pub struct Arith {
         kernel void add (const ulong n, __global const float* inn, __global const float* rhs, __global float* out) {
             for (ulong id = get_global_id(0); id<n; id += get_global_size(0)) {
@@ -24,7 +24,7 @@ fn test () {
 
     let add = arith.add(5, &lhs, &rhs, &mut out, [5, 1, 1], None, []).unwrap();
     add.wait().unwrap();
-    
+
     let out = out.read_all([]).unwrap().wait().unwrap();
     println!("{out:?}")
 }

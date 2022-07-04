@@ -1,6 +1,7 @@
 use super::*;
 use std::{mem::MaybeUninit};
 use opencl_sys::{cl_command_queue, CL_QUEUE_OUT_OF_ORDER_EXEC_MODE_ENABLE, CL_QUEUE_PROPERTIES, clRetainCommandQueue, clReleaseCommandQueue, clFlush, clFinish, cl_command_queue_info, clGetCommandQueueInfo, cl_context, CL_QUEUE_CONTEXT, CL_QUEUE_DEVICE, CL_QUEUE_REFERENCE_COUNT, cl_command_queue_properties, CL_QUEUE_PROFILING_ENABLE};
+use rscl_proc::docfg;
 use crate::context::RawContext;
 use std::ptr::addr_of_mut;
 
@@ -8,7 +9,7 @@ use std::ptr::addr_of_mut;
 pub struct CommandQueue (cl_command_queue);
 
 impl CommandQueue {
-    #[cfg(not(feature = "cl2"))]
+    #[docfg(not(feature = "cl2"))]
     pub fn new (props: CommandQueueProperties, ctx: &RawContext, device: &Device) -> Result<Self> {
         let props = props.to_bits();
         
@@ -24,7 +25,7 @@ impl CommandQueue {
         Ok(Self(id))
     }
 
-    #[cfg(feature = "cl2")]
+    #[docfg(feature = "cl2")]
     pub fn new (props: impl Into<QueueProperties>, ctx: &RawContext, device: &Device) -> Result<Self> {
         use elor::prelude::*;
 
@@ -77,14 +78,14 @@ impl CommandQueue {
     }
 
     /// Return the size of the device command-queue. To be considered valid for this query, command_queue must be a device command-queue.
-    #[cfg(feature = "cl2")]
+    #[docfg(feature = "cl2")]
     #[inline(always)]
     pub fn size (&self) -> Result<u32> {
         self.get_info(opencl_sys::CL_QUEUE_SIZE)
     }
 
     /// Return the current default command queue for the underlying device.
-    #[cfg(feature = "cl2_1")]
+    #[docfg(feature = "cl2_1")]
     #[inline(always)]
     pub fn device_default (&self) -> Result<CommandQueue> {
         self.get_info(opencl_sys::CL_QUEUE_DEVICE_DEFAULT)
@@ -147,6 +148,7 @@ cfg_if::cfg_if! {
         use opencl_sys::{cl_queue_properties, CL_QUEUE_SIZE};
         use elor::prelude::*;
 
+        #[cfg_attr(docsrs, doc(cfg(feature = "cl2")))]
         #[derive(Clone, Copy, PartialEq, Eq, Hash, Default)]
         #[non_exhaustive]
         pub struct QueueProperties {
@@ -254,6 +256,7 @@ pub enum OutOfOrderExec {
     Disabled,
     /// Indicates that this is a device queue, and the commands in the queue are executed out-of-order.\
     /// The boolean value indicates if this is the default device queue or not.
+    #[cfg_attr(docsrs, doc(cfg(feature = "cl2")))]
     #[cfg(feature = "cl2")]
     OnDevice (bool)
 }
