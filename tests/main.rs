@@ -43,6 +43,6 @@ static PROGRAM : &str = "void kernel add (const ulong n, __global const float* r
 #[test]
 fn program () -> Result<()> {
     let dev = Device::first().unwrap();
-    println!("{:?}", dev.extensions()?);
+    println!("{:?}", dev.partition_type()?);
     Ok(())
 }
