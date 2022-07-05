@@ -1,4 +1,4 @@
-use rscl::{core::*, buffer::{Buffer, MemObject, WriteBuffer}, event::{FlagEvent, Event}, context::SimpleContext};
+use rscl::{core::*, buffer::{Buffer, MemObject}, event::{FlagEvent, Event}, context::SimpleContext};
 use rscl_proc::global_context;
 
 #[global_context]
@@ -42,6 +42,12 @@ static PROGRAM : &str = "void kernel add (const ulong n, __global const float* r
 
 #[test]
 fn program () -> Result<()> {
+    println!("{}", core::mem::size_of::<Device>());
+    println!("{}", core::mem::size_of::<Option<Device>>());
+
+    println!("{}", core::mem::size_of::<bool>());
+    println!("{}", core::mem::size_of::<Option<bool>>());
+
     let dev = Device::first().unwrap();
     println!("{:?}", dev.partition_type()?);
     Ok(())

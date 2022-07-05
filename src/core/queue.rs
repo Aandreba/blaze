@@ -1,12 +1,12 @@
 use super::*;
-use std::{mem::MaybeUninit};
+use std::{mem::MaybeUninit, ptr::NonNull, ffi::c_void};
 use opencl_sys::{cl_command_queue, CL_QUEUE_OUT_OF_ORDER_EXEC_MODE_ENABLE, CL_QUEUE_PROPERTIES, clRetainCommandQueue, clReleaseCommandQueue, clFlush, clFinish, cl_command_queue_info, clGetCommandQueueInfo, cl_context, CL_QUEUE_CONTEXT, CL_QUEUE_DEVICE, CL_QUEUE_REFERENCE_COUNT, cl_command_queue_properties, CL_QUEUE_PROFILING_ENABLE};
 use rscl_proc::docfg;
 use crate::context::RawContext;
 use std::ptr::addr_of_mut;
 
 #[repr(transparent)]
-pub struct CommandQueue (cl_command_queue);
+pub struct CommandQueue (NonNull<c_void>);
 
 impl CommandQueue {
     #[docfg(not(feature = "cl2"))]
@@ -22,7 +22,8 @@ impl CommandQueue {
             return Err(Error::from(err));
         }
 
-        Ok(Self(id))
+
+        Ok(NonNull::new(id).map(Self).unwrap())
     }
 
     #[docfg(feature = "cl2")]
@@ -44,12 +45,12 @@ impl CommandQueue {
             return Err(Error::from(err));
         }
 
-        Ok(Self(id))
+        Ok(NonNull::new(id).map(Self).unwrap())
     }
 
     #[inline(always)]
     pub const fn id (&self) -> cl_command_queue {
-        self.0
+        self.0.as_ptr()
     }
 
     /// Return the context specified when the command-queue is created.
@@ -91,19 +92,21 @@ impl CommandQueue {
         self.get_info(opencl_sys::CL_QUEUE_DEVICE_DEFAULT)
     }
 
+    /// Issues all previously queued OpenCL commands in a command-queue to the device associated with the command-queue.
     #[inline(always)]
     pub fn flush (&self) -> Result<()> {
         unsafe {
-            tri!(clFlush(self.0));
+            tri!(clFlush(self.id()));
         }
 
         Ok(())
     }
 
+    /// Blocks until all previously queued OpenCL commands in a command-queue are issued to the associated device and have completed.
     #[inline(always)]
     pub fn finish (&self) -> Result<()> {
         unsafe {
-            tri!(clFinish(self.0));
+            tri!(clFinish(self.id()));
         }
 
         Ok(())
@@ -113,7 +116,7 @@ impl CommandQueue {
     fn get_info<T> (&self, ty: cl_command_queue_info) -> Result<T> {
         let mut result = MaybeUninit::<T>::uninit();
         unsafe {
-            tri!(clGetCommandQueueInfo(self.0, ty, core::mem::size_of::<T>(), result.as_mut_ptr().cast(), core::ptr::null_mut()));
+            tri!(clGetCommandQueueInfo(self.id(), ty, core::mem::size_of::<T>(), result.as_mut_ptr().cast(), core::ptr::null_mut()));
             Ok(result.assume_init())
         }
     }
@@ -123,7 +126,7 @@ impl Clone for CommandQueue {
     #[inline(always)]
     fn clone(&self) -> Self {
         unsafe {
-            tri_panic!(clRetainCommandQueue(self.0))
+            tri_panic!(clRetainCommandQueue(self.id()))
         }
 
         Self(self.0)
@@ -134,7 +137,7 @@ impl Drop for CommandQueue {
     #[inline(always)]
     fn drop(&mut self) {
         unsafe {
-            tri_panic!(clReleaseCommandQueue(self.0))
+            tri_panic!(clReleaseCommandQueue(self.id()))
         }
     }
 }

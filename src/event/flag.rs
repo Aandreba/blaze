@@ -4,6 +4,7 @@ use opencl_sys::{clSetUserEventStatus, CL_COMPLETE, clCreateUserEvent};
 use super::{RawEvent, Event};
 use crate::{core::*, context::{Context, Global}};
 
+#[cfg_attr(docsrs, doc(cfg(feature = "cl1_1")))]
 #[derive(Clone)]
 pub struct FlagEvent<C: Context = Global> (RawEvent, C);
 
@@ -21,7 +22,7 @@ impl<C: Context> FlagEvent<C> {
         unsafe {
             let id = clCreateUserEvent(ctx.raw_context().id(), addr_of_mut!(err));
             if err != 0 { return Err(Error::from(err)); }
-            Ok(Self(RawEvent::from_id(id), ctx))
+            Ok(Self(RawEvent::from_id(id).unwrap(), ctx))
         }
     }
 

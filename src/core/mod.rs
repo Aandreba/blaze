@@ -1,1 +1,4 @@
-flat_mod!(error, platform, device, program, queue, kernel);
+flat_mod!(error, platform, program, queue, kernel);
+
+pub mod device;
+pub use device::Device;

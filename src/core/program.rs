@@ -1,13 +1,13 @@
 use core::{mem::MaybeUninit, num::NonZeroUsize};
-use std::borrow::Cow;
-use opencl_sys::{cl_program, clReleaseProgram, clCreateProgramWithSource, clRetainProgram, clBuildProgram, cl_program_info, clGetProgramInfo, CL_PROGRAM_REFERENCE_COUNT, CL_PROGRAM_CONTEXT, CL_PROGRAM_NUM_DEVICES, CL_PROGRAM_DEVICES, CL_PROGRAM_SOURCE, cl_context, cl_kernel, clCreateKernelsInProgram};
+use std::{borrow::Cow, ptr::NonNull, ffi::c_void};
+use opencl_sys::{clReleaseProgram, clCreateProgramWithSource, clRetainProgram, clBuildProgram, cl_program_info, clGetProgramInfo, CL_PROGRAM_REFERENCE_COUNT, CL_PROGRAM_CONTEXT, CL_PROGRAM_NUM_DEVICES, CL_PROGRAM_DEVICES, CL_PROGRAM_SOURCE, cl_context, cl_kernel, clCreateKernelsInProgram};
 use crate::{context::{Context, Global}, core::kernel::Kernel};
 use super::*;
 
 /// OpenCL program
 #[derive(PartialEq, Eq, Hash)]
 #[repr(transparent)]
-pub struct Program (cl_program);
+pub struct Program (NonNull<c_void>);
 
 impl Program {
     #[inline(always)]
@@ -29,25 +29,25 @@ impl Program {
             return Err(Error::from(err))
         }
 
-        let this = Self(id);
+        let this = NonNull::new(id).map(Self).unwrap();
         this.build(options.into(), ctx)?;
 
-        let kernels = this.kernels()?.into_iter().map(|id| Kernel::from_id(*id)).collect::<Box<[_]>>();
+        let kernels = this.kernels()?.into_iter().map(|id| Kernel::from_id(*id).unwrap()).collect::<Box<[_]>>();
         Ok((this, kernels))
     }
 
     #[inline(always)]
     pub const fn id (&self) -> cl_kernel {
-        self.0
+        self.0.as_ptr()
     }
 
     #[inline]
     fn kernels (&self) -> Result<Box<[cl_kernel]>> {
         let mut len = 0;
         unsafe {
-            tri!(clCreateKernelsInProgram(self.0, 0, core::ptr::null_mut(), &mut len));
+            tri!(clCreateKernelsInProgram(self.id(), 0, core::ptr::null_mut(), &mut len));
             let mut kernels = Box::new_uninit_slice(len as usize);
-            tri!(clCreateKernelsInProgram(self.0, len, kernels.as_mut_ptr().cast(), core::ptr::null_mut()));
+            tri!(clCreateKernelsInProgram(self.id(), len, kernels.as_mut_ptr().cast(), core::ptr::null_mut()));
             Ok(kernels.assume_init())
         }
     }
@@ -79,7 +79,7 @@ impl Program {
         let size = result.capacity().checked_mul(core::mem::size_of::<Device>()).expect("Too many devices");
 
         unsafe {
-            tri!(clGetProgramInfo(self.0, CL_PROGRAM_DEVICES, size, result.as_mut_ptr().cast(), core::ptr::null_mut()))
+            tri!(clGetProgramInfo(self.id(), CL_PROGRAM_DEVICES, size, result.as_mut_ptr().cast(), core::ptr::null_mut()))
         }
         
         unsafe { result.set_len(result.capacity()) }
@@ -100,7 +100,7 @@ impl Program {
         let size = result.capacity().checked_mul(core::mem::size_of::<usize>()).expect("Too many binaries");
 
         unsafe {
-           tri!(clGetProgramInfo(self.0, CL_PROGRAM_DEVICES, size, result.as_mut_ptr().cast(), core::ptr::null_mut()))
+           tri!(clGetProgramInfo(self.id(), CL_PROGRAM_DEVICES, size, result.as_mut_ptr().cast(), core::ptr::null_mut()))
         }
 
         unsafe { result.set_len(result.capacity()) }
@@ -140,7 +140,7 @@ impl Program {
         };
 
         let build_result = unsafe {
-            clBuildProgram(self.0, 0, core::ptr::null(), ops.cast(), None, core::ptr::null_mut())
+            clBuildProgram(self.id(), 0, core::ptr::null(), ops.cast(), None, core::ptr::null_mut())
         };
 
         if build_result == 0 {
@@ -179,10 +179,10 @@ impl Program {
     fn get_info_string (&self, ty: cl_program_info) -> Result<String> {
         unsafe {
             let mut len = 0;
-            tri!(clGetProgramInfo(self.0, ty, 0, core::ptr::null_mut(), &mut len));
+            tri!(clGetProgramInfo(self.id(), ty, 0, core::ptr::null_mut(), &mut len));
 
             let mut result = Vec::<u8>::with_capacity(len);
-            tri!(clGetProgramInfo(self.0, ty, len, result.as_mut_ptr().cast(), core::ptr::null_mut()));
+            tri!(clGetProgramInfo(self.id(), ty, len, result.as_mut_ptr().cast(), core::ptr::null_mut()));
             
             result.set_len(len - 1);
             Ok(String::from_utf8(result).unwrap())
@@ -194,7 +194,7 @@ impl Program {
         let mut value = MaybeUninit::<T>::uninit();
         
         unsafe {
-            tri!(clGetProgramInfo(self.0, ty, core::mem::size_of::<T>(), value.as_mut_ptr().cast(), core::ptr::null_mut()));
+            tri!(clGetProgramInfo(self.id(), ty, core::mem::size_of::<T>(), value.as_mut_ptr().cast(), core::ptr::null_mut()));
             Ok(value.assume_init())
         }
     }
@@ -204,7 +204,7 @@ impl Clone for Program {
     #[inline(always)]
     fn clone(&self) -> Self {
         unsafe {
-            tri_panic!(clRetainProgram(self.0))
+            tri_panic!(clRetainProgram(self.id()))
         }
 
         Self(self.0)
@@ -215,7 +215,7 @@ impl Drop for Program {
     #[inline(always)]
     fn drop(&mut self) {
         unsafe {
-            tri_panic!(clReleaseProgram(self.0));
+            tri_panic!(clReleaseProgram(self.id()));
         }
     }
 }

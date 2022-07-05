@@ -1,4 +1,5 @@
 use core::{mem::MaybeUninit};
+use std::{ptr::NonNull, ffi::c_void};
 use opencl_sys::{cl_platform_id, clGetPlatformInfo, cl_platform_info, CL_PLATFORM_PROFILE, CL_PLATFORM_VERSION, CL_PLATFORM_NAME, CL_PLATFORM_VENDOR, CL_PLATFORM_EXTENSIONS, cl_uchar, clGetPlatformIDs};
 use rscl_proc::docfg;
 use super::*;
@@ -20,12 +21,12 @@ lazy_static! {
 /// OpenCL platform
 #[repr(transparent)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
-pub struct Platform (cl_platform_id);
+pub struct Platform (NonNull<c_void>);
 
 impl Platform {
     #[inline(always)]
     pub const fn id (&self) -> cl_platform_id {
-        self.0
+        self.0.as_ptr()
     }
 
     /// Returns the profile name supported by the implementation.
@@ -76,10 +77,10 @@ impl Platform {
     fn get_info_string (&self, ty: cl_platform_info) -> Result<String> {
         unsafe {
             let mut len = 0;
-            tri!(clGetPlatformInfo(self.0, ty, 0, core::ptr::null_mut(), &mut len));
+            tri!(clGetPlatformInfo(self.id(), ty, 0, core::ptr::null_mut(), &mut len));
 
             let mut result = Vec::<u8>::with_capacity(len);
-            tri!(clGetPlatformInfo(self.0, ty, len * core::mem::size_of::<cl_uchar>(), result.as_mut_ptr().cast(), core::ptr::null_mut()));
+            tri!(clGetPlatformInfo(self.id(), ty, len * core::mem::size_of::<cl_uchar>(), result.as_mut_ptr().cast(), core::ptr::null_mut()));
             
             result.set_len(len - 1);
             Ok(String::from_utf8(result).unwrap())
@@ -92,7 +93,7 @@ impl Platform {
         let mut value = MaybeUninit::<T>::uninit();
         
         unsafe {
-            tri!(clGetPlatformInfo(self.0, ty, core::mem::size_of::<T>(), value.as_mut_ptr().cast(), core::ptr::null_mut()));
+            tri!(clGetPlatformInfo(self.id(), ty, core::mem::size_of::<T>(), value.as_mut_ptr().cast(), core::ptr::null_mut()));
             Ok(value.assume_init())
         }
     }

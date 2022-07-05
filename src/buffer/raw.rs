@@ -4,7 +4,7 @@ use crate::{core::*, context::RawContext, event::{WaitList, RawEvent}};
 use super::{flags::FullMemFlags};
 
 #[repr(transparent)]
-pub struct RawBuffer (cl_mem);
+pub struct RawBuffer (NonNull<c_void>);
 
 impl RawBuffer {
     #[inline]
@@ -23,22 +23,27 @@ impl RawBuffer {
             return Err(Error::from(err))
         }
 
-        Ok(Self::from_id(id))
+        Ok(Self::from_id(id).unwrap())
     }
 
     #[inline(always)]
-    pub const fn from_id (id: cl_mem) -> Self {
-        Self(id)
+    pub const unsafe fn from_id_unchecked (id: cl_mem) -> Self {
+        Self(NonNull::new_unchecked(id))
+    }
+
+    #[inline(always)]
+    pub const fn from_id (id: cl_mem) -> Option<Self> {
+        NonNull::new(id).map(Self)
     }
 
     #[inline(always)]
     pub const fn id (&self) -> cl_mem {
-        self.0
+        self.0.as_ptr()
     }
 
     #[inline(always)]
     pub const fn id_ref (&self) -> &cl_mem {
-        &self.0
+        unsafe { core::mem::transmute(&self.0) }
     }
 
     #[inline(always)]
@@ -82,7 +87,7 @@ impl RawBuffer {
 
     #[inline(always)]
     pub unsafe fn clone (&self) -> Self {
-        tri_panic!(clRetainMemObject(self.0));
+        tri_panic!(clRetainMemObject(self.id()));
         Self(self.0)
     }
 
@@ -91,7 +96,7 @@ impl RawBuffer {
         let mut result = MaybeUninit::<O>::uninit();
 
         unsafe {
-            tri!(clGetMemObjectInfo(self.0, ty, core::mem::size_of::<O>(), result.as_mut_ptr().cast(), core::ptr::null_mut()));
+            tri!(clGetMemObjectInfo(self.id(), ty, core::mem::size_of::<O>(), result.as_mut_ptr().cast(), core::ptr::null_mut()));
             Ok(result.assume_init())
         }
     }
@@ -106,7 +111,7 @@ impl RawBuffer {
         let mut event = core::ptr::null_mut();
         tri!(clEnqueueReadBuffer(queue.id(), self.id(), CL_FALSE, offset, cb, dst.cast(), num_events_in_wait_list, event_wait_list, &mut event));
     
-        return Ok(RawEvent::from_id(event))
+        return Ok(RawEvent::from_id(event).unwrap())
     }
     
     pub unsafe fn write_from_ptr<T: Copy> (&mut self, dst_range: impl RangeBounds<usize>, src: *const T, queue: &CommandQueue, wait: impl Into<WaitList>) -> Result<RawEvent> {
@@ -117,7 +122,7 @@ impl RawBuffer {
         let mut event = core::ptr::null_mut();
         tri!(clEnqueueWriteBuffer(queue.id(), self.id(), CL_FALSE, offset, cb, src.cast(), num_events_in_wait_list, event_wait_list, addr_of_mut!(event)));
     
-        return Ok(RawEvent::from_id(event))
+        return Ok(RawEvent::from_id(event).unwrap())
     }
 }
 
@@ -125,7 +130,7 @@ impl Drop for RawBuffer {
     #[inline(always)]
     fn drop(&mut self) {
         unsafe {
-            tri_panic!(clReleaseMemObject(self.0))
+            tri_panic!(clReleaseMemObject(self.id()))
         }
     }
 }

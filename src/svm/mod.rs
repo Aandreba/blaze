@@ -4,9 +4,9 @@ flat_mod!(flags, utils);
 #[cfg(feature = "atomics")]
 pub mod atomics;
 
-use std::{alloc::{Layout, Allocator, GlobalAlloc}, ptr::NonNull};
-use opencl_sys::{clSVMAlloc, clSVMFree};
-use crate::{context::{Context, Global}};
+use std::{alloc::{Layout, Allocator, GlobalAlloc}, ptr::{NonNull, addr_of_mut}, ffi::c_void};
+use opencl_sys::{clSVMAlloc, clSVMFree, clEnqueueSVMFree};
+use crate::{context::{Context, Global}, event::{RawEvent, WaitList}, core::Result};
 
 #[derive(Clone, Copy)]
 #[repr(transparent)]
@@ -35,6 +35,18 @@ impl<C: Context> Svm<C> {
     pub unsafe fn free (&self, ptr: *mut u8) {
         clSVMFree(self.0.raw_context().id(), ptr.cast())
     }
+
+    #[inline(always)]
+    pub unsafe fn enqueue_free (&self, ptrs: &[*const c_void], wait: impl Into<WaitList>) -> Result<RawEvent> {
+        let len = u32::try_from(ptrs.len()).expect("Too many pointers");
+        
+        let wait : WaitList = wait.into();
+        let (num_events_in_wait_list, event_wait_list) = wait.raw_parts();
+
+        let mut event = core::ptr::null_mut();
+        tri!(clEnqueueSVMFree(self.0.next_queue().id(), len, ptrs.as_ptr(), None, core::ptr::null_mut(), num_events_in_wait_list, event_wait_list, addr_of_mut!(event)));
+        Ok(RawEvent::from_id(event).unwrap())
+    }
 }
 
 unsafe impl<C: Context> Allocator for Svm<C> {
@@ -57,7 +69,7 @@ unsafe impl<C: Context> Allocator for Svm<C> {
 unsafe impl<C: Context> GlobalAlloc for Svm<C> {
     #[inline(always)]
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        self.alloc_with_flags(SvmFlags::default(), layout)
+        self.alloc_with_flags(SvmFlags::DEFAULT, layout)
     }
 
     #[inline(always)]

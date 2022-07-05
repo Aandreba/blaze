@@ -8,6 +8,8 @@ pub struct SvmFlags {
 }
 
 impl SvmFlags {
+    pub const DEFAULT : Self = Self::const_new(MemAccess::READ_WRITE, None);
+
     #[inline(always)]
     pub fn new (access: MemAccess, utils: impl Into<Option<SvmUtilsFlags>>) -> Self {
         Self { access, utils: utils.into() }

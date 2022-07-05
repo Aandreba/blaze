@@ -1,6 +1,6 @@
-use core::{mem::MaybeUninit, intrinsics::transmute, num::{NonZeroUsize, NonZeroU32, NonZeroU64, IntErrorKind}, fmt::{Debug, Display}, str::FromStr};
-use std::{ptr::NonNull, ffi::c_void, sync::atomic::Ordering};
-use opencl_sys::{cl_device_id, clGetDeviceIDs, CL_DEVICE_TYPE_ALL, cl_device_info, clGetDeviceInfo, CL_DEVICE_PLATFORM, CL_DEVICE_ADDRESS_BITS, cl_bool, CL_DEVICE_AVAILABLE, CL_FP_DENORM, CL_FP_INF_NAN, CL_FP_ROUND_TO_NEAREST, CL_FP_ROUND_TO_ZERO, CL_FP_ROUND_TO_INF, cl_device_fp_config, CL_DEVICE_DOUBLE_FP_CONFIG, CL_DEVICE_ENDIAN_LITTLE, CL_DEVICE_ERROR_CORRECTION_SUPPORT, cl_device_exec_capabilities, CL_EXEC_KERNEL, CL_EXEC_NATIVE_KERNEL, CL_DEVICE_EXECUTION_CAPABILITIES, CL_DEVICE_EXTENSIONS, CL_DEVICE_GLOBAL_MEM_CACHE_SIZE, CL_NONE, CL_READ_ONLY_CACHE, cl_device_mem_cache_type, CL_DEVICE_GLOBAL_MEM_CACHE_TYPE, CL_READ_WRITE_CACHE, CL_DEVICE_GLOBAL_MEM_CACHELINE_SIZE, CL_DEVICE_GLOBAL_MEM_SIZE, CL_DEVICE_HALF_FP_CONFIG, CL_DEVICE_IMAGE_SUPPORT, CL_DEVICE_IMAGE2D_MAX_HEIGHT, CL_DEVICE_IMAGE2D_MAX_WIDTH, CL_DEVICE_IMAGE3D_MAX_WIDTH, CL_DEVICE_IMAGE3D_MAX_HEIGHT, CL_DEVICE_IMAGE3D_MAX_DEPTH, CL_DEVICE_LOCAL_MEM_SIZE, CL_LOCAL, CL_GLOBAL, CL_DEVICE_LOCAL_MEM_TYPE, CL_DEVICE_MAX_CLOCK_FREQUENCY, CL_DEVICE_MAX_COMPUTE_UNITS, CL_DEVICE_MAX_CONSTANT_ARGS, CL_DEVICE_MAX_CONSTANT_BUFFER_SIZE, CL_DEVICE_MAX_MEM_ALLOC_SIZE, CL_DEVICE_MAX_PARAMETER_SIZE, CL_DEVICE_MAX_READ_IMAGE_ARGS, CL_DEVICE_MAX_SAMPLERS, CL_DEVICE_MAX_WORK_GROUP_SIZE, CL_DEVICE_MAX_WORK_ITEM_DIMENSIONS, CL_DEVICE_MAX_WORK_ITEM_SIZES, CL_DEVICE_MAX_WRITE_IMAGE_ARGS, CL_DEVICE_MEM_BASE_ADDR_ALIGN, CL_DEVICE_MIN_DATA_TYPE_ALIGN_SIZE, CL_DEVICE_NAME, CL_DEVICE_PREFERRED_VECTOR_WIDTH_CHAR, CL_DEVICE_PREFERRED_VECTOR_WIDTH_SHORT, CL_DEVICE_PREFERRED_VECTOR_WIDTH_INT, CL_DEVICE_PREFERRED_VECTOR_WIDTH_LONG, CL_DEVICE_PREFERRED_VECTOR_WIDTH_FLOAT, CL_DEVICE_PREFERRED_VECTOR_WIDTH_DOUBLE, CL_DEVICE_PROFILE, CL_DEVICE_PROFILING_TIMER_RESOLUTION, CL_DEVICE_SINGLE_FP_CONFIG, cl_device_type, CL_DEVICE_TYPE_CPU, CL_DEVICE_TYPE_GPU, CL_DEVICE_TYPE_ACCELERATOR, CL_DEVICE_TYPE_CUSTOM, CL_DEVICE_TYPE, CL_DEVICE_VENDOR, CL_DEVICE_VENDOR_ID, CL_DEVICE_VERSION, CL_DRIVER_VERSION, cl_device_svm_capabilities, CL_DEVICE_SVM_COARSE_GRAIN_BUFFER, CL_DEVICE_SVM_FINE_GRAIN_BUFFER, CL_DEVICE_SVM_FINE_GRAIN_SYSTEM, CL_DEVICE_SVM_ATOMICS, CL_DEVICE_SVM_CAPABILITIES, cl_version, CL_VERSION_PATCH_BITS, CL_VERSION_MINOR_BITS, CL_VERSION_MAJOR_MASK, CL_VERSION_MINOR_MASK, CL_VERSION_PATCH_MASK, CL_FP_FMA, CL_FP_CORRECTLY_ROUNDED_DIVIDE_SQRT, CL_FP_SOFT_FLOAT, CL_DEVICE_COMPILER_AVAILABLE, CL_DEVICE_QUEUE_PROPERTIES, cl_command_queue_properties};
+use core::{mem::MaybeUninit, num::{NonZeroUsize, NonZeroU32, NonZeroU64, IntErrorKind}, fmt::{Debug, Display}, str::FromStr};
+use std::{ptr::NonNull, ffi::c_void};
+use opencl_sys::{cl_device_id, clGetDeviceIDs, CL_DEVICE_TYPE_ALL, cl_device_info, clGetDeviceInfo, CL_DEVICE_PLATFORM, CL_DEVICE_ADDRESS_BITS, cl_bool, CL_DEVICE_AVAILABLE, CL_FP_DENORM, CL_FP_INF_NAN, CL_FP_ROUND_TO_NEAREST, CL_FP_ROUND_TO_ZERO, CL_FP_ROUND_TO_INF, cl_device_fp_config, CL_DEVICE_ENDIAN_LITTLE, CL_DEVICE_ERROR_CORRECTION_SUPPORT, cl_device_exec_capabilities, CL_EXEC_KERNEL, CL_EXEC_NATIVE_KERNEL, CL_DEVICE_EXECUTION_CAPABILITIES, CL_DEVICE_EXTENSIONS, CL_DEVICE_GLOBAL_MEM_CACHE_SIZE, CL_NONE, CL_READ_ONLY_CACHE, cl_device_mem_cache_type, CL_DEVICE_GLOBAL_MEM_CACHE_TYPE, CL_READ_WRITE_CACHE, CL_DEVICE_GLOBAL_MEM_CACHELINE_SIZE, CL_DEVICE_GLOBAL_MEM_SIZE, CL_DEVICE_HALF_FP_CONFIG, CL_DEVICE_IMAGE_SUPPORT, CL_DEVICE_IMAGE2D_MAX_HEIGHT, CL_DEVICE_IMAGE2D_MAX_WIDTH, CL_DEVICE_IMAGE3D_MAX_WIDTH, CL_DEVICE_IMAGE3D_MAX_HEIGHT, CL_DEVICE_IMAGE3D_MAX_DEPTH, CL_DEVICE_LOCAL_MEM_SIZE, CL_LOCAL, CL_GLOBAL, CL_DEVICE_LOCAL_MEM_TYPE, CL_DEVICE_MAX_COMPUTE_UNITS, CL_DEVICE_MAX_CONSTANT_ARGS, CL_DEVICE_MAX_CONSTANT_BUFFER_SIZE, CL_DEVICE_MAX_MEM_ALLOC_SIZE, CL_DEVICE_MAX_PARAMETER_SIZE, CL_DEVICE_MAX_READ_IMAGE_ARGS, CL_DEVICE_MAX_SAMPLERS, CL_DEVICE_MAX_WORK_GROUP_SIZE, CL_DEVICE_MAX_WORK_ITEM_DIMENSIONS, CL_DEVICE_MAX_WORK_ITEM_SIZES, CL_DEVICE_MAX_WRITE_IMAGE_ARGS, CL_DEVICE_MEM_BASE_ADDR_ALIGN, CL_DEVICE_MIN_DATA_TYPE_ALIGN_SIZE, CL_DEVICE_NAME, CL_DEVICE_PROFILE, CL_DEVICE_PROFILING_TIMER_RESOLUTION, CL_DEVICE_SINGLE_FP_CONFIG, cl_device_type, CL_DEVICE_TYPE_CPU, CL_DEVICE_TYPE_GPU, CL_DEVICE_TYPE_ACCELERATOR, CL_DEVICE_TYPE_CUSTOM, CL_DEVICE_TYPE, CL_DEVICE_VENDOR, CL_DEVICE_VENDOR_ID, CL_DEVICE_VERSION, CL_DRIVER_VERSION, cl_device_svm_capabilities, CL_DEVICE_SVM_COARSE_GRAIN_BUFFER, CL_DEVICE_SVM_FINE_GRAIN_BUFFER, CL_DEVICE_SVM_FINE_GRAIN_SYSTEM, CL_DEVICE_SVM_ATOMICS, cl_version, CL_VERSION_PATCH_BITS, CL_VERSION_MINOR_BITS, CL_VERSION_MAJOR_MASK, CL_VERSION_MINOR_MASK, CL_VERSION_PATCH_MASK, CL_FP_FMA, CL_FP_CORRECTLY_ROUNDED_DIVIDE_SQRT, CL_FP_SOFT_FLOAT, CL_DEVICE_COMPILER_AVAILABLE, CL_DEVICE_QUEUE_PROPERTIES, cl_command_queue_properties};
 use rscl_proc::docfg;
 use crate::buffer::flags::MemAccess;
 
@@ -106,7 +106,7 @@ impl Device {
     #[docfg(feature = "cl1_2")]
     #[inline(always)]
     pub fn double_fp_config (&self) -> Result<FpConfig> {
-        self.get_info_bits(CL_DEVICE_DOUBLE_FP_CONFIG)
+        self.get_info_bits(opencl_sys::CL_DEVICE_DOUBLE_FP_CONFIG)
     }
 
     /// Is ```true``` if the OpenCL device is a little endian device and ```false``` otherwise.
@@ -309,7 +309,7 @@ impl Device {
     #[docfg(feature = "cl2_2")]
     #[inline(always)]
     pub fn max_clock_frequency (&self) -> Result<u32> {
-        self.get_info_bits(CL_DEVICE_MAX_CLOCK_FREQUENCY)
+        self.get_info_bits(opencl_sys::CL_DEVICE_MAX_CLOCK_FREQUENCY)
     }
 
     /// The number of parallel compute cores on the OpenCL device. The minimum value is 1.
@@ -548,7 +548,7 @@ impl Device {
 
         Ok(match v {
             0 => None,
-            _ => unsafe { Some(transmute(v)) }
+            _ => unsafe { Some(core::mem::transmute(v)) }
         })
     }
 
@@ -770,7 +770,7 @@ impl Device {
     #[docfg(feature = "cl2")]
     #[inline(always)]
     pub fn svm_capabilities (&self) -> Result<SvmCapability> {
-        self.get_info_bits(CL_DEVICE_SVM_CAPABILITIES)
+        self.get_info_bits(opencl_sys::CL_DEVICE_SVM_CAPABILITIES)
     }
 
     /// The OpenCL device type.
@@ -938,7 +938,7 @@ unsafe impl Sync for Device {}
 #[docfg(feature = "cl3")]
 #[non_exhaustive]
 pub struct AtomicCapabilities {
-    pub order: Ordering,
+    pub order: core::sync::atomic::Ordering,
     /// Support for memory ordering constraints that apply to a single work-item.
     pub work_item_scope: bool,
     pub scope: AtomicScope
@@ -964,15 +964,15 @@ impl AtomicCapabilities {
 
         // ORDER
         if bits & opencl_sys::CL_DEVICE_ATOMIC_ORDER_SEQ_CST != 0 {
-            order = Ordering::SeqCst;
+            order = core::sync::atomic::Ordering::SeqCst;
         }
 
         else if bits & opencl_sys::CL_DEVICE_ATOMIC_ORDER_ACQ_REL != 0 {
-            order = Ordering::AcqRel
+            order = core::sync::atomic::Ordering::AcqRel
         }
 
         else if bits & opencl_sys::CL_DEVICE_ATOMIC_ORDER_RELAXED != 0 {
-            order = Ordering::Relaxed
+            order = core::sync::atomic::Ordering::Relaxed
         }
 
         else {
@@ -1069,7 +1069,7 @@ impl PartitionProperty {
         match unsafe { *bits.get_unchecked(0) } {
             0 => None,
             opencl_sys::CL_DEVICE_PARTITION_EQUALLY => Some(Self::Equally(bits[1] as u32)),
-            opencl_sys::CL_DEVICE_PARTITION_BY_AFFINITY_DOMAIN => Some(Self::AffinityDomain(unsafe { transmute(bits[1] as u64) })),
+            opencl_sys::CL_DEVICE_PARTITION_BY_AFFINITY_DOMAIN => Some(Self::AffinityDomain(unsafe { core::mem::transmute(bits[1] as u64) })),
             opencl_sys::CL_DEVICE_PARTITION_BY_COUNTS => {
                 let mut result = Vec::with_capacity(bits.len());
 

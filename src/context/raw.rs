@@ -1,10 +1,10 @@
-use std::ptr::addr_of_mut;
+use std::{ptr::{addr_of_mut, NonNull}, ffi::c_void};
 use opencl_sys::{cl_context, clCreateContext, clCreateContextFromType, clRetainContext, clReleaseContext};
-use crate::core::*;
+use crate::core::{*, device::DeviceType};
 use super::ContextProperties;
 
 #[repr(transparent)]
-pub struct RawContext (cl_context);
+pub struct RawContext (NonNull<c_void>);
 
 impl RawContext {
     pub fn new (props: ContextProperties, devices: &[Device]) -> Result<Self> {
@@ -24,7 +24,7 @@ impl RawContext {
             return Err(Error::from(err));
         }
 
-        Ok(Self(id))
+        Ok(Self::from_id(id).unwrap())
     }
 
     pub fn from_type (props: ContextProperties, ty: DeviceType) -> Result<Self> {
@@ -43,17 +43,22 @@ impl RawContext {
             return Err(Error::from(err));
         }
 
-        Ok(Self(id))
+        Ok(Self::from_id(id).unwrap())
     }
 
     #[inline(always)]
-    pub const fn from_id (v: cl_context) -> Self {
-        Self (v)
+    pub const unsafe fn from_id_unchecked (v: cl_context) -> Self {
+        Self(NonNull::new_unchecked(v))
+    }
+
+    #[inline(always)]
+    pub const fn from_id (v: cl_context) -> Option<Self> {
+        NonNull::new(v).map(Self)
     }
 
     #[inline(always)]
     pub const fn id (&self) -> cl_context {
-        self.0
+        self.0.as_ptr()
     }
 }
 
@@ -61,7 +66,7 @@ impl Clone for RawContext {
     #[inline(always)]
     fn clone(&self) -> Self {
         unsafe {
-            tri_panic!(clRetainContext(self.0))
+            tri_panic!(clRetainContext(self.id()))
         }
 
         Self(self.0.clone())
@@ -72,7 +77,7 @@ impl Drop for RawContext {
     #[inline(always)]
     fn drop(&mut self) {
         unsafe {
-            tri_panic!(clReleaseContext(self.0))
+            tri_panic!(clReleaseContext(self.id()))
         }   
     }
 }

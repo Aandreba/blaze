@@ -1,20 +1,25 @@
-use std::{mem::MaybeUninit, ffi::c_void, ptr::addr_of_mut};
+use std::{mem::MaybeUninit, ffi::c_void, ptr::{addr_of_mut, NonNull}};
 use opencl_sys::{cl_kernel, cl_kernel_info, clRetainProgram, CL_KERNEL_PROGRAM, CL_KERNEL_CONTEXT, CL_KERNEL_REFERENCE_COUNT, CL_KERNEL_NUM_ARGS, CL_KERNEL_FUNCTION_NAME, CL_KERNEL_ARG_ADDRESS_GLOBAL, CL_KERNEL_ARG_ADDRESS_LOCAL, CL_KERNEL_ARG_ADDRESS_CONSTANT, CL_KERNEL_ARG_ADDRESS_PRIVATE, cl_kernel_arg_type_qualifier, CL_KERNEL_ARG_TYPE_CONST, CL_KERNEL_ARG_TYPE_RESTRICT, CL_KERNEL_ARG_TYPE_VOLATILE, clGetKernelInfo, clSetKernelArg, clEnqueueNDRangeKernel, clRetainKernel, clReleaseKernel};
 use rscl_proc::docfg;
 use crate::{core::*, context::{RawContext, Context, Global}, event::{RawEvent, WaitList}};
 
 #[repr(transparent)]
-pub struct Kernel (cl_kernel);
+pub struct Kernel (NonNull<c_void>);
 
 impl Kernel {
     #[inline(always)]
     pub const fn id (&self) -> cl_kernel {
-        self.0
+        self.0.as_ptr()
     }
 
     #[inline(always)]
-    pub const fn from_id (id: cl_kernel) -> Self {
-        Self(id)
+    pub const unsafe fn from_id_unchecked (id: cl_kernel) -> Self {
+        Self(NonNull::new_unchecked(id))
+    }
+
+    #[inline(always)]
+    pub const fn from_id (id: cl_kernel) -> Option<Self> {
+        NonNull::new(id).map(Self)
     }
 
     #[inline(always)]
@@ -22,7 +27,7 @@ impl Kernel {
         let ptr = v as *const _ as *const _;
 
         unsafe {
-            tri!(clSetKernelArg(self.0, idx, core::mem::size_of_val(v), ptr))
+            tri!(clSetKernelArg(self.id(), idx, core::mem::size_of_val(v), ptr))
         }
 
         Ok(())
@@ -30,7 +35,7 @@ impl Kernel {
 
     #[inline(always)]
     pub unsafe fn set_ptr_argument (&mut self, idx: u32, size: usize, ptr: *const c_void) -> Result<()> {
-        tri!(clSetKernelArg(self.0, idx, size, ptr));
+        tri!(clSetKernelArg(self.id(), idx, size, ptr));
         Ok(())
     }
 
@@ -41,7 +46,7 @@ impl Kernel {
 
     #[docfg(feature = "svm")]
     pub unsafe fn set_svm_argument (&mut self, idx: u32, v: &impl crate::svm::SvmPointer) -> Result<()> {
-        tri!(opencl_sys::clSetKernelArgSVMPointer(self.0, idx, v.as_ptr().cast()));
+        tri!(opencl_sys::clSetKernelArgSVMPointer(self.id(), idx, v.as_ptr().cast()));
         Ok(())
     }
 
@@ -68,10 +73,10 @@ impl Kernel {
 
         let mut event = core::ptr::null_mut();
         unsafe {
-            tri!(clEnqueueNDRangeKernel(queue.id(), self.0, work_dim, core::ptr::null(), global_work_dims.as_ptr(), local_work_dims, num_events_in_wait_list, event_wait_list, addr_of_mut!(event)))
+            tri!(clEnqueueNDRangeKernel(queue.id(), self.id(), work_dim, core::ptr::null(), global_work_dims.as_ptr(), local_work_dims, num_events_in_wait_list, event_wait_list, addr_of_mut!(event)))
         }
 
-        Ok(RawEvent::from_id(event))
+        Ok(RawEvent::from_id(event).unwrap())
     }
 
     /// Return the kernel function name.
@@ -108,7 +113,7 @@ impl Kernel {
 
     #[inline(always)]
     pub unsafe fn clone (&self) -> Self {
-        tri_panic!(clRetainKernel(self.0));
+        tri_panic!(clRetainKernel(self.id()));
         Self(self.0)
     }
 
@@ -116,10 +121,10 @@ impl Kernel {
     fn get_info_string (&self, ty: cl_kernel_info) -> Result<String> {
         unsafe {
             let mut len = 0;
-            tri!(clGetKernelInfo(self.0, ty, 0, core::ptr::null_mut(), &mut len));
+            tri!(clGetKernelInfo(self.id(), ty, 0, core::ptr::null_mut(), &mut len));
 
             let mut result = Vec::<u8>::with_capacity(len);
-            tri!(clGetKernelInfo(self.0, ty, len, result.as_mut_ptr().cast(), core::ptr::null_mut()));
+            tri!(clGetKernelInfo(self.id(), ty, len, result.as_mut_ptr().cast(), core::ptr::null_mut()));
 
             result.set_len(len - 1);
             Ok(String::from_utf8(result).unwrap())
@@ -131,7 +136,7 @@ impl Kernel {
         let mut value = MaybeUninit::<T>::uninit();
         
         unsafe {
-            tri!(clGetKernelInfo(self.0, ty, core::mem::size_of::<T>(), value.as_mut_ptr().cast(), core::ptr::null_mut()));
+            tri!(clGetKernelInfo(self.id(), ty, core::mem::size_of::<T>(), value.as_mut_ptr().cast(), core::ptr::null_mut()));
             Ok(value.assume_init())
         }
     }
@@ -141,7 +146,7 @@ impl Drop for Kernel {
     #[inline(always)]
     fn drop(&mut self) {
         unsafe {
-            tri_panic!(clReleaseKernel(self.0))
+            tri_panic!(clReleaseKernel(self.id()))
         }
     }
 }
@@ -197,10 +202,10 @@ impl Kernel {
     fn get_arg_info_string (&self, ty: cl_kernel_arg_info, idx: u32) -> Result<String> {
         unsafe {
             let mut len = 0;
-            tri!(clGetKernelArgInfo(self.0, idx, ty, 0, core::ptr::null_mut(), &mut len));
+            tri!(clGetKernelArgInfo(self.id(), idx, ty, 0, core::ptr::null_mut(), &mut len));
 
             let mut result = Vec::<u8>::with_capacity(len);
-            tri!(clGetKernelArgInfo(self.0, idx, ty, len, result.as_mut_ptr().cast(), core::ptr::null_mut()));
+            tri!(clGetKernelArgInfo(self.id(), idx, ty, len, result.as_mut_ptr().cast(), core::ptr::null_mut()));
             
             result.set_len(len - 1);
             Ok(String::from_utf8(result).unwrap())
@@ -212,7 +217,7 @@ impl Kernel {
         let mut value = MaybeUninit::<T>::uninit();
         
         unsafe {
-            tri!(clGetKernelArgInfo(self.0, idx, ty, core::mem::size_of::<T>(), value.as_mut_ptr().cast(), core::ptr::null_mut()));
+            tri!(clGetKernelArgInfo(self.id(), idx, ty, core::mem::size_of::<T>(), value.as_mut_ptr().cast(), core::ptr::null_mut()));
             Ok(value.assume_init())
         }
     }

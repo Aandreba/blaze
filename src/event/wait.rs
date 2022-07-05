@@ -4,6 +4,7 @@ use opencl_sys::{cl_event, cl_int};
 use super::{EventStatus, Event};
 use crate::core::*;
 
+#[cfg_attr(docsrs, doc(cfg(feature = "futures")))]
 #[derive(Clone)]
 pub struct EventWait<E: Event> {
     event: Option<E>,

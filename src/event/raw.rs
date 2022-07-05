@@ -1,21 +1,27 @@
 use crate::core::*;
-use std::{mem::MaybeUninit, ptr::addr_of};
+use std::ffi::c_void;
+use std::{mem::MaybeUninit, ptr::{addr_of, NonNull}};
 use opencl_sys::{cl_event, clRetainEvent, clReleaseEvent, clGetEventInfo, cl_event_info, clWaitForEvents};
 use rscl_proc::docfg;
 use super::{Event};
 
 #[repr(transparent)]
-pub struct RawEvent (cl_event);
+pub struct RawEvent (NonNull<c_void>);
 
 impl RawEvent {
     #[inline(always)]
-    pub const fn from_id (inner: cl_event) -> Self {
-        Self(inner)
+    pub const unsafe fn from_id_unchecked (inner: cl_event) -> Self {
+        Self(NonNull::new_unchecked(inner))
+    }
+
+    #[inline(always)]
+    pub const fn from_id (inner: cl_event) -> Option<Self> {
+        NonNull::new(inner).map(Self)
     }
 
     #[inline(always)]
     pub const fn id (&self) -> cl_event {
-        self.0
+        self.0.as_ptr()
     }
 
     #[inline(always)]
@@ -43,14 +49,14 @@ impl RawEvent {
         let mut result = MaybeUninit::<T>::uninit();
         
         unsafe {
-            tri!(clGetEventInfo(self.0, id, core::mem::size_of::<T>(), result.as_mut_ptr().cast(), core::ptr::null_mut()));
+            tri!(clGetEventInfo(self.id(), id, core::mem::size_of::<T>(), result.as_mut_ptr().cast(), core::ptr::null_mut()));
             Ok(result.assume_init())
         }
     }
 }
 
 #[cfg(feature = "cl1_1")]
-use {std::ffi::c_void, opencl_sys::cl_int, super::EventStatus};
+use {opencl_sys::cl_int, super::EventStatus};
 
 #[docfg(feature = "cl1_1")]
 impl RawEvent {
@@ -114,7 +120,7 @@ impl RawEvent {
 
     #[inline(always)]
     pub unsafe fn on_status_raw (&self, status: EventStatus, f: unsafe extern "C" fn(event: cl_event, event_command_status: cl_int, user_data: *mut c_void), user_data: *mut c_void) -> Result<()> {
-        tri!(opencl_sys::clSetEventCallback(self.0, status as i32, Some(f), user_data));
+        tri!(opencl_sys::clSetEventCallback(self.id(), status as i32, Some(f), user_data));
         Ok(())
     }
 }
@@ -148,7 +154,7 @@ impl Clone for RawEvent {
     #[inline(always)]
     fn clone(&self) -> Self {
         unsafe {
-            tri_panic!(clRetainEvent(self.0))
+            tri_panic!(clRetainEvent(self.id()))
         }
 
         Self(self.0)
@@ -159,7 +165,7 @@ impl Drop for RawEvent {
     #[inline(always)]
     fn drop(&mut self) {
         unsafe {
-            tri_panic!(clReleaseEvent(self.0))
+            tri_panic!(clReleaseEvent(self.id()))
         }
     }
 }
@@ -172,7 +178,7 @@ unsafe extern "C" fn event_listener (event: cl_event, event_command_status: cl_i
     let user_data : *mut Box<dyn FnOnce(RawEvent, Result<EventStatus>) + Send> = user_data.cast();
     let f = *Box::from_raw(user_data);
     
-    let event = RawEvent::from_id(event);
+    let event = RawEvent::from_id_unchecked(event);
     let status = EventStatus::try_from(event_command_status);
     f(event, status)
 }
