@@ -9,7 +9,7 @@ use std::ptr::addr_of_mut;
 pub struct CommandQueue (NonNull<c_void>);
 
 impl CommandQueue {
-    #[docfg(not(feature = "cl2"))]
+    #[cfg(not(feature = "cl2"))]
     pub fn new (props: CommandQueueProperties, ctx: &RawContext, device: &Device) -> Result<Self> {
         let props = props.to_bits();
         
@@ -26,7 +26,7 @@ impl CommandQueue {
         Ok(NonNull::new(id).map(Self).unwrap())
     }
 
-    #[docfg(feature = "cl2")]
+    #[cfg(feature = "cl2")]
     pub fn new (props: impl Into<QueueProperties>, ctx: &RawContext, device: &Device) -> Result<Self> {
         use elor::prelude::*;
 
@@ -55,7 +55,7 @@ impl CommandQueue {
 
     /// Return the context specified when the command-queue is created.
     #[inline(always)]
-    pub fn context (&self) -> Result<cl_context> {
+    pub fn context (&self) -> Result<RawContext> {
         self.get_info(CL_QUEUE_CONTEXT)
     }
 
@@ -76,6 +76,13 @@ impl CommandQueue {
     pub fn properties (&self) -> Result<CommandQueueProperties> {
         let props = self.get_info(CL_QUEUE_PROPERTIES)?;
         Ok(CommandQueueProperties::from_bits(props))
+    }
+
+    #[docfg(feature = "cl3")]
+    #[inline(always)]
+    pub fn queue_properties (&self) -> Result<QueueProperties> {
+        let v = self.get_info_array::<cl_queue_properties>(opencl_sys::CL_QUEUE_PROPERTIES_ARRAY)?;
+        Ok(QueueProperties::from_bits(&v))
     }
 
     /// Return the size of the device command-queue. To be considered valid for this query, command_queue must be a device command-queue.
@@ -117,6 +124,20 @@ impl CommandQueue {
         let mut result = MaybeUninit::<T>::uninit();
         unsafe {
             tri!(clGetCommandQueueInfo(self.id(), ty, core::mem::size_of::<T>(), result.as_mut_ptr().cast(), core::ptr::null_mut()));
+            Ok(result.assume_init())
+        }
+    }
+
+    #[inline]
+    fn get_info_array<T> (&self, ty: cl_command_queue_info) -> Result<Box<[T]>> {
+        let mut size = 0;
+        unsafe {
+            tri!(clGetCommandQueueInfo(self.id(), ty, 0, core::ptr::null_mut(), addr_of_mut!(size)));
+        }
+
+        let mut result = Box::new_uninit_slice(size / core::mem::size_of::<T>());
+        unsafe {
+            tri!(clGetCommandQueueInfo(self.id(), ty, size, result.as_mut_ptr().cast(), core::ptr::null_mut()));
             Ok(result.assume_init())
         }
     }
@@ -164,6 +185,9 @@ cfg_if::cfg_if! {
         }
 
         impl QueueProperties {
+            const PROPERTIES : cl_queue_properties = CL_QUEUE_PROPERTIES as cl_queue_properties;
+            const SIZE : cl_queue_properties = CL_QUEUE_SIZE as cl_queue_properties;
+
             #[inline(always)]
             pub fn new (props: CommandQueueProperties, size: impl Into<Option<NonZeroU32>>) -> Self {
                 Self { 
@@ -184,14 +208,40 @@ cfg_if::cfg_if! {
                 if let Some(size) = self.size {
                     return Left (
                         [
-                            CL_QUEUE_PROPERTIES as cl_queue_properties, props,
-                            CL_QUEUE_SIZE as cl_queue_properties, size.get() as cl_queue_properties,
+                            Self::PROPERTIES, props,
+                            Self::SIZE, size.get() as cl_queue_properties,
                             0
                         ]
                     )
                 }
 
                 Right([CL_QUEUE_PROPERTIES as cl_queue_properties, props, 0])
+            }
+
+            #[inline]
+            pub fn from_bits (bits: &[cl_queue_properties]) -> Self {
+                if bits.len() == 0 {
+                    return Self::default()
+                }
+
+                let mut props = CommandQueueProperties::default();
+                let mut size = None;
+
+                match bits[0] {
+                    Self::PROPERTIES => props = CommandQueueProperties::from_bits(bits[1]),
+                    Self::SIZE => size = NonZeroU32::new(u32::try_from(bits[1]).unwrap()),
+                    0 => return Self::new(props, size),
+                    _ => panic!()
+                }
+
+                match bits[2] {
+                    Self::PROPERTIES => props = CommandQueueProperties::from_bits(bits[3]),
+                    Self::SIZE => size = NonZeroU32::new(u32::try_from(bits[3]).unwrap()),
+                    0 => return Self::new(props, size),
+                    _ => panic!()
+                }
+
+                Self::new(props, size)
             }
         }
 
