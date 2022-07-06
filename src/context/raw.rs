@@ -140,7 +140,7 @@ impl RawContext {
     #[inline(always)]
     pub unsafe fn on_destruct_raw (&self, f: unsafe extern "C" fn(context: cl_context, user_data: *mut c_void), user_data: *mut c_void) -> Result<()> {
         tri!(opencl_sys::clSetContextDestructorCallback(self.id(), Some(f), user_data));
-        todo!()
+        Ok(())
     }
 }
 

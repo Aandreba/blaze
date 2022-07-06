@@ -1,4 +1,4 @@
-use rscl::{core::*, buffer::{Buffer, MemObject}, event::{FlagEvent, Event}, context::{SimpleContext, Global, Context}};
+use rscl::{core::*, buffer::{Buffer, RawBuffer}, event::{FlagEvent, Event}, context::{SimpleContext, Global, Context}};
 use rscl_proc::global_context;
 
 #[global_context]

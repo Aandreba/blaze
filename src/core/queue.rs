@@ -78,6 +78,7 @@ impl CommandQueue {
         Ok(CommandQueueProperties::from_bits(props))
     }
 
+    /// Return the properties argument specified in creation.
     #[docfg(feature = "cl3")]
     #[inline(always)]
     pub fn queue_properties (&self) -> Result<QueueProperties> {

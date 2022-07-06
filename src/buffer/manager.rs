@@ -9,50 +9,32 @@ pub enum AccessManager {
 
 impl AccessManager {
     #[inline]
-    pub fn extend_list (&self, wait: &mut WaitList) {
+    pub fn extend_to_read (&self, wait: &mut WaitList) {
         match self {
-            Self::Reading(x) => wait.extend(x.into_iter().cloned()),
             Self::Writing(x) => wait.extend_one(x.clone()),
-            Self::None => {},
+            _ => {},
         }
     }
 
     #[inline]
-    pub fn read (&mut self, evt: RawEvent) -> WaitList {
+    pub fn extend_to_write (&self, wait: &mut WaitList) {
         match self {
-            Self::None => {
-                *self = Self::Reading(vec![evt]);
-                WaitList::EMPTY
-            },
-
-            Self::Reading(x) => {
-                x.push(evt);
-                WaitList::EMPTY
-            },
-
-            Self::Writing(x) => {
-                let wait = WaitList::from_event(x.clone());
-                *self = Self::Reading(vec![evt]);
-                wait
-            }
+            Self::Reading(x) => wait.extend(x.iter().cloned()),
+            Self::Writing(x) => wait.extend_one(x.clone()),
+            _ => {},
         }
     }
 
     #[inline]
-    pub fn write (&mut self, evt: RawEvent) -> WaitList {
+    pub fn read (&mut self, evt: RawEvent) {
         match self {
-            Self::None => {
-                *self = Self::Writing(evt);
-                WaitList::EMPTY
-            },
-
-            Self::Reading(x) => {
-                let wait = WaitList::new(core::mem::take(x));
-                *self = Self::Writing(evt);
-                wait
-            },
-
-            Self::Writing(x) => WaitList::from_event(core::mem::replace(x, evt))
+            Self::Reading(x) => x.push(evt),
+            _ => *self = Self::Reading(vec![evt])
         }
+    }
+
+    #[inline]
+    pub fn write (&mut self, evt: RawEvent) {
+        *self = Self::Writing(evt)
     }
 }

@@ -1,4 +1,4 @@
-use rscl::{context::SimpleContext, buffer::{Buffer, WriteBuffer, MemObject}, event::Event};
+use rscl::{context::SimpleContext, buffer::{Buffer, WriteBuffer, RawBuffer}, event::Event};
 use rscl_proc::{global_context, rscl};
 
 #[rscl(Arith)]

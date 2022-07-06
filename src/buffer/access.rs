@@ -1,14 +1,17 @@
 use std::{marker::PhantomData, ptr::{NonNull}, ops::{RangeBounds, Deref, DerefMut}, ffi::c_void, sync::Arc};
 use parking_lot::FairMutex;
+use rscl_proc::docfg;
 
 use crate::{context::{Context, Global, RawContext}, event::{RawEvent, WaitList}};
 use crate::core::*;
-use crate::buffer::{flags::{FullMemFlags, HostPtr, MemAccess}, events::{ReadBufferEvent, WriteBufferEvent, ReadBufferInto, write_from_static, write_from_ptr}, manager::AccessManager, RawBuffer};
+use crate::buffer::{flags::{FullMemFlags, HostPtr, MemAccess}, events::{ReadBufferEvent, WriteBufferEvent, ReadBufferInto, write_from_static, write_from_ptr}, manager::AccessManager, MemObject};
 
 #[cfg(not(debug_assertions))]
 use std::hint::unreachable_unchecked;
 
-pub trait MemObject<T: Copy + Unpin, C: Context>: AsRef<RawBuffer> + AsMut<RawBuffer> {
+use super::offset_cb;
+
+pub trait RawBuffer<T: Copy + Unpin, C: Context>: AsRef<MemObject> + AsMut<MemObject> {
     const ACCESS : MemAccess;
 
     fn context (&self) -> &C;
@@ -47,7 +50,9 @@ pub trait MemObject<T: Copy + Unpin, C: Context>: AsRef<RawBuffer> + AsMut<RawBu
     fn raw_context (&self) -> Result<RawContext> {
         self.as_ref().context()
     }
-
+    
+    /// Return offset if memobj is a sub-buffer object created using [create_sub_buffer](MemObject::create_sub_buffer). Returns 0 if memobj is not a subbuffer object.
+    #[docfg(feature = "cl1_1")]
     #[inline(always)]
     fn offset (&self) -> Result<usize> {
         self.as_ref().offset()
@@ -58,32 +63,103 @@ pub trait MemObject<T: Copy + Unpin, C: Context>: AsRef<RawBuffer> + AsMut<RawBu
         self.read(.., wait)
     }
 
-    #[inline(always)]
+    #[inline]
     fn read (&self, range: impl RangeBounds<usize>, wait: impl Into<WaitList>) -> Result<ReadBufferEvent<T>> {
-        unsafe { ReadBufferEvent::new(self.as_ref(), range, self.context().next_queue(), wait) }
+        let access = self.access_mananer();
+        let mut access = access.lock();
+
+        let mut wait : WaitList = wait.into();
+        access.extend_to_read(&mut wait);
+
+        let evt = unsafe { ReadBufferEvent::new(self.as_ref(), range, self.context().next_queue(), wait)? };
+        access.read(evt.as_ref().clone());
+        
+        Ok(evt)
     }
 
-    #[inline(always)]
+    #[inline]
     fn read_into<P: DerefMut<Target = [T]>> (&self, dst: P, offset: usize, wait: impl Into<WaitList>) -> Result<ReadBufferInto<T, P>> {
-        unsafe { ReadBufferInto::new(self.as_ref(), dst, offset, self.context().next_queue(), wait)  }
+        let access = self.access_mananer();
+        let mut access = access.lock();
+
+        let mut wait : WaitList = wait.into();
+        access.extend_to_read(&mut wait);
+
+        let evt = unsafe { ReadBufferInto::new(self.as_ref(), dst, offset, self.context().next_queue(), wait)? };
+        access.read(evt.as_ref().clone());
+
+        Ok(evt)
     }
 
-    #[inline(always)]
+    #[inline]
     fn write<P: Deref<Target = [T]>> (&mut self, src: P, offset: usize, wait: impl Into<WaitList>) -> Result<WriteBufferEvent<T, P>> {
+        let access = self.access_mananer();
+        let mut access = access.lock();
+
+        let mut wait : WaitList = wait.into();
+        access.extend_to_write(&mut wait);
+
         let queue = self.context().next_queue().clone();
-        unsafe { WriteBufferEvent::new(src, self.as_mut(), offset, &queue, wait) }
+        let evt = unsafe { WriteBufferEvent::new(src, self.as_mut(), offset, &queue, wait)? };
+        access.write(evt.as_ref().clone());
+
+        Ok(evt)
     }
 
-    #[inline(always)]
+    #[inline]
     fn write_static (&mut self, src: &'static [T], offset: usize, wait: impl Into<WaitList>) -> Result<RawEvent> {
+        let access = self.access_mananer();
+        let mut access = access.lock();
+
+        let mut wait : WaitList = wait.into();
+        access.extend_to_write(&mut wait);
+
         let queue = self.context().next_queue().clone();
-        unsafe { write_from_static(src, self.as_mut(), offset, &queue, wait) }
+        let evt = unsafe { write_from_static(src, self.as_mut(), offset, &queue, wait)? };
+        access.write(evt.clone());
+
+        Ok(evt)
+    }
+
+    #[inline]
+    unsafe fn write_ptr (&mut self, src: *const T, range: impl RangeBounds<usize>, wait: impl Into<WaitList>) -> Result<RawEvent> {
+        let access = self.access_mananer();
+        let mut access = access.lock();
+
+        let mut wait : WaitList = wait.into();
+        access.extend_to_write(&mut wait);
+
+        let queue = self.context().next_queue().clone();
+        let evt = write_from_ptr(src, self.as_mut(), range, &queue, wait)?;
+        access.write(evt.clone());
+
+        Ok(evt)
     }
 
     #[inline(always)]
-    unsafe fn write_ptr (&mut self, src: *const T, range: impl RangeBounds<usize>, wait: impl Into<WaitList>) -> Result<RawEvent> {
+    fn copy_from<B: ?Sized + RawBuffer<T, C>> (&mut self, offset: usize, src: &B, range: impl RangeBounds<usize>, wait: impl Into<WaitList>) -> Result<RawEvent> {
+        let dst_offset = offset.checked_mul(core::mem::size_of::<T>()).unwrap();
+        let (src_offset, size) = offset_cb(src.as_ref(), core::mem::size_of::<T>(), range)?;
+
+        let (dst_access, src_access) = (self.access_mananer(), src.access_mananer());
+        let mut src_access = src_access.lock();
+        let mut dst_access = dst_access.lock();
+
+        let mut wait : WaitList = wait.into();
+        src_access.extend_to_read(&mut wait);
+        dst_access.extend_to_write(&mut wait);
+
         let queue = self.context().next_queue().clone();
-        write_from_ptr(src, self.as_mut(), range, &queue, wait)
+        let evt = unsafe { self.as_mut().copy_from(dst_offset, src.as_ref(), src_offset, size, &queue, wait)? };
+        src_access.read(evt.clone());
+        dst_access.write(evt.clone());
+
+        Ok(evt)
+    }
+
+    #[inline(always)]
+    fn copy_to<B: ?Sized + RawBuffer<T, C>> (&self, range: impl RangeBounds<usize>, dst: &mut B, offset: usize, wait: impl Into<WaitList>) -> Result<RawEvent> {
+        dst.copy_from(offset, self, range, wait)
     }
 }
 
@@ -91,7 +167,7 @@ macro_rules! impl_buffer {
     ($($access:expr => $ident:ident),+) => {
         $(
             pub struct $ident<T: Copy, C: Context = Global> {
-                inner: RawBuffer, 
+                inner: MemObject, 
                 manager: Arc<FairMutex<AccessManager>>,
                 ctx: C,
                 phtm: PhantomData<T>
@@ -130,7 +206,7 @@ macro_rules! impl_buffer {
                 #[inline]
                 pub fn create_in (len: usize, host: HostPtr, host_ptr: Option<NonNull<T>>, ctx: C) -> Result<Self> {
                     let size = len.checked_mul(core::mem::size_of::<T>()).unwrap();
-                    let inner = RawBuffer::new(size, FullMemFlags::new($access, host), host_ptr, ctx.raw_context())?;
+                    let inner = MemObject::new(size, FullMemFlags::new($access, host), host_ptr, ctx.raw_context())?;
             
                     Ok(Self {
                         inner,
@@ -141,7 +217,7 @@ macro_rules! impl_buffer {
                 }
             }
 
-            impl<T: Copy + Unpin, C: Context> MemObject<T, C> for $ident<T, C> {
+            impl<T: Copy + Unpin, C: Context> RawBuffer<T, C> for $ident<T, C> {
                 const ACCESS : MemAccess = $access;
 
                 #[inline(always)]
@@ -156,16 +232,16 @@ macro_rules! impl_buffer {
                 }
             }
 
-            impl<T: Copy + Unpin, C: Context> AsRef<RawBuffer> for $ident<T, C> {
+            impl<T: Copy + Unpin, C: Context> AsRef<MemObject> for $ident<T, C> {
                 #[inline(always)]
-                fn as_ref (&self) -> &RawBuffer {
+                fn as_ref (&self) -> &MemObject {
                     &self.inner
                 }
             }
 
-            impl<T: Copy + Unpin, C: Context> AsMut<RawBuffer> for $ident<T, C> {
+            impl<T: Copy + Unpin, C: Context> AsMut<MemObject> for $ident<T, C> {
                 #[inline(always)]
-                fn as_mut (&mut self) -> &mut RawBuffer {
+                fn as_mut (&mut self) -> &mut MemObject {
                     &mut self.inner
                 }
             }

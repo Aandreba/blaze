@@ -1,12 +1,13 @@
 use std::{mem::MaybeUninit, ptr::{NonNull, addr_of_mut}, ffi::c_void, ops::{RangeBounds, Bound}};
-use opencl_sys::{cl_mem, clRetainMemObject, clReleaseMemObject, clGetMemObjectInfo, CL_MEM_OFFSET, CL_MEM_CONTEXT, CL_MEM_REFERENCE_COUNT, CL_MEM_MAP_COUNT, CL_MEM_HOST_PTR, CL_MEM_SIZE, cl_mem_info, clCreateBuffer, CL_MEM_FLAGS, CL_FALSE, clEnqueueReadBuffer, clEnqueueWriteBuffer};
+use opencl_sys::{cl_mem, clRetainMemObject, clReleaseMemObject, clGetMemObjectInfo, CL_MEM_OFFSET, CL_MEM_CONTEXT, CL_MEM_REFERENCE_COUNT, CL_MEM_MAP_COUNT, CL_MEM_HOST_PTR, CL_MEM_SIZE, cl_mem_info, clCreateBuffer, CL_MEM_FLAGS, CL_FALSE, clEnqueueReadBuffer, clEnqueueWriteBuffer, clCreateSubBuffer, clEnqueueCopyBuffer};
+use rscl_proc::docfg;
 use crate::{core::*, context::RawContext, event::{WaitList, RawEvent}};
-use super::{flags::FullMemFlags};
+use super::{flags::{FullMemFlags}};
 
 #[repr(transparent)]
-pub struct RawBuffer (NonNull<c_void>);
+pub struct MemObject (NonNull<c_void>);
 
-impl RawBuffer {
+impl MemObject {
     #[inline]
     pub fn new<T> (size: usize, flags: FullMemFlags, host_ptr: Option<NonNull<T>>, ctx: &RawContext) -> Result<Self> {
         let host_ptr = match host_ptr {
@@ -46,17 +47,28 @@ impl RawBuffer {
         unsafe { core::mem::transmute(&self.0) }
     }
 
+    /// Return memory object from which memobj is created.
+    #[docfg(feature = "cl1_1")]
+    #[inline(always)]
+    pub fn associated_memobject (&self) -> Result<Option<MemObject>> {
+        let v = self.get_info::<cl_mem>(opencl_sys::CL_MEM_ASSOCIATED_MEMOBJECT)?;
+        Ok(Self::from_id(v))
+    }
+
+    /// Return the flags argument value specified when memobj is created.
     #[inline(always)]
     pub fn flags (&self) -> Result<FullMemFlags> {
         let flags = self.get_info(CL_MEM_FLAGS)?;
         Ok(FullMemFlags::from_bits(flags))
     }
 
+    /// Return actual size of the data store associated with memobj in bytes.
     #[inline(always)]
     pub fn size (&self) -> Result<usize> {
         self.get_info(CL_MEM_SIZE)
     }
 
+    /// If memobj is created with a host_ptr specified, return the host_ptr argument value specified when memobj is created.
     #[inline(always)]
     pub fn host_ptr (&self) -> Result<Option<NonNull<c_void>>> {
         self.get_info(CL_MEM_HOST_PTR).map(NonNull::new)
@@ -68,7 +80,7 @@ impl RawBuffer {
         self.get_info(CL_MEM_MAP_COUNT)
     }
 
-    /// Return _memobj_ reference count. The reference count returned should be considered immediately stale. It is unsuitable for general use in applications. This feature is provided for identifying memory leaks. 
+    /// Return memobj reference count. The reference count returned should be considered immediately stale. It is unsuitable for general use in applications. This feature is provided for identifying memory leaks. 
     #[inline(always)]
     pub fn reference_count (&self) -> Result<u32> {
         self.get_info(CL_MEM_REFERENCE_COUNT)
@@ -80,15 +92,37 @@ impl RawBuffer {
         self.get_info(CL_MEM_CONTEXT)
     }
 
+    /// Return offset if memobj is a sub-buffer object created using [create_sub_buffer](RawBuffer::create_sub_buffer). Returns 0 if memobj is not a subbuffer object.
+    #[docfg(feature = "cl1_1")]
     #[inline(always)]
     pub fn offset (&self) -> Result<usize> {
-        self.get_info(CL_MEM_OFFSET)
+        self.get_info(opencl_sys::CL_MEM_OFFSET)
     }
 
+    /// Return ```true``` if memobj is a buffer object that was created with CL_MEM_USE_HOST_PTR or is a sub-buffer object of a buffer object that was created with CL_MEM_USE_HOST_PTR and the host_ptr specified when the buffer object was created is a SVM pointer; otherwise returns ```false```.
+    #[docfg(feature = "cl2")]
     #[inline(always)]
-    pub unsafe fn clone (&self) -> Self {
-        tri_panic!(clRetainMemObject(self.id()));
-        Self(self.0)
+    pub fn uses_svm_pointer (&self) -> Result<bool> {
+        let v = self.get_info::<opencl_sys::cl_bool>(opencl_sys::CL_MEM_USES_SVM_POINTER)?;
+        Ok(v != 0)
+    }
+
+    /// Creates a new buffer object (referred to as a sub-buffer object) from an existing buffer object.
+    #[docfg(feature = "cl1_1")]
+    pub fn create_sub_buffer (&self, flags: super::flags::MemAccess, region: impl RangeBounds<usize>) -> Result<MemObject> {
+        let (origin, size) = offset_cb_plain(self, region)?;
+        let region = opencl_sys::cl_buffer_region { origin, size };
+
+        let mut err = 0;
+        let id = unsafe {
+            opencl_sys::clCreateSubBuffer(self.id(), flags.to_bits(), opencl_sys::CL_BUFFER_CREATE_TYPE_REGION, std::ptr::addr_of!(region).cast(), addr_of_mut!(err))
+        };
+
+        if err != 0 {
+            return Err(Error::from(err))
+        }
+
+        Ok(MemObject::from_id(id).unwrap())
     }
 
     #[inline]
@@ -102,14 +136,35 @@ impl RawBuffer {
     }
 }
 
-impl RawBuffer {
+#[docfg(feature = "cl1_1")]
+impl MemObject {
+    #[inline(always)]
+    pub fn on_destruct (&self, f: impl 'static + FnOnce(MemObject)) -> Result<()> {
+        let f = Box::new(f) as Box<_>;
+        self.on_destruct_boxed(f)
+    }
+
+    #[inline(always)]
+    pub fn on_destruct_boxed (&self, f: Box<dyn FnOnce(MemObject)>) -> Result<()> {
+        let data = Box::into_raw(Box::new(f));
+        unsafe { self.on_destruct_raw(destructor_callback, data.cast()) }
+    }
+
+    #[inline(always)]
+    pub unsafe fn on_destruct_raw (&self, f: unsafe extern "C" fn(memobj: cl_mem, user_data: *mut c_void), user_data: *mut c_void) -> Result<()> {
+        tri!(opencl_sys::clSetMemObjectDestructorCallback(self.id(), Some(f), user_data));
+        todo!()
+    }
+}
+
+impl MemObject {
     pub unsafe fn read_to_ptr<T: Copy> (&self, src_range: impl RangeBounds<usize>, dst: *mut T, queue: &CommandQueue, wait: impl Into<WaitList>) -> Result<RawEvent> {
         let (offset, cb) = offset_cb(self, core::mem::size_of::<T>(), src_range)?;
         let wait : WaitList = wait.into();
         let (num_events_in_wait_list, event_wait_list) = wait.raw_parts();
     
         let mut event = core::ptr::null_mut();
-        tri!(clEnqueueReadBuffer(queue.id(), self.id(), CL_FALSE, offset, cb, dst.cast(), num_events_in_wait_list, event_wait_list, &mut event));
+        tri!(clEnqueueReadBuffer(queue.id(), self.id(), CL_FALSE, offset, cb, dst.cast(), num_events_in_wait_list, event_wait_list, addr_of_mut!(event)));
     
         return Ok(RawEvent::from_id(event).unwrap())
     }
@@ -124,9 +179,30 @@ impl RawBuffer {
     
         return Ok(RawEvent::from_id(event).unwrap())
     }
+
+    pub unsafe fn copy_from (&mut self, dst_offset: usize, src: &MemObject, src_offset: usize, size: usize, queue: &CommandQueue, wait: impl Into<WaitList>) -> Result<RawEvent> {
+        let wait : WaitList = wait.into();
+        let (num_events_in_wait_list, event_wait_list) = wait.raw_parts();
+    
+        let mut event = core::ptr::null_mut();
+        tri!(clEnqueueCopyBuffer(queue.id(), src.id(), self.id(), src_offset, dst_offset, size, num_events_in_wait_list, event_wait_list, addr_of_mut!(event)));
+    
+        return Ok(RawEvent::from_id(event).unwrap())
+    }
 }
 
-impl Drop for RawBuffer {
+impl Clone for MemObject {
+    #[inline(always)]
+    fn clone(&self) -> Self {
+        unsafe {
+            tri_panic!(clRetainMemObject(self.id()))
+        }
+
+        Self(self.0)
+    }
+}
+
+impl Drop for MemObject {
     #[inline(always)]
     fn drop(&mut self) {
         unsafe {
@@ -135,11 +211,30 @@ impl Drop for RawBuffer {
     }
 }
 
-unsafe impl Send for RawBuffer {}
-unsafe impl Sync for RawBuffer {}
+unsafe impl Send for MemObject {}
+unsafe impl Sync for MemObject {}
+
+#[allow(unused)]
+#[inline]
+pub(crate) fn offset_cb_plain (buffer: &MemObject, range: impl RangeBounds<usize>) -> Result<(usize, usize)> {
+    let start = match range.start_bound() {
+        Bound::Excluded(x) => x.checked_add(1).unwrap(),
+        Bound::Included(x) => *x,
+        Bound::Unbounded => 0
+    };
+
+    let end = match range.end_bound() {
+        Bound::Excluded(x) => *x,
+        Bound::Included(x) => x.checked_add(1).unwrap(),
+        Bound::Unbounded => buffer.size()?
+    };
+
+    let len = end - start;
+    Ok((start, len))
+}
 
 #[inline]
-pub(crate) fn offset_cb (buffer: &RawBuffer, size: usize, range: impl RangeBounds<usize>) -> Result<(usize, usize)> {
+pub(crate) fn offset_cb (buffer: &MemObject, size: usize, range: impl RangeBounds<usize>) -> Result<(usize, usize)> {
     let start = match range.start_bound() {
         Bound::Excluded(x) => x.checked_add(1).and_then(|x| x.checked_mul(size)).unwrap(),
         Bound::Included(x) => x.checked_mul(size).unwrap(),
@@ -171,4 +266,11 @@ pub(crate) fn range_len (len: usize, range: &impl RangeBounds<usize>) -> usize {
     };
 
     end - start
+}
+
+#[cfg(feature = "cl1_1")]
+unsafe extern "C" fn destructor_callback (memobj: cl_mem, user_data: *mut c_void) {
+    let f = *Box::from_raw(user_data as *mut Box<dyn FnOnce(MemObject)>);
+    let memobj = MemObject::from_id_unchecked(memobj);
+    f(memobj)
 }

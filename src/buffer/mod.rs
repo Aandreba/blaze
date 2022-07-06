@@ -31,7 +31,7 @@ unsafe impl<T: Copy + Unpin, C: Context> ReadablePointer<T> for Buffer<T, C> {
     #[inline]
     unsafe fn set_argument (&self, kernel: &mut Kernel, idx: u32, wait: &mut WaitList) -> Result<Option<OwnedMutexGuard<RawFairMutex, AccessManager>>> {
         let access = self.access_mananer().lock_owned();
-        access.extend_list(wait);
+        access.extend_to_read(wait);
         kernel.set_argument(idx, self.as_ref().id_ref())?;
         Ok(Some(access))
     }
@@ -46,7 +46,7 @@ unsafe impl<T: Copy + Unpin, C: Context> ReadablePointer<T> for ReadBuffer<T, C>
     #[inline]
     unsafe fn set_argument (&self, kernel: &mut Kernel, idx: u32, wait: &mut WaitList) -> Result<Option<OwnedMutexGuard<RawFairMutex, AccessManager>>> {
         let access = self.access_mananer().lock_owned();
-        access.extend_list(wait);
+        access.extend_to_read(wait);
         kernel.set_argument(idx, self.as_ref().id_ref())?;
         Ok(Some(access))
     }
@@ -95,7 +95,7 @@ unsafe impl<T: Copy + Unpin, C: Context> WriteablePointer<T> for Buffer<T, C> {
     #[inline]
     unsafe fn set_argument (&self, kernel: &mut Kernel, idx: u32, wait: &mut WaitList) -> Result<Option<OwnedMutexGuard<RawFairMutex, AccessManager>>> {
         let access = self.access_mananer().lock_owned();
-        access.extend_list(wait);
+        access.extend_to_write(wait);
         kernel.set_argument(idx, self.as_ref().id_ref())?;
         Ok(Some(access))
     }
@@ -110,7 +110,7 @@ unsafe impl<T: Copy + Unpin, C: Context> WriteablePointer<T> for WriteBuffer<T, 
     #[inline]
     unsafe fn set_argument (&self, kernel: &mut Kernel, idx: u32, wait: &mut WaitList) -> Result<Option<OwnedMutexGuard<RawFairMutex, AccessManager>>> {
         let access = self.access_mananer().lock_owned();
-        access.extend_list(wait);
+        access.extend_to_write(wait);
         kernel.set_argument(idx, self.as_ref().id_ref())?;
         Ok(Some(access))
     }
