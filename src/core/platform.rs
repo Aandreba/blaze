@@ -29,6 +29,16 @@ impl Platform {
         self.0.as_ptr()
     }
 
+    #[inline(always)]
+    pub const unsafe fn from_id_unchecked (id: cl_platform_id) -> Self {
+        Self(NonNull::new_unchecked(id))
+    }
+
+    #[inline(always)]
+    pub const fn from_id (id: cl_platform_id) -> Option<Self> {
+        NonNull::new(id).map(Self)
+    }
+
     /// Returns the profile name supported by the implementation.
     #[inline(always)]
     pub fn profile (&self) -> Result<String> {
