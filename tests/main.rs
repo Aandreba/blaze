@@ -1,4 +1,4 @@
-use rscl::{core::*, buffer::{Buffer, MemObject}, event::{FlagEvent, Event}, context::SimpleContext};
+use rscl::{core::*, buffer::{Buffer, MemObject}, event::{FlagEvent, Event}, context::{SimpleContext, Global, Context}};
 use rscl_proc::global_context;
 
 #[global_context]
@@ -49,6 +49,6 @@ fn program () -> Result<()> {
     println!("{}", core::mem::size_of::<Option<bool>>());
 
     let dev = Device::first().unwrap();
-    println!("{:?}", dev.partition_type()?);
+    println!("{:?}", Global.raw_context().properties());
     Ok(())
 }

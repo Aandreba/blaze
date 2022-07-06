@@ -20,7 +20,7 @@ lazy_static! {
 
 /// OpenCL platform
 #[repr(transparent)]
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Platform (NonNull<c_void>);
 
 impl Platform {

@@ -2,7 +2,7 @@ use opencl_sys::{cl_context_properties, CL_CONTEXT_PLATFORM};
 use rscl_proc::docfg;
 use crate::core::Platform;
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub struct ContextProperties {
     pub platform: Option<Platform>,

@@ -1,5 +1,6 @@
-use std::{ptr::{addr_of_mut, NonNull}, ffi::c_void};
-use opencl_sys::{cl_context, clCreateContext, clCreateContextFromType, clRetainContext, clReleaseContext};
+use std::{ptr::{addr_of_mut, NonNull}, ffi::c_void, mem::MaybeUninit};
+use opencl_sys::{cl_context, clCreateContext, clCreateContextFromType, clRetainContext, clReleaseContext, cl_context_info, clGetContextInfo, CL_CONTEXT_REFERENCE_COUNT, CL_CONTEXT_DEVICES, cl_device_id, cl_context_properties, CL_CONTEXT_PROPERTIES};
+use rscl_proc::docfg;
 use crate::core::{*, device::DeviceType};
 use super::ContextProperties;
 
@@ -59,6 +60,66 @@ impl RawContext {
     #[inline(always)]
     pub const fn id (&self) -> cl_context {
         self.0.as_ptr()
+    }
+
+    /// Return the context reference count.
+    #[inline(always)]
+    pub fn reference_count (&self) -> Result<u32> {
+        self.get_info(CL_CONTEXT_REFERENCE_COUNT)
+    }
+
+    /// Return the number of devices in context.
+    #[inline]
+    pub fn num_devices (&self) -> Result<u32> {
+        #[cfg(feature = "cl1_1")]
+        if let Ok(x) = self.get_info(opencl_sys::CL_CONTEXT_NUM_DEVICES) {
+            return Ok(x);
+        }
+
+        let mut res = 0;
+        unsafe {
+            tri!(clGetContextInfo(self.id(), CL_CONTEXT_DEVICES, 0, core::ptr::null_mut(), addr_of_mut!(res)))
+        }
+
+        let res = u32::try_from(res / core::mem::size_of::<cl_device_id>()).unwrap();
+        Ok(res)
+    }
+
+    /// Return the list of devices and sub-devices in context.
+    #[inline(always)]
+    pub fn devices (&self) -> Result<Box<[Device]>> {
+        self.get_info_array(CL_CONTEXT_DEVICES)
+    }
+
+    /// Return the properties argument specified in creation
+    #[inline(always)]
+    pub fn properties (&self) -> Result<ContextProperties> {
+        let v = self.get_info_array::<cl_context_properties>(CL_CONTEXT_PROPERTIES)?;
+        todo!()
+    }
+
+    #[inline]
+    fn get_info<T> (&self, ty: cl_context_info) -> Result<T> {
+        let mut value = MaybeUninit::<T>::uninit();
+        
+        unsafe {
+            tri!(clGetContextInfo(self.id(), ty, core::mem::size_of::<T>(), value.as_mut_ptr().cast(), core::ptr::null_mut()));
+            Ok(value.assume_init())
+        }
+    }
+
+    #[inline]
+    fn get_info_array<T> (&self, ty: cl_context_info) -> Result<Box<[T]>> {
+        let mut size = 0;
+        unsafe {
+            tri!(clGetContextInfo(self.id(), ty, 0, core::ptr::null_mut(), addr_of_mut!(size)))
+        }
+
+        let mut result = Box::<[T]>::new_uninit_slice(size / core::mem::size_of::<T>());
+        unsafe {
+            tri!(clGetContextInfo(self.id(), ty, size, result.as_mut_ptr().cast(), core::ptr::null_mut()));
+            Ok(result.assume_init())
+        }
     }
 }
 
