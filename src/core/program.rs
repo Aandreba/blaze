@@ -11,12 +11,13 @@ pub struct Program (NonNull<c_void>);
 
 impl Program {
     #[inline(always)]
-    pub fn from_source<'a> (source: &str, options: impl Into<Option<&'a str>>) -> Result<(Self, Box<[Kernel]>)> {
+    pub fn from_source<'a> (source: impl AsRef<str>, options: impl Into<Option<&'a str>>) -> Result<(Self, Box<[Kernel]>)> {
         Self::from_source_in(&Global, source, options)
     }
 
     #[inline]
-    pub fn from_source_in<'a, C: Context> (ctx: &C, source: &str, options: impl Into<Option<&'a str>>) -> Result<(Self, Box<[Kernel]>)> {
+    pub fn from_source_in<'a, C: Context> (ctx: &C, source: impl AsRef<str>, options: impl Into<Option<&'a str>>) -> Result<(Self, Box<[Kernel]>)> {
+        let source = source.as_ref();
         let len = [source.len()].as_ptr();
         let strings = [source.as_ptr().cast()].as_ptr();
 

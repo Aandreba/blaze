@@ -1,6 +1,7 @@
-use proc_macro2::{Ident, TokenStream};
-use syn::{parse::Parse, custom_keyword, parenthesized, punctuated::Punctuated, Token, braced};
-use super::{Argument, Type};
+use derive_syn_parse::Parse;
+use proc_macro2::{Ident};
+use syn::{punctuated::Punctuated, Token, custom_keyword, LitStr, Visibility};
+use super::{Argument};
 
 /*
     kernel void add (const ulong n, __global const float* rhs, __global const float* in, __global float* out) {
@@ -11,35 +12,31 @@ use super::{Argument, Type};
     }
 */
 
-custom_keyword!(kernel);
-custom_keyword!(__kernel);
+custom_keyword!(link_name);
 
-#[derive(Debug)]
+#[derive(Debug, Parse)]
 pub struct Kernel {
-    pub name: Ident,
-    pub out: Type,
+    #[peek(Token![#])]
+    pub attrs: Option<LinkName>,
+    pub vis: Visibility,
+    pub fn_token: Token![fn],
+    pub ident: Ident,
+    #[paren]
+    pub paren_token: syn::token::Paren,
+    #[inside(paren_token)]
+    #[call(Punctuated::parse_terminated)]
     pub args: Punctuated<Argument, Token![,]>
 }
 
-impl Parse for Kernel {
-    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
-        if input.peek(__kernel) {
-            input.parse::<__kernel>()?;
-        } else {
-            input.parse::<kernel>()?;
-        }
-
-        let out = input.parse()?;
-        let name = input.call(syn::ext::IdentExt::parse_any)?;
-
-        let content; parenthesized!(content in input);
-        let args = content.parse_terminated(Argument::parse)?;
-
-        let content; braced!(content in input);
-        while !content.is_empty() {
-            let _ = content.parse::<TokenStream>()?;
-        }
-
-        Ok(Self { name, out, args })
-    }
+#[derive(Debug, Parse)]
+pub struct LinkName {
+    pub pound_token: Token![#],
+    #[bracket]
+    pub bracket_token: syn::token::Bracket,
+    #[inside(bracket_token)]
+    pub link_name: link_name,
+    #[inside(bracket_token)]
+    pub eq_token: Token![=],
+    #[inside(bracket_token)]
+    pub lit: LitStr
 }

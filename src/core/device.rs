@@ -798,6 +798,7 @@ impl Device {
     }
 
     /// OpenCL version
+    #[inline]
     pub fn version (&self) -> Result<Version> {
         let version = self.version_string()?;
         let section = version.split(' ').nth(1).ok_or(Error::InvalidValue)?;
@@ -819,11 +820,35 @@ impl Device {
     }
 
     /// OpenCL software driver version
+    #[inline(always)]
     pub fn driver_version (&self) -> Result<Version> {
         let driver = self.driver_version_string()?;
         Version::from_str(&driver).map_err(|_| Error::InvalidValue)
     }
 
+    /// Creates an array of sub-devices that each reference a non-intersecting set of compute units within in_device, according to the partition scheme given by properties. 
+    /// The output sub-devices may be used in every way that the root (or parent) device can be used, including creating contexts, building programs, further calls to [create_sub_devices](Device::create_sub_devices) and creating command-queues. 
+    /// When a command-queue is created against a sub-device, the commands enqueued on the queue are executed only on the sub-device.
+    #[docfg(feature = "cl1_2")]
+    #[inline]
+    pub fn create_sub_devices (&self, prop: PartitionProperty) -> Result<Vec<Device>> {
+        let prop = prop.to_bits();
+        
+        let mut len = 0;
+        unsafe {
+            tri!(opencl_sys::clCreateSubDevices(self.id(), prop.as_ptr(), 0, core::ptr::null_mut(), std::ptr::addr_of_mut!(len)))
+        }
+
+        let mut devices = Vec::with_capacity(len as usize);
+        unsafe {
+            tri!(opencl_sys::clCreateSubDevices(self.id(), prop.as_ptr(), len, devices.as_mut_ptr() as *mut _, core::ptr::null_mut()));
+            devices.set_len(devices.capacity())
+        }
+
+        Ok(devices)
+    }
+
+    /// Replaces the default command queue on the device.
     #[docfg(feature = "cl2_1")]
     #[inline(always)]
     pub fn set_default_command_queue (&self, ctx: crate::context::RawContext, queue: CommandQueue) -> Result<()> {
@@ -1077,7 +1102,7 @@ impl PartitionProperty {
                     match bits[i] {
                         #[allow(unreachable_patterns)]
                         0 | opencl_sys::CL_DEVICE_PARTITION_BY_COUNTS_LIST_END => break,
-                        v => result.push(v as u32)
+                        v => result.push(u32::try_from(v).unwrap())
                     }
                 }
 
@@ -1085,6 +1110,27 @@ impl PartitionProperty {
             },
 
             other => panic!("Unknow partition property '{other}'")
+        }
+    }
+
+    pub fn to_bits (&self) -> Box<[opencl_sys::cl_device_partition_property]> {
+        match self {
+            Self::Equally(n) => Box::new([opencl_sys::CL_DEVICE_PARTITION_EQUALLY, opencl_sys::cl_device_partition_property::try_from(*n).unwrap(), 0]) as Box<_>,
+            Self::AffinityDomain(x) => Box::new([opencl_sys::CL_DEVICE_PARTITION_BY_AFFINITY_DOMAIN, opencl_sys::cl_device_partition_property::try_from(*x as u64).unwrap(), 0]) as Box<_>,
+            Self::Counts(x) => {
+                let mut result = Box::new_uninit_slice(2 + x.len());
+                
+                unsafe {
+                    result[0].write(opencl_sys::CL_DEVICE_PARTITION_BY_COUNTS);
+                    
+                    for i in 0..x.len() {
+                        result[1 + i].write(opencl_sys::cl_device_partition_property::try_from(x[i]).unwrap());
+                    }
+
+                    result.last_mut().unwrap_unchecked().write(opencl_sys::CL_DEVICE_PARTITION_BY_COUNTS_LIST_END);
+                    result.assume_init()
+                }
+            }
         }
     }
 }

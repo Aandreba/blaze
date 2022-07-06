@@ -53,7 +53,7 @@ pub extern crate once_cell;
 
 extern crate rscl_proc;
 pub mod macros {
-    pub use rscl_proc::{global_context, rscl_c};
+    pub use rscl_proc::{global_context, rscl};
 }
 
 /// Core OpenCL types

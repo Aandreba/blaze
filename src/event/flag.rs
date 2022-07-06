@@ -47,9 +47,7 @@ impl Event for FlagEvent {
     type Output = ();
 
     #[inline(always)]
-    fn consume (self) -> Self::Output {
-        ()
-    }
+    fn consume (self) -> Self::Output {}
 }
 
 impl AsRef<RawEvent> for FlagEvent {

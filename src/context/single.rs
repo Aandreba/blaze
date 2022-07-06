@@ -39,6 +39,3 @@ impl Default for SimpleContext {
         Self::new(Device::first().unwrap(), ContextProperties::default(), QueueProperties::default()).unwrap()
     }
 }
-
-unsafe impl Send for SimpleContext {}
-unsafe impl Sync for SimpleContext {}

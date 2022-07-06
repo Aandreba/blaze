@@ -1,7 +1,7 @@
 use derive_syn_parse::Parse;
 use proc_macro2::{TokenStream, Ident};
-use quote::{quote, format_ident};
-use syn::{Visibility, Token, Generics, parse_quote};
+use quote::{quote, format_ident, ToTokens};
+use syn::{Visibility, Token, Generics, parse_quote, Abi, punctuated::Punctuated, Attribute, Expr};
 use crate::utils::to_pascal_case;
 
 macro_rules! peek_and_parse {
@@ -17,19 +17,27 @@ macro_rules! peek_and_parse {
 
 flat_mod!(ty, kern, access, arg);
 
-pub fn rscl_c (rscl: Rscl) -> TokenStream {
-    let Rscl { vis, struct_token, ident, kernels, .. } = rscl;
-    let (str, kernels) = kernels;
+pub fn rscl_c (ident: Ident, rscl: Rscl, content: Expr) -> TokenStream {
+    let Rscl { vis, kernels, .. } = rscl;
 
-    let kernel_names = kernels.iter().map(|x| &x.name).collect::<Vec<_>>();
+    let kernel_names = kernels.iter().map(|x| &x.ident).collect::<Vec<_>>();
+    let kernel_extern_names = kernels.iter().map(|x| {
+        if let Some(name) = &x.attrs { 
+            return name.lit.to_token_stream() 
+        }
+
+        let ident = &x.ident; 
+        quote! { stringify!(#ident) }
+    }).collect::<Vec<_>>();
+
     let kernel_structs = kernels.iter().map(|x| create_kernel(&vis, &ident, x));
     let kernel_defs = kernels.iter().map(|x| {
-        let name = &x.name;
+        let name = &x.ident;
         quote!(#name: ::std::sync::Mutex<::rscl::core::Kernel>)
     });
 
     quote! {
-        #vis #struct_token #ident<C: ::rscl::context::Context = ::rscl::context::Global> {
+        #vis struct #ident<C: ::rscl::context::Context = ::rscl::context::Global> {
             inner: ::rscl::core::Program,
             ctx: C,
             #(#kernel_defs),*
@@ -44,13 +52,13 @@ pub fn rscl_c (rscl: Rscl) -> TokenStream {
 
         impl<C: ::rscl::context::Context> #ident<C> {
             #vis fn new_in<'a> (ctx: C, options: impl Into<Option<&'a str>>) -> ::rscl::core::Result<Self> {
-                let (inner, kernels) = ::rscl::core::Program::from_source_in(&ctx, #str, options)?;
+                let (inner, kernels) = ::rscl::core::Program::from_source_in(&ctx, #content, options)?;
 
                 #(let mut #kernel_names = None);*;
                 for kernel in kernels.into_iter() {
                     let name = kernel.name()?;
                     match name.as_str() {
-                        #(stringify!(#kernel_names) => #kernel_names = unsafe { Some(kernel.clone()) }),*,
+                        #(#kernel_extern_names => #kernel_names = unsafe { Some(kernel.clone()) }),*,
                         _ => return Err(::rscl::core::Error::InvalidKernel)
                     }
                 }
@@ -77,11 +85,15 @@ pub fn rscl_c (rscl: Rscl) -> TokenStream {
     }
 }
 
-fn create_kernel (vis: &Visibility, parent: &Ident, kernel: &Kernel) -> TokenStream {
-    let Kernel { name, args, .. } = kernel;
+fn create_kernel (parent_vis: &Visibility, parent: &Ident, kernel: &Kernel) -> TokenStream {
+    let Kernel { vis, ident, args, .. } = kernel;
     let mut generics : Generics = parse_quote! { <'a> };
+    let vis = match vis {
+        Visibility::Inherited => parent_vis,
+        other => other
+    };
 
-    let big_name = format_ident!("{}", to_pascal_case(&name.to_string()));
+    let big_name = format_ident!("{}", to_pascal_case(&ident.to_string()));
     let define = args.iter().filter_map(|x| define_arg(x, &mut generics)).collect::<Vec<_>>();
     let new = args.iter().map(new_arg);
     let names = args.iter().filter_map(|x| if x.ty.is_pointer() { Some(&x.name) } else { None });
@@ -91,7 +103,6 @@ fn create_kernel (vis: &Visibility, parent: &Ident, kernel: &Kernel) -> TokenStr
     let mut fn_generics : Generics = parse_quote! { #r#impl };
     fn_generics.params.push(parse_quote! { const N: usize });
     let (fn_impl, _, _) = fn_generics.split_for_impl();
-
     let define_len = define.len();
 
     quote! {
@@ -103,8 +114,8 @@ fn create_kernel (vis: &Visibility, parent: &Ident, kernel: &Kernel) -> TokenStr
         }
 
         impl<C: ::rscl::context::Context> #parent<C> {
-            pub fn #name #fn_impl (&self, #(#new),*, global_work_dims: [usize; N], local_work_dims: impl Into<Option<[usize; N]>>, wait: impl Into<::rscl::event::WaitList>) -> ::rscl::core::Result<#big_name #r#type> #r#where {
-                let mut kernel = self.#name.lock().unwrap();
+            pub unsafe fn #ident #fn_impl (&self, #(#new),*, global_work_dims: [usize; N], local_work_dims: impl Into<Option<[usize; N]>>, wait: impl Into<::rscl::event::WaitList>) -> ::rscl::core::Result<#big_name #r#type> #r#where {
+                let mut kernel = self.#ident.lock().unwrap();
                 let mut wait = wait.into();
                 let mut managers = ::std::vec::Vec::with_capacity(#define_len);
                 #(#set);*;
@@ -172,9 +183,7 @@ fn new_arg (arg: &Argument) -> TokenStream {
 fn set_arg (arg: &Argument, idx: u32) -> TokenStream {
     let Argument { name, .. } = arg;
 
-    if arg.ty.is_pointer() {
-        let mutability = arg.constness.is_none();
-
+    if let Type::Pointer(mutability, _) = &arg.ty {
         return quote! {
             if let Some(manager) = unsafe { #name.set_argument(&mut kernel, #idx, &mut wait)? } {
                 managers.push((#mutability, manager));
@@ -187,22 +196,21 @@ fn set_arg (arg: &Argument, idx: u32) -> TokenStream {
 
 #[derive(Parse)]
 pub struct Rscl {
+    #[call(Attribute::parse_outer)]
+    pub attrs: Vec<Attribute>,
     pub vis: Visibility,
-    pub struct_token: Token![struct],
-    pub ident: Ident,
+    pub abi: Abi,
     #[brace]
     pub brace_token: syn::token::Brace,
     #[inside(brace_token)]
-    #[call(parse_kernels)]
-    pub kernels: (String, Vec<Kernel>)
+    #[call(Punctuated::parse_terminated)]
+    pub kernels: Punctuated<Kernel, Token![;]>
 }
 
-fn parse_kernels (input: syn::parse::ParseStream) -> syn::Result<(String, Vec<Kernel>)> {
-    let str = input.fork().parse::<TokenStream>()?.to_string();
-    let mut kernels = Vec::with_capacity(1);
-    while !input.is_empty() {
-        kernels.push(input.parse()?);
-    }
-
-    Ok((str, kernels))
+#[derive(Parse)]
+pub struct Link {
+    #[paren]
+    pub paren_token: syn::token::Paren,
+    #[inside(paren_token)]
+    pub meta: Expr
 }
