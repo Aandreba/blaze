@@ -49,6 +49,6 @@ fn program () -> Result<()> {
     println!("{}", core::mem::size_of::<Option<bool>>());
 
     let dev = Device::first().unwrap();
-    println!("{:?}", Global.raw_context().properties());
+    println!("{:?}", Global.num_devices());
     Ok(())
 }

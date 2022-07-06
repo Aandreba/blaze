@@ -95,7 +95,7 @@ impl RawContext {
     #[inline(always)]
     pub fn properties (&self) -> Result<ContextProperties> {
         let v = self.get_info_array::<cl_context_properties>(CL_CONTEXT_PROPERTIES)?;
-        todo!()
+        Ok(ContextProperties::from_bits(&v))
     }
 
     #[inline]
@@ -123,6 +123,27 @@ impl RawContext {
     }
 }
 
+#[docfg(feature = "cl3")]
+impl RawContext {
+    #[inline(always)]
+    pub fn on_destruct (&self, f: impl 'static + FnOnce(RawContext)) -> Result<()> {
+        let f = Box::new(f) as Box<_>;
+        self.on_destruct_boxed(f)
+    }
+
+    #[inline(always)]
+    pub fn on_destruct_boxed (&self, f: Box<dyn FnOnce(RawContext)>) -> Result<()> {
+        let data = Box::into_raw(Box::new(f));
+        unsafe { self.on_destruct_raw(destructor_callback, data.cast()) }
+    }
+
+    #[inline(always)]
+    pub unsafe fn on_destruct_raw (&self, f: unsafe extern "C" fn(context: cl_context, user_data: *mut c_void), user_data: *mut c_void) -> Result<()> {
+        tri!(opencl_sys::clSetContextDestructorCallback(self.id(), Some(f), user_data));
+        todo!()
+    }
+}
+
 impl Clone for RawContext {
     #[inline(always)]
     fn clone(&self) -> Self {
@@ -145,3 +166,10 @@ impl Drop for RawContext {
 
 unsafe impl Send for RawContext {}
 unsafe impl Sync for RawContext {}
+
+#[cfg(feature = "cl3")]
+unsafe extern "C" fn destructor_callback (context: cl_context, user_data: *mut c_void) {
+    let f = *Box::from_raw(user_data as *mut Box<dyn FnOnce(RawContext)>);
+    let context = RawContext::from_id_unchecked(context);
+    f(context)
+}

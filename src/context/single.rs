@@ -1,3 +1,4 @@
+use std::ops::Deref;
 use crate::{core::*};
 use super::{Context, RawContext, ContextProperties};
 
@@ -18,18 +19,17 @@ impl SimpleContext {
 
 impl Context for SimpleContext {
     #[inline(always)]
-    fn raw_context (&self) -> &RawContext {
-        &self.ctx
-    }
-
-    #[inline(always)]
-    fn queue_count (&self) -> usize {
-        1
-    }
-
-    #[inline(always)]
     fn next_queue (&self) -> &CommandQueue {
         &self.queue
+    }
+}
+
+impl Deref for SimpleContext {
+    type Target = RawContext;
+
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.ctx
     }
 }
 

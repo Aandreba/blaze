@@ -1,5 +1,4 @@
 use opencl_sys::{cl_context_properties, CL_CONTEXT_PLATFORM, cl_platform_id};
-use rscl_proc::docfg;
 use crate::core::Platform;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -21,7 +20,7 @@ impl ContextProperties {
     }
 
     #[inline(always)]
-    pub fn new (platform: impl Into<Option<Platform>>, #[cfg_attr(docsrs, doc(cfg(feature = "cl1_2")))] #[cfg(feature = "cl1_2")] interop_user_sync: bool) -> Self {
+    pub fn new (platform: impl Into<Option<Platform>>, #[cfg(feature = "cl1_2")] interop_user_sync: bool) -> Self {
         Self {
             platform: platform.into(),
             #[cfg(feature = "cl1_2")]
@@ -30,7 +29,7 @@ impl ContextProperties {
     }
 
     #[inline(always)]
-    pub const fn const_new (platform: Option<Platform>, #[cfg_attr(docsrs, doc(cfg(feature = "cl1_2")))] #[cfg(feature = "cl1_2")] interop_user_sync: bool) -> Self {
+    pub const fn const_new (platform: Option<Platform>, #[cfg(feature = "cl1_2")] interop_user_sync: bool) -> Self {
         Self {
             platform,
             #[cfg(feature = "cl1_2")]
