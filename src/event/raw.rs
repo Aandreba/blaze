@@ -5,6 +5,7 @@ use opencl_sys::{cl_event, clRetainEvent, clReleaseEvent, clGetEventInfo, cl_eve
 use rscl_proc::docfg;
 use super::{Event};
 
+/// A raw OpenCL event
 #[repr(transparent)]
 pub struct RawEvent (NonNull<c_void>);
 
@@ -24,6 +25,7 @@ impl RawEvent {
         self.0.as_ptr()
     }
 
+    /// Blocks the current thread until the event has completed, without consuming it.
     #[inline(always)]
     pub fn wait_by_ref (&self) -> Result<()> {
         unsafe {
@@ -33,6 +35,7 @@ impl RawEvent {
         Ok(())
     }
 
+    /// Blocks the current thread until all the events have completed, consuming them.
     #[inline(always)]
     pub fn wait_all (v: &[RawEvent]) -> Result<()> {
         let len = u32::try_from(v.len()).unwrap();
@@ -60,16 +63,19 @@ use {opencl_sys::cl_int, super::EventStatus};
 
 #[docfg(feature = "cl1_1")]
 impl RawEvent {
+    /// Adds a callback function that will be executed when the event is submitted
     #[inline(always)]
     pub fn on_submit (&self, f: impl 'static + FnOnce(RawEvent, Result<EventStatus>) + Send) -> Result<()> {
         self.on_status(EventStatus::Submitted, f)
     }
 
+    /// Adds a callback function that will be executed when the event starts running
     #[inline(always)]
     pub fn on_run (&self, f: impl 'static + FnOnce(RawEvent, Result<EventStatus>) + Send) -> Result<()> {
         self.on_status(EventStatus::Running, f)
     }
 
+    /// Adds a callback function that will be executed when the event completes
     #[inline(always)]
     pub fn on_complete (&self, f: impl 'static + FnOnce(RawEvent, Result<EventStatus>) + Send) -> Result<()> {
         self.on_status(EventStatus::Complete, f)

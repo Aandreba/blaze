@@ -20,11 +20,6 @@ lazy_static! {
             result.set_len(result.len() + cnt_size);
         }
 
-        #[cfg(debug_assertions)]
-        if !result.iter().all(|x| x.version().map(|x| x.major() >= 2).unwrap_or(true)) {
-            eprintln!("WARNING: Some of the devices inside this context arn't OpenCL 2.0+ compatible. If this is intentional, we suggest you turn off the `cl2` feature");
-        }
-
         result
     };
 }

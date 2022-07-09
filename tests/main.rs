@@ -1,38 +1,8 @@
-use rscl::{core::*, buffer::{Buffer, RawBuffer}, event::{FlagEvent, Event}, context::{SimpleContext, Global, Context}};
+use rscl::{core::*, context::{SimpleContext, Global}};
 use rscl_proc::global_context;
 
 #[global_context]
 static CONTEXT : SimpleContext = SimpleContext::default();
-
-#[test]
-fn read_after_free () -> Result<()> {
-    let buffer = Buffer::new(&[1, 2, 3, 4, 5], false)?;
-    let event = FlagEvent::new()?;
-
-    let read = buffer.read_all(&event)?;
-    drop(buffer);
-    event.set_complete(None)?;
-    let data = read.wait()?;
-
-    println!("{data:?}");
-    Ok(())
-}
-
-#[test]
-fn write_after_free () -> Result<()> {
-    let mut buffer = Buffer::new(&[1, 2, 3, 4, 5], false)?;
-    let event = FlagEvent::new()?;
-
-    println!("{}", buffer.reference_count()?);
-    let write = buffer.write(vec![1, 2, 3], 0, &event)?;
-    println!("{}", buffer.reference_count()?);
-    
-    drop(buffer);
-    event.set_complete(None)?;
-    write.wait()?;
-
-    Ok(())
-}
 
 static PROGRAM : &str = "void kernel add (const ulong n, __global const float* rhs, __global const float* in, __global float* out) {
     for (ulong id = get_global_id(0); id<n; id += get_global_size(0)) {
@@ -51,4 +21,40 @@ fn program () -> Result<()> {
     let dev = Device::first().unwrap();
     println!("{:?}", Global.num_devices());
     Ok(())
+}
+
+#[cfg(feature = "futures")]
+#[test]
+fn flag () {
+    use rscl::event::EventStatus;
+
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build().unwrap()
+        .block_on(async move {
+            use std::time::Duration;
+            use rscl::{event::FlagEvent, prelude::Event};
+
+            let event : FlagEvent = FlagEvent::new().unwrap();
+            let event2 = event.clone();
+            let event3 = event.clone();
+
+            let print = async move {
+                while event3.status().unwrap() != EventStatus::Complete {
+                    println!("Not done yet");
+                    tokio::time::sleep(Duration::from_secs(1)).await;
+                }
+            };
+
+            let complete = async move {
+                event2.raw().wait_async().unwrap().await.unwrap();
+            };
+
+            let wait = async move {
+                tokio::time::sleep(Duration::from_secs(5)).await;
+                event.set_complete(None).unwrap();
+            };
+
+            tokio::join!(complete, wait, print);
+        });
 }

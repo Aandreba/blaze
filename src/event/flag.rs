@@ -4,25 +4,26 @@ use opencl_sys::{clSetUserEventStatus, CL_COMPLETE, clCreateUserEvent};
 use super::{RawEvent, Event};
 use crate::{core::*, context::{Context, Global}};
 
+/// Event that completes when the user specifies
 #[cfg_attr(docsrs, doc(cfg(feature = "cl1_1")))]
 #[derive(Clone)]
-pub struct FlagEvent<C: Context = Global> (RawEvent, C);
+#[repr(transparent)]
+pub struct FlagEvent (RawEvent);
 
 impl FlagEvent {
     #[inline(always)]
     pub fn new () -> Result<Self> {
-        Self::new_in(Global)
+        Self::new_in(&Global)
     }
-}
 
-impl<C: Context> FlagEvent<C> {
-    pub fn new_in (ctx: C) -> Result<Self> {
+    #[inline]
+    pub fn new_in<C: Context> (ctx: &C) -> Result<Self> {
         let mut err = 0;
 
         unsafe {
             let id = clCreateUserEvent(ctx.raw_context().id(), addr_of_mut!(err));
             if err != 0 { return Err(Error::from(err)); }
-            Ok(Self(RawEvent::from_id(id).unwrap(), ctx))
+            Ok(Self(RawEvent::from_id(id).unwrap()))
         }
     }
 

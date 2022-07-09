@@ -48,6 +48,12 @@ macro_rules! tri_panic {
     }};
 }
 
+pub mod prelude {
+    pub use crate::core::*;
+    pub use crate::macros::*;
+    pub use crate::event::{RawEvent, Event};
+}
+
 #[doc(hidden)]
 pub extern crate once_cell;
 
@@ -61,6 +67,7 @@ pub mod core;
 /// RSCL context's
 pub mod context;
 pub mod buffer;
+/// RSCL's event system
 pub mod event;
 mod utils;
 

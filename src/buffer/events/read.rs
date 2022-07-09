@@ -1,5 +1,5 @@
 use std::{pin::Pin, ops::{RangeBounds, DerefMut}};
-use crate::{core::*, event::{RawEvent, Event, WaitList}, buffer::{MemObject, range_len}};
+use crate::{core::*, event::{RawEvent, Event, WaitList}, buffer::{RawBuffer, range_len}};
 
 pub struct ReadBufferEvent<T: Copy> {
     event: RawEvent,
@@ -7,7 +7,7 @@ pub struct ReadBufferEvent<T: Copy> {
 }
 
 impl<T: Copy + Unpin> ReadBufferEvent<T> {
-    pub unsafe fn new (src: &MemObject, range: impl RangeBounds<usize>, queue: &CommandQueue, wait: impl Into<WaitList>) -> Result<Self> {
+    pub unsafe fn new (src: &RawBuffer, range: impl RangeBounds<usize>, queue: &CommandQueue, wait: impl Into<WaitList>) -> Result<Self> {
         let len = range_len(core::mem::size_of::<T>(), &range);
         let mut result = Pin::new(Vec::with_capacity(len));
 
@@ -41,7 +41,7 @@ pub struct ReadBufferInto<T: Copy, P: DerefMut<Target = [T]>> {
 }
 
 impl<T: Copy + Unpin, P: DerefMut<Target = [T]>> ReadBufferInto<T, P> {
-    pub unsafe fn new (src: &MemObject, dst: P, offset: usize, queue: &CommandQueue, wait: impl Into<WaitList>) -> Result<Self> {
+    pub unsafe fn new (src: &RawBuffer, dst: P, offset: usize, queue: &CommandQueue, wait: impl Into<WaitList>) -> Result<Self> {
         let mut dst = Pin::new(dst);
         let range = offset..(offset + dst.len());
 

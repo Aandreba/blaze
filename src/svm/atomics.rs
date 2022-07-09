@@ -78,8 +78,13 @@ macro_rules! impl_atomic {
             }
 
             impl<C: Context> crate::svm::sealed::Sealed for $svm<C> {}
-            impl<C: Context> super::SvmPointer for $svm<C> {
+            impl<C: Context> super::SvmPointer<C> for $svm<C> {
                 type Type = $ty;
+
+                #[inline(always)]
+                fn allocator (&self) -> &Svm<C> {
+                    self.0.allocator()
+                }
 
                 #[inline(always)]
                 fn as_ptr (&self) -> *const $ty {

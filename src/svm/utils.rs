@@ -1,5 +1,5 @@
-use std::{collections::VecDeque, ops::{Deref, DerefMut}};
-use crate::context::{Global, Context};
+use std::{collections::VecDeque, ops::{Deref, DerefMut}, mem::ManuallyDrop};
+use crate::{core::*, context::{Global, Context}, event::{WaitList, RawEvent}};
 use super::{Svm};
 use sealed::Sealed;
 
@@ -9,24 +9,54 @@ pub(super) mod sealed {
 
 const ALLOC : Svm = Svm::new();
 
-pub trait SvmPointer: Sealed {
+/// Object that wraps, in some way, a pointer to SVM memory
+pub trait SvmPointer<C: Context>: Sealed {
     type Type: ?Sized;
 
+    /// Returns a reference to the underlying [`Svm`] allocator
+    fn allocator (&self) -> &Svm<C>;
+    /// Raturns the SVM pointer
     fn as_ptr (&self) -> *const Self::Type;
+    /// Returns the mutable SVM pointer
     fn as_mut_ptr (&mut self) -> *mut Self::Type; 
+    /// Returns the number of elements owned by the pointer
     fn len (&self) -> usize;
+
+    /// Drops the pointer after the events in the [`WaitList`] have completed
+    #[inline]
+    unsafe fn drop_after (self, wait: impl Into<WaitList>) -> Result<RawEvent> where Self: Sized {
+        let mut this = ManuallyDrop::new(self);
+        let ptr = this.as_mut_ptr();
+        let alloc = this.allocator();
+        
+        match alloc.enqueue_free(&[ptr.cast()], wait) {
+            Ok(x) => Ok(x),
+            Err(e) => {
+                ManuallyDrop::drop(&mut this);
+                Err(e)
+            }
+        }
+    } 
 }
 
+/// A [`Box`] with an [`Svm`] allocator
 pub type SvmBox<T, C = Global> = Box<T, Svm<C>>;
+/// A [`Vec`] with an [`Svm`] allocator
 pub type SvmVec<T, C = Global> = Vec<T, Svm<C>>;
+/// A [`VecDeque`] with an [`Svm`] allocator
 pub type SvmVecDeque<T, C = Global> = VecDeque<T, Svm<C>>;
 
 impl<T: ?Sized, C: Context> Sealed for SvmBox<T, C> {}
 impl<T, C: Context> Sealed for SvmVec<T, C> {}
 impl<T, C: Context> Sealed for SvmVecDeque<T, C> {}
 
-impl<T: ?Sized, C: Context> SvmPointer for SvmBox<T, C> {
+impl<T: ?Sized, C: Context> SvmPointer<C> for SvmBox<T, C> {
     type Type = T;
+
+    #[inline(always)]
+    fn allocator (&self) -> &Svm<C> {
+        Box::allocator(self)
+    }
 
     #[inline(always)]
     fn as_ptr (&self) -> *const T {
@@ -44,8 +74,13 @@ impl<T: ?Sized, C: Context> SvmPointer for SvmBox<T, C> {
     }
 }
 
-impl<T, C: Context> SvmPointer for SvmVec<T, C> {
+impl<T, C: Context> SvmPointer<C> for SvmVec<T, C> {
     type Type = T;
+
+    #[inline(always)]
+    fn allocator (&self) -> &Svm<C> {
+        Vec::allocator(self)
+    }
 
     #[inline(always)]
     fn as_ptr (&self) -> *const T {

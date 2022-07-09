@@ -11,52 +11,73 @@ flat_mod!(flag);
 #[docfg(feature = "futures")]
 flat_mod!(wait);
 
+/// An complex OpenCL event.\
+/// [`Event`] is designed to be able to safely return a value after the underlying [`RawEvent`] has completed
 pub trait Event: AsRef<RawEvent> {
     type Output;
 
+    /// Returns the data associated with the event, with the assumtion that it has completed successfuly.
     fn consume (self) -> Self::Output;
 
+    /// Returns the underlying [`RawEvent`]
     #[inline(always)]
     fn raw (&self) -> RawEvent {
         self.as_ref().clone()
     }
 
+    /// Blocks the current thread util the event has completed, returning `Ok(data)` if it completed correctly, and `Err(e)` otherwise.
     #[inline(always)]
     fn wait (self) -> Result<Self::Output> where Self: Sized {
         self.as_ref().wait_by_ref()?;
         Ok(self.consume())
     }
 
+    /// Returns a future that resolves when the event has completed, correctly or otherwise. This allows to wait for events in a
+    /// non-blocking manner.
+    /// # Example
+    /// ```rust
+    /// use rscl::{prelude::*, event::FlagEvent};
+    /// 
+    /// fn main () {
+    ///     let event = FlagEvent::new();
+    /// }
+    /// ```
     #[inline(always)]
     #[docfg(feature = "futures")]
     fn wait_async (self) -> Result<crate::event::EventWait<Self>> where Self: Sized {
         crate::event::EventWait::new(self)
     }
 
+    /// Returns the event's type
     #[inline(always)]
     fn ty (&self) -> Result<CommandType> {
         self.as_ref().get_info(CL_EVENT_COMMAND_TYPE)
     }
 
+    /// Returns the event's current status
     #[inline(always)]
     fn status (&self) -> Result<EventStatus> {
         let int : i32 = self.as_ref().get_info(CL_EVENT_COMMAND_EXECUTION_STATUS)?;
         EventStatus::try_from(int)
     }
 
+    /// Returns the event's underlying command queue
     #[inline(always)]
     fn command_queue (&self) -> Result<CommandQueue> {
         self.as_ref().get_info(CL_EVENT_COMMAND_QUEUE)
     }
 }
 
+/// A list of events to be awaited
 #[derive(Clone)]
 #[repr(transparent)]
 pub struct WaitList (pub(crate) Option<Vec<RawEvent>>);
 
 impl WaitList {
+    /// An empty wait list
     pub const EMPTY : Self = WaitList(None);
 
+    /// Creates a new wait list
     #[inline(always)]
     pub fn new (wait: Vec<RawEvent>) -> Self {
         if wait.len() == 0 {
@@ -66,6 +87,7 @@ impl WaitList {
         Self(Some(wait))
     }
 
+    /// Creates a new wait list from the specified array
     #[inline(always)]
     pub fn from_array<const N: usize> (wait: [RawEvent;N]) -> Self {
         if N == 0 {
@@ -75,11 +97,13 @@ impl WaitList {
         Self(Some(wait.to_vec()))
     }
 
+    /// Creates a new wait list from a single event
     #[inline(always)]
     pub fn from_event (wait: RawEvent) -> Self {
-        Self::from_array([wait])
+        Self(Some(vec![wait]))
     }
 
+    /// Adds a new event to the list
     #[inline(always)]
     pub fn push (&mut self, evt: RawEvent) {
         match self.0 {
@@ -88,6 +112,7 @@ impl WaitList {
         }
     }
 
+    /// Returns the parts of the wait list necessary to be passed to a raw OpenCL function
     #[inline(always)]
     pub fn raw_parts (&self) -> (u32, *const cl_event) {
         match self.0 {
@@ -99,6 +124,7 @@ impl WaitList {
         }
     }
 
+    /// Extends the current wait list with the events of `other`
     pub fn extend_self (&mut self, wait: WaitList) {
         if let Some(y) = wait.0 {
             match self.0 {

@@ -2,6 +2,7 @@ use std::intrinsics::transmute;
 use opencl_sys::{CL_QUEUED, CL_SUBMITTED, CL_RUNNING, CL_COMPLETE};
 use crate::core::Error;
 
+/// Status of an
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(i32)]
 pub enum EventStatus {

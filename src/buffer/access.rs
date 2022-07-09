@@ -4,14 +4,14 @@ use rscl_proc::docfg;
 
 use crate::{context::{Context, Global, RawContext}, event::{RawEvent, WaitList}};
 use crate::core::*;
-use crate::buffer::{flags::{FullMemFlags, HostPtr, MemAccess}, events::{ReadBufferEvent, WriteBufferEvent, ReadBufferInto, write_from_static, write_from_ptr}, manager::AccessManager, MemObject};
+use crate::buffer::{flags::{FullMemFlags, HostPtr, MemAccess}, events::{ReadBufferEvent, WriteBufferEvent, ReadBufferInto, write_from_static, write_from_ptr}, manager::AccessManager, RawBuffer};
 
 #[cfg(not(debug_assertions))]
 use std::hint::unreachable_unchecked;
 
 use super::offset_cb;
 
-pub trait RawBuffer<T: Copy + Unpin, C: Context>: AsRef<MemObject> + AsMut<MemObject> {
+pub trait BufferExt<T: Copy + Unpin, C: Context>: AsRef<RawBuffer> + AsMut<RawBuffer> {
     const ACCESS : MemAccess;
 
     fn context (&self) -> &C;
@@ -137,7 +137,7 @@ pub trait RawBuffer<T: Copy + Unpin, C: Context>: AsRef<MemObject> + AsMut<MemOb
     }
 
     #[inline(always)]
-    fn copy_from<B: ?Sized + RawBuffer<T, C>> (&mut self, offset: usize, src: &B, range: impl RangeBounds<usize>, wait: impl Into<WaitList>) -> Result<RawEvent> {
+    fn copy_from<B: ?Sized + BufferExt<T, C>> (&mut self, offset: usize, src: &B, range: impl RangeBounds<usize>, wait: impl Into<WaitList>) -> Result<RawEvent> {
         let dst_offset = offset.checked_mul(core::mem::size_of::<T>()).unwrap();
         let (src_offset, size) = offset_cb(src.as_ref(), core::mem::size_of::<T>(), range)?;
 
@@ -158,7 +158,7 @@ pub trait RawBuffer<T: Copy + Unpin, C: Context>: AsRef<MemObject> + AsMut<MemOb
     }
 
     #[inline(always)]
-    fn copy_to<B: ?Sized + RawBuffer<T, C>> (&self, range: impl RangeBounds<usize>, dst: &mut B, offset: usize, wait: impl Into<WaitList>) -> Result<RawEvent> {
+    fn copy_to<B: ?Sized + BufferExt<T, C>> (&self, range: impl RangeBounds<usize>, dst: &mut B, offset: usize, wait: impl Into<WaitList>) -> Result<RawEvent> {
         dst.copy_from(offset, self, range, wait)
     }
 }
@@ -167,7 +167,7 @@ macro_rules! impl_buffer {
     ($($access:expr => $ident:ident),+) => {
         $(
             pub struct $ident<T: Copy, C: Context = Global> {
-                inner: MemObject, 
+                inner: RawBuffer, 
                 manager: Arc<FairMutex<AccessManager>>,
                 ctx: C,
                 phtm: PhantomData<T>
@@ -206,7 +206,7 @@ macro_rules! impl_buffer {
                 #[inline]
                 pub fn create_in (len: usize, host: HostPtr, host_ptr: Option<NonNull<T>>, ctx: C) -> Result<Self> {
                     let size = len.checked_mul(core::mem::size_of::<T>()).unwrap();
-                    let inner = MemObject::new(size, FullMemFlags::new($access, host), host_ptr, ctx.raw_context())?;
+                    let inner = RawBuffer::new(size, FullMemFlags::new($access, host), host_ptr, ctx.raw_context())?;
             
                     Ok(Self {
                         inner,
@@ -217,7 +217,7 @@ macro_rules! impl_buffer {
                 }
             }
 
-            impl<T: Copy + Unpin, C: Context> RawBuffer<T, C> for $ident<T, C> {
+            impl<T: Copy + Unpin, C: Context> BufferExt<T, C> for $ident<T, C> {
                 const ACCESS : MemAccess = $access;
 
                 #[inline(always)]
@@ -232,16 +232,16 @@ macro_rules! impl_buffer {
                 }
             }
 
-            impl<T: Copy + Unpin, C: Context> AsRef<MemObject> for $ident<T, C> {
+            impl<T: Copy + Unpin, C: Context> AsRef<RawBuffer> for $ident<T, C> {
                 #[inline(always)]
-                fn as_ref (&self) -> &MemObject {
+                fn as_ref (&self) -> &RawBuffer {
                     &self.inner
                 }
             }
 
-            impl<T: Copy + Unpin, C: Context> AsMut<MemObject> for $ident<T, C> {
+            impl<T: Copy + Unpin, C: Context> AsMut<RawBuffer> for $ident<T, C> {
                 #[inline(always)]
-                fn as_mut (&mut self) -> &mut MemObject {
+                fn as_mut (&mut self) -> &mut RawBuffer {
                     &mut self.inner
                 }
             }

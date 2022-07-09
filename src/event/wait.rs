@@ -4,6 +4,7 @@ use opencl_sys::{cl_event, cl_int};
 use super::{EventStatus, Event};
 use crate::core::*;
 
+/// A future that resolves when it's underlying [`Event`] completes
 #[cfg_attr(docsrs, doc(cfg(feature = "futures")))]
 #[derive(Clone)]
 pub struct EventWait<E: Event> {
@@ -12,6 +13,7 @@ pub struct EventWait<E: Event> {
 }
 
 impl<E: Event> EventWait<E> {
+    /// Creates a new [`EventWait`] from an [`Event`]
     pub fn new (event: E) -> Result<Self> {
         let waker = Arc::into_raw(Arc::new(AtomicWaker::new()));
 
