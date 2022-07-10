@@ -1,36 +1,31 @@
-use std::{ops::{Deref, DerefMut}};
-use num_enum::{IntoPrimitive, TryFromPrimitive};
-use opencl_sys::{CL_R, CL_A, CL_LUMINANCE, CL_INTENSITY, CL_RG, CL_RA, CL_RGB, CL_RGBA, CL_ARGB, CL_BGRA, cl_channel_type, CL_UNSIGNED_INT8, CL_UNSIGNED_INT16, CL_UNSIGNED_INT32, CL_SIGNED_INT8, CL_SIGNED_INT16, CL_SIGNED_INT32, CL_FLOAT, CL_SNORM_INT8, CL_SNORM_INT16, CL_UNORM_INT8, CL_UNORM_INT16, cl_image_format};
-use rscl_proc::docfg;
+use num_enum::{IntoPrimitive, TryFromPrimitive, TryFromPrimitiveError};
+use opencl_sys::{CL_R, CL_A, CL_LUMINANCE, CL_INTENSITY, CL_RG, CL_RA, CL_RGB, CL_RGBA, CL_ARGB, CL_BGRA, cl_channel_type, CL_UNSIGNED_INT8, CL_UNSIGNED_INT16, CL_UNSIGNED_INT32, CL_SIGNED_INT8, CL_SIGNED_INT16, CL_SIGNED_INT32, CL_FLOAT, CL_SNORM_INT8, CL_SNORM_INT16, CL_UNORM_INT8, CL_UNORM_INT16, cl_image_format, CL_HALF_FLOAT, CL_UNORM_SHORT_565, CL_UNORM_SHORT_555, CL_UNORM_INT_101010, cl_channel_order};
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub struct ImageFormat {
     pub order: ChannelOrder,
-    pub ty: cl_channel_type
+    pub ty: ChannelType
 }
 
 impl ImageFormat {
     #[inline(always)]
-    pub const fn new<T: ChannelType> (order: ChannelOrder) -> Self {
-        Self { order, ty: T::FLAG }
+    pub const fn new (order: ChannelOrder, ty: ChannelType) -> Self {
+        Self { order, ty }
     }
 
-    pub fn from_raw (v: cl_image_format) -> Self {
-        let order = ChannelOrder::try_from(v.image_channel_order).unwrap();
-        Self { order, ty: v.image_channel_data_type }
-    }
-
-    #[inline(always)]
-    pub fn set_ty<T: ChannelType> (&mut self) {
-        self.ty = T::FLAG
+    #[inline]
+    pub fn from_raw (v: cl_image_format) -> Result<Self, FromRawError> {
+        let order = ChannelOrder::try_from(v.image_channel_order)?;
+        let ty = ChannelType::try_from(v.image_channel_data_type)?;
+        Ok(Self { order, ty })
     }
 
     #[inline(always)]
     pub const fn into_raw (self) -> cl_image_format {
         cl_image_format {
-            image_channel_order: self.order as u32,
-            image_channel_data_type: self.ty,
+            image_channel_order: self.order as cl_channel_order,
+            image_channel_data_type: self.ty as cl_channel_type,
         }
     }
 }
@@ -111,88 +106,61 @@ pub enum ChannelOrder {
     sRGBx = opencl_sys::CL_sRGBx,
 }
 
-pub trait ChannelType {
-    const FLAG : cl_channel_type;
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, IntoPrimitive, TryFromPrimitive)]
+#[repr(u32)]
+pub enum ChannelType {
+    /// Each channel component is a normalized signed 8-bit integer value.
+    NormI8 = CL_SNORM_INT8,
+    /// Each channel component is a normalized unsigned 8-bit integer value.
+    NormU8 = CL_UNORM_INT8,
+    /// Each channel component is a normalized signed 16-bit integer value.
+    NormI16 = CL_SNORM_INT16,
+    /// Each channel component is a normalized unsigned 16-bit integer value.
+    NormU16 = CL_UNORM_INT16,
+    /// Each channel component is an unnormalized signed 8-bit integer value.
+    I8 = CL_SIGNED_INT8,
+    /// Each channel component is an unnormalized unsigned 8-bit integer value.
+    U8 = CL_UNSIGNED_INT8,
+    /// Each channel component is an unnormalized signed 16-bit integer value.
+    I16 = CL_SIGNED_INT16,
+    /// Each channel component is an unnormalized unsigned 16-bit integer value.
+    U16 = CL_UNSIGNED_INT16,
+    /// Each channel component is an unnormalized signed 32-bit integer value.
+    I32 = CL_SIGNED_INT32,
+    /// Each channel component is an unnormalized unsigned 32-bit integer value.
+    U32 = CL_UNSIGNED_INT32,
+    /// Each channel component is a 16-bit half-float value.
+    F16 = CL_HALF_FLOAT,
+    /// Each channel component is a single precision floating-point value
+    F32 = CL_FLOAT,
+    /// Represents a normalized 5-6-5 3-channel RGB image. The channel order must be [`ChannelOrder::RGB`] or [`ChannelOrder::RGBx`].
+    U16_565 = CL_UNORM_SHORT_565,
+    /// Represents a normalized x-5-5-5 4-channel xRGB image. The channel order must be [`ChannelOrder::RGB`] or [`ChannelOrder::RGBx`].
+    U16_555 = CL_UNORM_SHORT_555,
+    /// Represents a normalized x-10-10-10 4-channel xRGB image. The channel order must be [`ChannelOrder::RGB`] or [`ChannelOrder::RGBx`].
+    U32_10_10_10 = CL_UNORM_INT_101010,
+    /// Represents a normalized 10-10-10-2 four-channel RGBA image. The channel order must be [`ChannelOrder::RGBA`].
+    #[cfg_attr(docsrs, doc(cfg(feature = "cl2_1")))]
+    #[cfg(feature = "cl2_1")]
+    U32_10_10_10_2 = opencl_sys::CL_UNORM_INT_101010_2
 }
 
-impl ChannelType for u8 {
-    const FLAG : cl_channel_type = CL_UNSIGNED_INT8;
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FromRawError {
+    Order (TryFromPrimitiveError<ChannelOrder>),
+    Type (TryFromPrimitiveError<ChannelType>)
 }
 
-impl ChannelType for u16 {
-    const FLAG : cl_channel_type = CL_UNSIGNED_INT16;
-}
-
-impl ChannelType for u32 {
-    const FLAG : cl_channel_type = CL_UNSIGNED_INT32;
-}
-
-impl ChannelType for i8 {
-    const FLAG : cl_channel_type = CL_SIGNED_INT8;
-}
-
-impl ChannelType for i16 {
-    const FLAG : cl_channel_type = CL_SIGNED_INT16;
-}
-
-impl ChannelType for i32 {
-    const FLAG : cl_channel_type = CL_SIGNED_INT32;
-}
-
-impl ChannelType for f32 {
-    const FLAG : cl_channel_type = CL_FLOAT;
-}
-
-#[docfg(feature = "half")]
-impl ChannelType for half::f16 {
-    const FLAG : cl_channel_type = opencl_sys::CL_HALF_FLOAT;
-}
-
-/// Represents a normalized channel value
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
-#[repr(transparent)]
-pub struct Normalized<T> (pub T);
-
-impl<T> Normalized<T> {
+impl From<TryFromPrimitiveError<ChannelOrder>> for FromRawError {
     #[inline(always)]
-    pub const fn new (v: T) -> Self {
-        Self(v)
-    }
-
-    #[inline(always)]
-    pub fn into_inner (self) -> T {
-        self.0
+    fn from(x: TryFromPrimitiveError<ChannelOrder>) -> Self {
+        Self::Order(x)
     }
 }
 
-impl<T> Deref for Normalized<T> {
-    type Target = T;
-
+impl From<TryFromPrimitiveError<ChannelType>> for FromRawError {
     #[inline(always)]
-    fn deref(&self) -> &Self::Target {
-        &self.0
+    fn from(x: TryFromPrimitiveError<ChannelType>) -> Self {
+        Self::Type(x)
     }
-}
-
-impl<T> DerefMut for Normalized<T> {
-    #[inline(always)]
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
-}
-
-impl ChannelType for Normalized<i8> {
-    const FLAG : cl_channel_type = CL_SNORM_INT8;
-}
-
-impl ChannelType for Normalized<i16> {
-    const FLAG : cl_channel_type = CL_SNORM_INT16;
-}
-
-impl ChannelType for Normalized<u8> {
-    const FLAG : cl_channel_type = CL_UNORM_INT8;
-}
-
-impl ChannelType for Normalized<u16> {
-    const FLAG : cl_channel_type = CL_UNORM_INT16;
 }

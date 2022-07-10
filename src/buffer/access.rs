@@ -51,7 +51,7 @@ pub trait BufferExt<T: Copy + Unpin, C: Context>: AsRef<RawBuffer> + AsMut<RawBu
         self.as_ref().context()
     }
     
-    /// Return offset if memobj is a sub-buffer object created using [create_sub_buffer](MemObject::create_sub_buffer). Returns 0 if memobj is not a subbuffer object.
+    /// Return offset if memobj is a sub-buffer object created using [`RawBuffer::create_sub_buffer`]. Returns 0 if memobj is not a subbuffer object.
     #[docfg(feature = "cl1_1")]
     #[inline(always)]
     fn offset (&self) -> Result<usize> {

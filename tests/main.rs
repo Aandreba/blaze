@@ -23,38 +23,15 @@ fn program () -> Result<()> {
     Ok(())
 }
 
-#[cfg(feature = "futures")]
+#[cfg(feature = "image")]
 #[test]
 fn flag () {
-    use rscl::event::EventStatus;
+    use image::io::Reader;
+    use rscl::image::Image2D;
 
-    tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build().unwrap()
-        .block_on(async move {
-            use std::time::Duration;
-            use rscl::{event::FlagEvent, prelude::Event};
+    let img = Reader::open("tests/test.png").unwrap().decode().unwrap().into_rgba32f();
+    let cl = Image2D::new(&img, false).unwrap();
 
-            let event : FlagEvent = FlagEvent::new().unwrap();
-            let event2 = event.clone();
-            let event3 = event.clone();
-
-            let print = async move {
-                while event3.status().unwrap() != EventStatus::Complete {
-                    println!("Not done yet");
-                    tokio::time::sleep(Duration::from_secs(1)).await;
-                }
-            };
-
-            let complete = async move {
-                event2.raw().wait_async().unwrap().await.unwrap();
-            };
-
-            let wait = async move {
-                tokio::time::sleep(Duration::from_secs(5)).await;
-                event.set_complete(None).unwrap();
-            };
-
-            tokio::join!(complete, wait, print);
-        });
+    let alex = String::from("alex");
+    cl.on_destruct(move |_| println!("{alex}")).unwrap();
 }

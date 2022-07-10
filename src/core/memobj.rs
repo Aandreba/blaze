@@ -4,6 +4,7 @@ use rscl_proc::docfg;
 use crate::{core::*, context::RawContext, buffer::flags::FullMemFlags};
 
 /// A raw OpenCL memory object
+#[derive(Debug)]
 #[repr(transparent)]
 pub struct MemObject (NonNull<c_void>);
 
@@ -109,13 +110,13 @@ impl MemObject {
 impl MemObject {
     /// Adds a callback to be executed when the memory object is destructed by OpenCL
     #[inline(always)]
-    pub fn on_destruct (&self, f: impl 'static + FnOnce(MemObject)) -> Result<()> {
+    pub fn on_destruct (&self, f: impl 'static + FnOnce()) -> Result<()> {
         let f = Box::new(f) as Box<_>;
         self.on_destruct_boxed(f)
     }
 
     #[inline(always)]
-    pub fn on_destruct_boxed (&self, f: Box<dyn FnOnce(MemObject)>) -> Result<()> {
+    pub fn on_destruct_boxed (&self, f: Box<dyn FnOnce()>) -> Result<()> {
         let data = Box::into_raw(Box::new(f));
         unsafe { self.on_destruct_raw(destructor_callback, data.cast()) }
     }
@@ -191,7 +192,6 @@ pub(crate) fn offset_cb_plain (buffer: &MemObject, range: impl RangeBounds<usize
 
 #[cfg(feature = "cl1_1")]
 unsafe extern "C" fn destructor_callback (memobj: cl_mem, user_data: *mut c_void) {
-    let f = *Box::from_raw(user_data as *mut Box<dyn FnOnce(MemObject)>);
-    let memobj = MemObject::from_id_unchecked(memobj);
-    f(memobj)
+    let f = *Box::from_raw(user_data as *mut Box<dyn FnOnce()>);
+    f()
 }
