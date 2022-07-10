@@ -67,6 +67,7 @@ pub mod core;
 /// RSCL context's
 pub mod context;
 pub mod buffer;
+pub mod image;
 /// RSCL's event system
 pub mod event;
 mod utils;

@@ -1,5 +1,5 @@
-use std::{mem::MaybeUninit, ptr::{NonNull, addr_of_mut}, ffi::c_void, ops::{RangeBounds, Bound, Deref}};
-use opencl_sys::{cl_mem, clRetainMemObject, clReleaseMemObject, clGetMemObjectInfo, CL_MEM_CONTEXT, CL_MEM_REFERENCE_COUNT, CL_MEM_MAP_COUNT, CL_MEM_HOST_PTR, CL_MEM_SIZE, cl_mem_info, clCreateBuffer, CL_MEM_FLAGS, CL_FALSE, clEnqueueReadBuffer, clEnqueueWriteBuffer, clCreateSubBuffer, clEnqueueCopyBuffer};
+use std::{ptr::{NonNull, addr_of_mut}, ops::{RangeBounds, Bound, Deref}};
+use opencl_sys::{cl_mem, clCreateBuffer, CL_FALSE, clEnqueueReadBuffer, clEnqueueWriteBuffer, clEnqueueCopyBuffer};
 use rscl_proc::docfg;
 use crate::{core::*, context::RawContext, event::{WaitList, RawEvent}};
 use super::{flags::{FullMemFlags}};
@@ -25,7 +25,7 @@ impl RawBuffer {
             return Err(Error::from(err))
         }
 
-        unsafe { Ok(Self::from_id(id).unwrap()) }
+        Ok(Self::from_id(id).unwrap())
     }
 
     #[inline(always)]
@@ -34,79 +34,13 @@ impl RawBuffer {
     }
 
     #[inline(always)]
-    pub const fn from_id (id: cl_mem) -> Option<Self> {
+    pub fn from_id (id: cl_mem) -> Option<Self> {
         let memobj = MemObject::from_id(id)?;
-        if memobj.
-    }
+        if memobj.ty() == Ok(MemObjectType::Buffer) {
+            return Some(Self(memobj))
+        }
 
-    #[inline(always)]
-    pub const fn id (&self) -> cl_mem {
-        self.0.as_ptr()
-    }
-
-    #[inline(always)]
-    pub const fn id_ref (&self) -> &cl_mem {
-        unsafe { core::mem::transmute(&self.0) }
-    }
-
-    /// Return memory object from which memobj is created.
-    #[docfg(feature = "cl1_1")]
-    #[inline(always)]
-    pub fn associated_memobject (&self) -> Result<Option<RawBuffer>> {
-        let v = self.get_info::<cl_mem>(opencl_sys::CL_MEM_ASSOCIATED_MEMOBJECT)?;
-        Ok(Self::from_id(v))
-    }
-
-    /// Return the flags argument value specified when memobj is created.
-    #[inline(always)]
-    pub fn flags (&self) -> Result<FullMemFlags> {
-        let flags = self.get_info(CL_MEM_FLAGS)?;
-        Ok(FullMemFlags::from_bits(flags))
-    }
-
-    /// Return actual size of the data store associated with memobj in bytes.
-    #[inline(always)]
-    pub fn size (&self) -> Result<usize> {
-        self.get_info(CL_MEM_SIZE)
-    }
-
-    /// If memobj is created with a host_ptr specified, return the host_ptr argument value specified when memobj is created.
-    #[inline(always)]
-    pub fn host_ptr (&self) -> Result<Option<NonNull<c_void>>> {
-        self.get_info(CL_MEM_HOST_PTR).map(NonNull::new)
-    }
-
-    /// Map count. The map count returned should be considered immediately stale. It is unsuitable for general use in applications. This feature is provided for debugging.
-    #[inline(always)]
-    pub fn map_count (&self) -> Result<u32> {
-        self.get_info(CL_MEM_MAP_COUNT)
-    }
-
-    /// Return memobj reference count. The reference count returned should be considered immediately stale. It is unsuitable for general use in applications. This feature is provided for identifying memory leaks. 
-    #[inline(always)]
-    pub fn reference_count (&self) -> Result<u32> {
-        self.get_info(CL_MEM_REFERENCE_COUNT)
-    }
-
-    /// Return context specified when memory object is created.
-    #[inline(always)]
-    pub fn context (&self) -> Result<RawContext> {
-        self.get_info(CL_MEM_CONTEXT)
-    }
-
-    /// Return offset if memobj is a sub-buffer object created using [create_sub_buffer](RawBuffer::create_sub_buffer). Returns 0 if memobj is not a subbuffer object.
-    #[docfg(feature = "cl1_1")]
-    #[inline(always)]
-    pub fn offset (&self) -> Result<usize> {
-        self.get_info(opencl_sys::CL_MEM_OFFSET)
-    }
-
-    /// Return ```true``` if memobj is a buffer object that was created with CL_MEM_USE_HOST_PTR or is a sub-buffer object of a buffer object that was created with CL_MEM_USE_HOST_PTR and the host_ptr specified when the buffer object was created is a SVM pointer; otherwise returns ```false```.
-    #[docfg(feature = "cl2")]
-    #[inline(always)]
-    pub fn uses_svm_pointer (&self) -> Result<bool> {
-        let v = self.get_info::<opencl_sys::cl_bool>(opencl_sys::CL_MEM_USES_SVM_POINTER)?;
-        Ok(v != 0)
+        None
     }
 
     /// Creates a new buffer object (referred to as a sub-buffer object) from an existing buffer object.
@@ -126,41 +60,8 @@ impl RawBuffer {
 
         Ok(RawBuffer::from_id(id).unwrap())
     }
-
-    #[inline]
-    pub(super) fn get_info<O> (&self, ty: cl_mem_info) -> Result<O> {
-        let mut result = MaybeUninit::<O>::uninit();
-
-        unsafe {
-            tri!(clGetMemObjectInfo(self.id(), ty, core::mem::size_of::<O>(), result.as_mut_ptr().cast(), core::ptr::null_mut()));
-            Ok(result.assume_init())
-        }
-    }
 }
 
-#[docfg(feature = "cl1_1")]
-impl RawBuffer {
-    /// Adds a callback to be executed when the memory object is destructed by OpenCL
-    #[inline(always)]
-    pub fn on_destruct (&self, f: impl 'static + FnOnce(RawBuffer)) -> Result<()> {
-        let f = Box::new(f) as Box<_>;
-        self.on_destruct_boxed(f)
-    }
-
-    #[inline(always)]
-    pub fn on_destruct_boxed (&self, f: Box<dyn FnOnce(RawBuffer)>) -> Result<()> {
-        let data = Box::into_raw(Box::new(f));
-        unsafe { self.on_destruct_raw(destructor_callback, data.cast()) }
-    }
-
-    #[inline(always)]
-    pub unsafe fn on_destruct_raw (&self, f: unsafe extern "C" fn(memobj: cl_mem, user_data: *mut c_void), user_data: *mut c_void) -> Result<()> {
-        tri!(opencl_sys::clSetMemObjectDestructorCallback(self.id(), Some(f), user_data));
-        Ok(())
-    }
-}
-
-// Buffer methods
 impl RawBuffer {
     /// Reads the contents of this 
     pub unsafe fn read_to_ptr<T: Copy> (&self, src_range: impl RangeBounds<usize>, dst: *mut T, queue: &CommandQueue, wait: impl Into<WaitList>) -> Result<RawEvent> {
@@ -257,11 +158,4 @@ pub(crate) fn range_len (len: usize, range: &impl RangeBounds<usize>) -> usize {
     };
 
     end - start
-}
-
-#[cfg(feature = "cl1_1")]
-unsafe extern "C" fn destructor_callback (memobj: cl_mem, user_data: *mut c_void) {
-    let f = *Box::from_raw(user_data as *mut Box<dyn FnOnce(RawBuffer)>);
-    let memobj = RawBuffer::from_id_unchecked(memobj);
-    f(memobj)
 }

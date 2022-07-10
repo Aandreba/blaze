@@ -1,5 +1,5 @@
 use std::{mem::MaybeUninit, ptr::{NonNull}, ffi::c_void, ops::{RangeBounds, Bound}};
-use opencl_sys::{cl_mem, clRetainMemObject, clReleaseMemObject, clGetMemObjectInfo, CL_MEM_CONTEXT, CL_MEM_REFERENCE_COUNT, CL_MEM_MAP_COUNT, CL_MEM_HOST_PTR, CL_MEM_SIZE, cl_mem_info, CL_MEM_FLAGS, CL_MEM_OBJECT_BUFFER, CL_MEM_OBJECT_IMAGE2D, CL_MEM_OBJECT_IMAGE3D, CL_MEM_OBJECT_PIPE, CL_MEM_TYPE};
+use opencl_sys::{cl_mem, clRetainMemObject, clReleaseMemObject, clGetMemObjectInfo, CL_MEM_CONTEXT, CL_MEM_REFERENCE_COUNT, CL_MEM_MAP_COUNT, CL_MEM_HOST_PTR, CL_MEM_SIZE, cl_mem_info, CL_MEM_FLAGS, CL_MEM_OBJECT_BUFFER, CL_MEM_OBJECT_IMAGE2D, CL_MEM_OBJECT_IMAGE3D, CL_MEM_OBJECT_PIPE, CL_MEM_TYPE, CL_MEM_OBJECT_IMAGE1D, CL_MEM_OBJECT_IMAGE1D_ARRAY, CL_MEM_OBJECT_IMAGE2D_ARRAY, CL_MEM_OBJECT_IMAGE1D_BUFFER};
 use rscl_proc::docfg;
 use crate::{core::*, context::RawContext, buffer::flags::FullMemFlags};
 
@@ -154,9 +154,13 @@ unsafe impl Sync for MemObject {}
 #[repr(u32)]
 pub enum MemObjectType {
     Buffer = CL_MEM_OBJECT_BUFFER,
+    Pipe = CL_MEM_OBJECT_PIPE,
+    Image1D = CL_MEM_OBJECT_IMAGE1D,
     Image2D = CL_MEM_OBJECT_IMAGE2D,
     Image3D = CL_MEM_OBJECT_IMAGE3D,
-    Pipe = CL_MEM_OBJECT_PIPE
+    Image1DArray = CL_MEM_OBJECT_IMAGE1D_ARRAY,
+    Image2DArray = CL_MEM_OBJECT_IMAGE2D_ARRAY,
+    Image1DBuffer = CL_MEM_OBJECT_IMAGE1D_BUFFER,
 }
 
 impl Into<u32> for MemObjectType {
