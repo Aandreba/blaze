@@ -3,7 +3,7 @@ use bytemuck::{NoUninit, cast_slice};
 use image::{ImageBuffer};
 
 use crate::{core::*, context::{Context, Global}, buffer::flags::{MemAccess, HostPtr, FullMemFlags}};
-use super::{RawImage, ImageFormat, ImageDesc, channel::RawPixel};
+use super::{RawImage, ImageDesc, channel::RawPixel};
 
 #[derive(Debug, Clone)]
 pub struct Image2D<P: RawPixel, C: Context = Global> {

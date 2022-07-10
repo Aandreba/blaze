@@ -31,7 +31,5 @@ fn flag () {
 
     let img = Reader::open("tests/test.png").unwrap().decode().unwrap().into_rgba32f();
     let cl = Image2D::new(&img, false).unwrap();
-
-    let alex = String::from("alex");
-    cl.on_destruct(move |_| println!("{alex}")).unwrap();
+    
 }
