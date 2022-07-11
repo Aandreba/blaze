@@ -1,6 +1,6 @@
 use super::*;
 use std::{mem::MaybeUninit, ptr::NonNull, ffi::c_void};
-use opencl_sys::{cl_command_queue, CL_QUEUE_OUT_OF_ORDER_EXEC_MODE_ENABLE, CL_QUEUE_PROPERTIES, clRetainCommandQueue, clReleaseCommandQueue, clFlush, clFinish, cl_command_queue_info, clGetCommandQueueInfo, cl_context, CL_QUEUE_CONTEXT, CL_QUEUE_DEVICE, CL_QUEUE_REFERENCE_COUNT, cl_command_queue_properties, CL_QUEUE_PROFILING_ENABLE};
+use opencl_sys::{cl_command_queue, CL_QUEUE_OUT_OF_ORDER_EXEC_MODE_ENABLE, CL_QUEUE_PROPERTIES, clRetainCommandQueue, clReleaseCommandQueue, clFlush, clFinish, cl_command_queue_info, clGetCommandQueueInfo, CL_QUEUE_CONTEXT, CL_QUEUE_DEVICE, CL_QUEUE_REFERENCE_COUNT, cl_command_queue_properties, CL_QUEUE_PROFILING_ENABLE};
 use rscl_proc::docfg;
 use crate::context::RawContext;
 use std::ptr::addr_of_mut;
@@ -46,6 +46,16 @@ impl CommandQueue {
         }
 
         Ok(NonNull::new(id).map(Self).unwrap())
+    }
+
+    #[inline(always)]
+    pub fn from_id (id: cl_command_queue) -> Option<Self> {
+        NonNull::new(id).map(Self)
+    }
+
+    #[inline(always)]
+    pub unsafe fn from_id_unchecked (id: cl_command_queue) -> Self {
+        Self(NonNull::new_unchecked(id))
     }
 
     #[inline(always)]

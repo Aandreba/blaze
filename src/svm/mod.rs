@@ -28,12 +28,12 @@ impl<C: Context> Svm<C> {
     #[inline(always)]
     pub unsafe fn alloc_with_flags (&self, flags: SvmFlags, layout: Layout) -> *mut u8 {
         let align = u32::try_from(layout.align()).unwrap();
-        clSVMAlloc(self.0.raw_context().id(), flags.to_bits(), layout.size(), align).cast()
+        clSVMAlloc(self.0.as_raw().id(), flags.to_bits(), layout.size(), align).cast()
     }
 
     #[inline(always)]
     pub unsafe fn free (&self, ptr: *mut u8) {
-        clSVMFree(self.0.raw_context().id(), ptr.cast())
+        clSVMFree(self.0.as_raw().id(), ptr.cast())
     }
 
     #[inline(always)]

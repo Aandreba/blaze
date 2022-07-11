@@ -206,7 +206,7 @@ macro_rules! impl_buffer {
                 #[inline]
                 pub fn create_in (len: usize, host: HostPtr, host_ptr: Option<NonNull<T>>, ctx: C) -> Result<Self> {
                     let size = len.checked_mul(core::mem::size_of::<T>()).unwrap();
-                    let inner = RawBuffer::new(size, FullMemFlags::new($access, host), host_ptr, ctx.raw_context())?;
+                    let inner = RawBuffer::new(size, FullMemFlags::new($access, host), host_ptr, ctx.as_raw())?;
             
                     Ok(Self {
                         inner,

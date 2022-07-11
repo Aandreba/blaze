@@ -144,7 +144,10 @@ impl Event for RawEvent {
     fn as_raw(&self) -> &RawEvent { self }
 
     #[inline(always)]
-    fn consume (self) -> Self::Output {}
+    fn consume (self, error: Option<Error>) -> Result<Self::Output> {
+        if let Some(err) = error { return Err(err); }
+        Ok(())
+    }
 
     #[inline(always)]
     fn wait (self) -> Result<()> {

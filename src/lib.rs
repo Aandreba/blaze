@@ -51,6 +51,7 @@ macro_rules! tri_panic {
 pub mod prelude {
     pub use crate::core::*;
     pub use crate::macros::*;
+    pub use crate::context::{Context, Global, RawContext};
     pub use crate::event::{RawEvent, Event};
 }
 

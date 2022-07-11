@@ -27,8 +27,9 @@ impl<T: Copy + Unpin, P: Deref<Target = [T]>> Event for WriteBufferEvent<T, P> {
     }
 
     #[inline(always)]
-    fn consume (self) -> Self::Output {
-       ()
+    fn consume (self, error: Option<Error>) -> Result<Self::Output> {
+        if let Some(err) = error { return Err(err); }
+        Ok(())
     }
 }
 

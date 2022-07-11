@@ -1,6 +1,6 @@
 flat_mod!(raw,flags, global, single);
-use std::ops::Deref;
 
+use std::ops::Deref;
 use crate::core::CommandQueue;
 
 /// An object that can be used as a RSCL context, with a similar syntax to Rust allocators.\
@@ -11,7 +11,7 @@ pub trait Context: Deref<Target = RawContext> {
     fn next_queue (&self) -> &CommandQueue;
 
     #[inline(always)]
-    fn raw_context (&self) -> &RawContext {
+    fn as_raw (&self) -> &RawContext {
         self
     }
 }

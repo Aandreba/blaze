@@ -43,16 +43,27 @@ impl<E: Event + Unpin> Future for EventWait<E> {
         let event = self.event.as_ref().unwrap();
         self.waker.register(cx.waker());
 
-        if event.status()? == EventStatus::Complete {
-            // SAFETY: We previously checked if the event existed, so it's guaranteed to still be there
-            let data = unsafe {
-                core::mem::take(&mut self.event).unwrap_unchecked()
-            };
+        match event.parent_event().status() {
+            Ok(EventStatus::Complete) => {
+                // SAFETY: We previously checked if the event existed, so it's guaranteed to still be there
+                let data = unsafe {
+                    core::mem::take(&mut self.event).unwrap_unchecked()
+                };
 
-            return Poll::Ready(Ok(data.consume()))
+                Poll::Ready(data.consume(None))
+            },
+
+            Err(e) => {
+                // SAFETY: We previously checked if the event existed, so it's guaranteed to still be there
+                let data = unsafe {
+                    core::mem::take(&mut self.event).unwrap_unchecked()
+                };
+
+                Poll::Ready(data.consume(Some(e)))
+            },
+            
+            _ => Poll::Pending
         }
-
-        Poll::Pending
     }
 }
 

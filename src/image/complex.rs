@@ -94,7 +94,7 @@ impl<P: RawPixel, C: Context> Image2D<P, C> {
         let desc = ImageDesc::new(MemObjectType::Image2D, width, height);
 
         #[cfg(feature = "cl1_2")]
-        let inner = RawImage::new(ctx.raw_context(), flags, P::FORMAT, desc, host_ptr)?;
+        let inner = RawImage::new(ctx.as_raw(), flags, P::FORMAT, desc, host_ptr)?;
         #[cfg(not(feature = "cl1_2"))]
         let inner = RawImage::new_2d(ctx.raw_context(), flags, P::FORMAT, desc, host_ptr)?;
 

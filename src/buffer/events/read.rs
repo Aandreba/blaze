@@ -25,10 +25,11 @@ impl<T: Copy + Unpin> Event for ReadBufferEvent<T> {
     }
 
     #[inline(always)]
-    fn consume (self) -> Self::Output {
+    fn consume (self, err: Option<Error>) -> Result<Self::Output> {
+        if let Some(err) = err { return Err(err); }
         let mut result = Pin::into_inner(self.result);
         unsafe { result.set_len(result.capacity()) }
-        result
+        Ok(result)
     }
 }
 
@@ -57,7 +58,10 @@ impl<T: Copy + Unpin, P: DerefMut<Target = [T]>> Event for ReadBufferInto<T, P> 
     }
 
     #[inline(always)]
-    fn consume (self) -> Self::Output {}
+    fn consume (self, error: Option<Error>) -> Result<Self::Output> {
+        if let Some(err) = error { return Err(err); }
+        Ok(())
+    }
 }
 
 impl<T: Copy, P: DerefMut<Target = [T]>> AsRef<RawEvent> for ReadBufferInto<T, P> {

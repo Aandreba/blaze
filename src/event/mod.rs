@@ -1,7 +1,7 @@
 use std::{mem::ManuallyDrop};
 use opencl_sys::{CL_COMMAND_NDRANGE_KERNEL, CL_COMMAND_TASK, CL_COMMAND_NATIVE_KERNEL, CL_COMMAND_READ_BUFFER, CL_COMMAND_WRITE_BUFFER, CL_COMMAND_COPY_BUFFER, CL_COMMAND_READ_IMAGE, CL_COMMAND_WRITE_IMAGE, CL_COMMAND_COPY_IMAGE, CL_COMMAND_COPY_IMAGE_TO_BUFFER, CL_COMMAND_COPY_BUFFER_TO_IMAGE, CL_COMMAND_MAP_BUFFER, CL_COMMAND_MAP_IMAGE, CL_COMMAND_UNMAP_MEM_OBJECT, CL_COMMAND_MARKER, CL_COMMAND_ACQUIRE_GL_OBJECTS, CL_COMMAND_RELEASE_GL_OBJECTS, CL_EVENT_COMMAND_TYPE, CL_EVENT_COMMAND_EXECUTION_STATUS, CL_EVENT_COMMAND_QUEUE, cl_event};
 use rscl_proc::docfg;
-use crate::core::*;
+use crate::{core::*};
 
 flat_mod!(status, raw, various);
 
@@ -19,8 +19,15 @@ pub trait Event {
     /// Returns a reference to the underlying [`RawEvent`]
     fn as_raw (&self) -> &RawEvent;
 
-    /// Returns the data associated with the event, with the assumtion that it has completed successfuly.
-    fn consume (self) -> Self::Output;
+    /// Consumes the event, returning the data associated with it.
+    fn consume (self, err: Option<Error>) -> Result<Self::Output>;
+
+    /// Returns the event whose the logic of this one depends on. This event is the one that will be awaited by [`Event::wait`] and [`Event::wait_async`].\
+    /// By default, this funtion returns the same as [`Event::as_raw`]
+    #[inline(always)]
+    fn parent_event (&self) -> &RawEvent {
+        self.as_raw()
+    }
 
     /// Returns the underlying [`RawEvent`]
     #[inline(always)]
@@ -31,8 +38,8 @@ pub trait Event {
     /// Blocks the current thread util the event has completed, returning `Ok(data)` if it completed correctly, and `Err(e)` otherwise.
     #[inline(always)]
     fn wait (self) -> Result<Self::Output> where Self: Sized {
-        self.as_raw().wait_by_ref()?;
-        Ok(self.consume())
+        let err = self.parent_event().wait_by_ref().err();
+        self.consume(err)
     }
 
     /// Returns a future that waits for the event to complete without blocking.
@@ -57,10 +64,52 @@ pub trait Event {
 
     /// Returns the event's underlying command queue
     #[inline(always)]
-    fn command_queue (&self) -> Result<CommandQueue> {
-        self.as_raw().get_info(CL_EVENT_COMMAND_QUEUE)
+    fn command_queue (&self) -> Result<Option<CommandQueue>> {
+        self.as_raw().get_info(CL_EVENT_COMMAND_QUEUE).map(CommandQueue::from_id)
+    }
+
+    /// Return the context associated with event.
+    #[docfg(feature = "cl1_1")]
+    #[inline(always)]
+    fn raw_context (&self) -> Result<crate::prelude::RawContext> {
+        self.as_raw().get_info(opencl_sys::CL_EVENT_CONTEXT)
     }
 }
+
+pub trait EventExt: Sized + Event {
+    /// Maps the result of this event.
+    #[docfg(feature = "cl1_1")]
+    #[inline]
+    fn map<T, F: FnOnce(Self::Output) -> T> (self, f: F) -> Result<Map<Self, F>> {
+        let ctx = self.raw_context()?;
+        let flag = FlagEvent::new_in(&ctx)?;
+
+        Ok(Map {
+            parent: self,
+            flag,
+            f
+        })
+    }
+
+    #[inline]
+    fn inspect<F: FnOnce(&Self::Output)> (self) {
+        todo!()
+    }
+
+    /// Wrap the event in a [`Box`].
+    #[inline(always)]
+    fn boxed<'a> (self) -> Box<dyn Event<Output = Self::Output> + Send + 'a> where Self: 'a + Send {
+        Box::new(self)
+    }
+
+    /// Wrap the event in a [`Box`]. Similar to [`EventExt::boxed`], but without the [`Send`] requirement.
+    #[inline(always)]
+    fn boxed_local<'a> (self) -> Box<dyn Event<Output = Self::Output> + 'a> where Self: 'a {
+        Box::new(self)
+    }
+}
+
+impl<T: Event> EventExt for T {}
 
 /// A list of events to be awaited
 #[derive(Clone)]

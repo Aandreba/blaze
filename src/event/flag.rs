@@ -2,7 +2,7 @@ use std::{ptr::addr_of_mut};
 use opencl_sys::{clSetUserEventStatus, CL_COMPLETE, clCreateUserEvent};
 
 use super::{RawEvent, Event};
-use crate::{core::*, context::{Context, Global}};
+use crate::{core::*, context::{RawContext, Global, Context}};
 
 /// Event that completes when the user specifies
 #[cfg_attr(docsrs, doc(cfg(feature = "cl1_1")))]
@@ -13,15 +13,15 @@ pub struct FlagEvent (RawEvent);
 impl FlagEvent {
     #[inline(always)]
     pub fn new () -> Result<Self> {
-        Self::new_in(&Global)
+        Self::new_in(Global.as_raw())
     }
 
     #[inline]
-    pub fn new_in<C: Context> (ctx: &C) -> Result<Self> {
+    pub fn new_in (ctx: &RawContext) -> Result<Self> {
         let mut err = 0;
 
         unsafe {
-            let id = clCreateUserEvent(ctx.raw_context().id(), addr_of_mut!(err));
+            let id = clCreateUserEvent(ctx.id(), addr_of_mut!(err));
             if err != 0 { return Err(Error::from(err)); }
             Ok(Self(RawEvent::from_id(id).unwrap()))
         }
@@ -53,5 +53,8 @@ impl Event for FlagEvent {
     }
 
     #[inline(always)]
-    fn consume (self) -> Self::Output {}
+    fn consume (self, error: Option<Error>) -> Result<Self::Output> {
+        if let Some(err) = error { return Err(err); }
+        Ok(())
+    }
 }
