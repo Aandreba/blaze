@@ -1,22 +1,23 @@
-use std::{pin::Pin, ops::{RangeBounds, DerefMut}};
+use std::{pin::Pin, ops::{RangeBounds, DerefMut}, marker::PhantomData};
 use crate::{core::*, event::{RawEvent, Event, WaitList}, buffer::{RawBuffer, range_len}};
 
-pub struct ReadBufferEvent<T: Copy> {
+pub struct ReadBuffer<'src, T: Copy> {
     event: RawEvent,
-    result: Pin<Vec<T>>
+    dst: Pin<Vec<T>>,
+    src: PhantomData<&'src RawBuffer>
 }
 
-impl<T: Copy + Unpin> ReadBufferEvent<T> {
-    pub unsafe fn new (src: &RawBuffer, range: impl RangeBounds<usize>, queue: &CommandQueue, wait: impl Into<WaitList>) -> Result<Self> {
+impl<'src, T: Copy + Unpin> ReadBuffer<'src, T> {
+    pub unsafe fn new (src: &'src RawBuffer, range: impl RangeBounds<usize>, queue: &CommandQueue, wait: impl Into<WaitList>) -> Result<Self> {
         let len = range_len(core::mem::size_of::<T>(), &range);
         let mut result = Pin::new(Vec::with_capacity(len));
 
         let event = src.read_to_ptr(range, result.as_mut_ptr(), queue, wait)?;
-        Ok(Self { event, result })
+        Ok(Self { event, dst: result, src: PhantomData })
     }
 }
 
-impl<T: Copy + Unpin> Event for ReadBufferEvent<T> {
+impl<T: Copy + Unpin> Event for ReadBuffer<'_, T> {
     type Output = Vec<T>;
 
     #[inline(always)]
@@ -27,29 +28,30 @@ impl<T: Copy + Unpin> Event for ReadBufferEvent<T> {
     #[inline(always)]
     fn consume (self, err: Option<Error>) -> Result<Self::Output> {
         if let Some(err) = err { return Err(err); }
-        let mut result = Pin::into_inner(self.result);
+        let mut result = Pin::into_inner(self.dst);
         unsafe { result.set_len(result.capacity()) }
         Ok(result)
     }
 }
 
-pub struct ReadBufferInto<T: Copy, P: DerefMut<Target = [T]>> {
+#[repr(transparent)]
+pub struct ReadBufferInto<'src, 'dst> {
     event: RawEvent,
-    #[allow(unused)]
-    dst: Pin<P>
+    src: PhantomData<&'src [()]>,
+    dst: PhantomData<&'dst mut RawBuffer>,
 }
 
-impl<T: Copy + Unpin, P: DerefMut<Target = [T]>> ReadBufferInto<T, P> {
-    pub unsafe fn new (src: &RawBuffer, dst: P, offset: usize, queue: &CommandQueue, wait: impl Into<WaitList>) -> Result<Self> {
+impl<'src, 'dst> ReadBufferInto<'src, 'dst> {
+    pub unsafe fn new<T: Copy + Unpin> (src: &'src RawBuffer, dst: &'dst mut [T], offset: usize, queue: &CommandQueue, wait: impl Into<WaitList>) -> Result<Self> {
         let mut dst = Pin::new(dst);
         let range = offset..(offset + dst.len());
 
         let event = src.read_to_ptr(range, dst.as_mut_ptr(), queue, wait)?;
-        Ok(Self { event, dst })
+        Ok(Self { event, src: PhantomData, dst: PhantomData })
     }
 }
 
-impl<T: Copy + Unpin, P: DerefMut<Target = [T]>> Event for ReadBufferInto<T, P> {
+impl<'src, 'dst> Event for ReadBufferInto<'src, 'dst> {
     type Output = ();
 
     #[inline(always)]
@@ -61,12 +63,5 @@ impl<T: Copy + Unpin, P: DerefMut<Target = [T]>> Event for ReadBufferInto<T, P> 
     fn consume (self, error: Option<Error>) -> Result<Self::Output> {
         if let Some(err) = error { return Err(err); }
         Ok(())
-    }
-}
-
-impl<T: Copy, P: DerefMut<Target = [T]>> AsRef<RawEvent> for ReadBufferInto<T, P> {
-    #[inline(always)]
-    fn as_ref(&self) -> &RawEvent {
-        &self.event
     }
 }

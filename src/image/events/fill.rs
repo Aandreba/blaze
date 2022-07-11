@@ -1,6 +1,4 @@
 use std::{marker::PhantomData, mem::MaybeUninit, ptr::addr_of};
-use image::Pixel;
-
 use crate::{prelude::*, image::{channel::{RawPixel, FromPrimitive}, RawImage, IntoSlice, ChannelOrder}, event::WaitList};
 
 #[repr(transparent)]
@@ -28,8 +26,8 @@ impl<'dst> FillImage<'dst> {
 
         #[cfg(feature = "cl2")]
         if P::ORDER == ChannelOrder::Depth {
-            let value = f32::from_primitive(color.channels()[0]);
-            unsafe { core::ptr::copy_nonoverlapping(addr_of!(value).cast(), ptr as *mut u8, core::mem::size_of::<f32>()) };
+            let value = f32::from_primitive(color.to_luma()[0]);
+            unsafe { core::ptr::copy_nonoverlapping(addr_of!(value), ptr as *mut f32, 1) };
             return result
         }
 
@@ -39,20 +37,15 @@ impl<'dst> FillImage<'dst> {
             return result
         }
 
-        let ptr = ptr as *mut P::Subpixel;
-        todo!()
-        
-        unsafe {
-            let count = <P as Pixel>::CHANNEL_COUNT as usize;
-            core::ptr::write_bytes((ptr).add(count), 0, 4 - count);
-        }
+        let color = color.to_rgba();
+        let ptr = ptr as *mut f32;
 
-        let channels = color.channels().into_iter().copied().map(f32::from_primitive).enumerate();
+        let channels = color.0.into_iter().map(f32::from_primitive).enumerate();
         for (i, v) in channels {
             unsafe { ptr.add(i).write(v) }
         }
 
-        todo!()
+        return result
     }
 }
 

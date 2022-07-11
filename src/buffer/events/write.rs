@@ -1,15 +1,16 @@
-use std::{pin::Pin, ops::{RangeBounds, Deref}};
+use std::{pin::Pin, ops::{RangeBounds, Deref}, marker::PhantomData};
 use crate::{core::*, event::{RawEvent, Event, WaitList}, buffer::{RawBuffer}};
 
-pub struct WriteBufferEvent<T: Copy, P: Deref<Target = [T]>> {
+#[repr(transparent)]
+pub struct WriteBuffer<'src, 'dst> {
     event: RawEvent,
-    #[allow(unused)]
-    src: Pin<P>
+    src: PhantomData<&'src [()]>,
+    
 }
 
-impl<T: Copy + Unpin, P: Deref<Target = [T]>> WriteBufferEvent<T, P> {
+impl<'src> WriteBuffer<'src> {
     #[inline(always)]
-    pub unsafe fn new (src: P, dst: &mut RawBuffer, offset: usize, queue: &CommandQueue, wait: impl Into<WaitList>) -> Result<Self> {
+    pub unsafe fn new<T: Copy + Unpin, P: Deref<Target = [T]>> (src: P, dst: &mut RawBuffer, offset: usize, queue: &CommandQueue, wait: impl Into<WaitList>) -> Result<Self> {
         let src = Pin::new(src);
         let range = offset..(offset + src.len());
 
@@ -18,7 +19,7 @@ impl<T: Copy + Unpin, P: Deref<Target = [T]>> WriteBufferEvent<T, P> {
     }
 }
 
-impl<T: Copy + Unpin, P: Deref<Target = [T]>> Event for WriteBufferEvent<T, P> {
+impl<T: Copy + Unpin, P: Deref<Target = [T]>> Event for WriteBuffer<T, P> {
     type Output = ();
 
     #[inline(always)]

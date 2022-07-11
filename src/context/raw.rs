@@ -1,7 +1,7 @@
 use std::{ptr::{addr_of_mut, NonNull}, ffi::c_void, mem::MaybeUninit};
-use opencl_sys::{cl_context, clCreateContext, clCreateContextFromType, clRetainContext, clReleaseContext, cl_context_info, clGetContextInfo, CL_CONTEXT_REFERENCE_COUNT, CL_CONTEXT_DEVICES, cl_device_id, cl_context_properties, CL_CONTEXT_PROPERTIES};
+use opencl_sys::{cl_context, clCreateContext, clCreateContextFromType, clRetainContext, clReleaseContext, cl_context_info, clGetContextInfo, CL_CONTEXT_REFERENCE_COUNT, CL_CONTEXT_DEVICES, cl_device_id, cl_context_properties, CL_CONTEXT_PROPERTIES, clGetSupportedImageFormats, cl_image_format};
 use rscl_proc::docfg;
-use crate::core::{*, device::DeviceType};
+use crate::{core::{*, device::DeviceType}, buffer::flags::{MemAccess}};
 use super::ContextProperties;
 
 #[repr(transparent)]
@@ -96,6 +96,36 @@ impl RawContext {
     pub fn properties (&self) -> Result<ContextProperties> {
         let v = self.get_info_array::<cl_context_properties>(CL_CONTEXT_PROPERTIES)?;
         Ok(ContextProperties::from_bits(&v))
+    }
+
+    /// Get the list of image formats supported by an OpenCL implementation.
+    #[cfg(feature = "image")]
+    pub fn supported_image_formats (&self, access: MemAccess, ty: MemObjectType) -> Result<Vec<crate::image::ImageFormat>> {
+        use crate::image::ImageFormat;
+
+        let mut size = 0;
+        unsafe {
+            tri!(clGetSupportedImageFormats(self.id(), access.to_bits(), ty as u32, 0, core::ptr::null_mut(), addr_of_mut!(size)))
+        }
+
+        let len = size as usize;
+        let mut values = Box::<[cl_image_format]>::new_uninit_slice(len);
+        let values = unsafe {
+            tri!(clGetSupportedImageFormats(self.id(), access.to_bits(), ty as u32, size, values.as_mut_ptr().cast(), core::ptr::null_mut()));
+            values.assume_init()
+        };
+
+        let mut result = Vec::with_capacity(len);
+        for i in 0..len {
+            let v = match ImageFormat::from_raw(values[i]) {
+                Ok(x) => x,
+                Err(e) => return Err(Error::new(ErrorType::InvalidImageFormatDescriptor, format!("{e:?}")))
+            };
+
+            result.push(v)
+        }
+
+        Ok(result)
     }
 
     #[inline]
