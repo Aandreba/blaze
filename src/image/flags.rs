@@ -145,6 +145,16 @@ pub enum ChannelType {
     U32_10_10_10_2 = opencl_sys::CL_UNORM_INT_101010_2
 }
 
+impl ChannelType {
+    #[inline(always)]
+    pub const fn is_norm (&self) -> bool {
+        match self {
+            Self::I8 | Self::U8 | Self::I16 | Self::U16 | Self::I32 | Self::U32 | Self::F16 | Self::F32 => false,
+            _ => true
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FromRawError {
     Order (TryFromPrimitiveError<ChannelOrder>),

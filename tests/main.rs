@@ -27,14 +27,12 @@ fn program () -> Result<()> {
 #[test]
 fn flag () {
     use image::{Rgba, io::Reader, imageops::{resize, FilterType}};
-    use rscl::{image::Image2D, buffer::flags::MemAccess};
-
-    let img2 = Reader::open("tests/test2.jpg").unwrap()
-        .decode().unwrap()
-        .into_rgba8();
+    use rscl::{image::Image2D, buffer::flags::MemAccess, event::WaitList, prelude::{Event, Context}};
 
     let mut img1 = Image2D::<Rgba<u8>>::from_file("tests/test.png", MemAccess::default(), false).unwrap();
-    let img2 = resize(&img2, 64, 64, FilterType::Gaussian);
+    img1.fill(Rgba([0, 0xff, 0xff, 0]), (32..64, 32..50), WaitList::EMPTY).unwrap().wait().unwrap();
+    Global.next_queue().flush().unwrap();
+    let image = img1.read_all(WaitList::EMPTY).unwrap().wait().unwrap();
 
     // todo test write
     image.save("tests/test_slice.png").unwrap();

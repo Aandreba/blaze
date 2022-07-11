@@ -1,4 +1,5 @@
-use opencl_sys::{cl_image_info, clGetImageInfo, cl_image_format, CL_IMAGE_FORMAT, CL_IMAGE_ELEMENT_SIZE, CL_IMAGE_ROW_PITCH, CL_IMAGE_SLICE_PITCH, CL_IMAGE_WIDTH, CL_IMAGE_HEIGHT, CL_IMAGE_DEPTH, cl_mem, clEnqueueReadImage, CL_FALSE, clEnqueueWriteImage, clEnqueueCopyImage};
+use image::Primitive;
+use opencl_sys::{cl_image_info, clGetImageInfo, cl_image_format, CL_IMAGE_FORMAT, CL_IMAGE_ELEMENT_SIZE, CL_IMAGE_ROW_PITCH, CL_IMAGE_SLICE_PITCH, CL_IMAGE_WIDTH, CL_IMAGE_HEIGHT, CL_IMAGE_DEPTH, cl_mem, clEnqueueReadImage, CL_FALSE, clEnqueueWriteImage, clEnqueueCopyImage, clEnqueueFillImage};
 use rscl_proc::docfg;
 use std::{ptr::{NonNull, addr_of_mut}, ffi::c_void, ops::{Deref}, mem::MaybeUninit};
 use crate::{core::*, context::RawContext, buffer::{flags::FullMemFlags}, event::WaitList, prelude::RawEvent, image::ImageSlice};
@@ -103,13 +104,13 @@ impl RawImage {
         self.get_info(CL_IMAGE_WIDTH)
     }
 
-    /// Return height of the image in pixels. For a 1D image, 1D image buffer and 1D image array object, height = 0.
+    /// Return height of the image in pixels. For a 1D image, 1D image buffer and 1D image array object, height is zero.
     #[inline(always)]
     pub fn height (&self) -> Result<usize> {
         self.get_info(CL_IMAGE_HEIGHT)
     }
 
-    /// Return depth of the image in pixels. For a 1D image, 1D image buffer, 2D image or 1D and 2D image array object, depth = 0.
+    /// Return depth of the image in pixels. For a 1D image, 1D image buffer, 2D image or 1D and 2D image array object, depth is zero.
     #[inline(always)]
     pub fn depth (&self) -> Result<usize> {
         self.get_info(CL_IMAGE_DEPTH)
@@ -197,6 +198,17 @@ impl RawImage {
     #[inline(always)]
     pub unsafe fn copy_to<const N: usize> (&self, offset_src: [usize;N], dst: &mut RawImage, offset_dst: [usize;N], region: [usize;N], queue: &CommandQueue, wait: impl Into<WaitList>) -> Result<RawEvent> {
         Self::copy_from(dst, offset_dst, self, offset_src, region, queue, wait)
+    }
+
+    #[inline]
+    pub unsafe fn fill (&mut self, color: *const c_void, slice: ImageSlice, queue: &CommandQueue, wait: impl Into<WaitList>) -> Result<RawEvent> {
+        let wait : WaitList = wait.into();
+        let (num_events_in_wait_list, event_wait_list) = wait.raw_parts();
+        let (origin, region) = slice.raw_parts();
+        
+        let mut evt = core::ptr::null_mut();
+        tri!(clEnqueueFillImage(queue.id(), self.id(), color, origin, region, num_events_in_wait_list, event_wait_list, addr_of_mut!(evt)));
+        Ok(RawEvent::from_id(evt).unwrap())
     }
 }
 

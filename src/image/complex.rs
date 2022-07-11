@@ -1,8 +1,8 @@
-use std::{ptr::NonNull, os::raw::c_void, marker::PhantomData, ops::{Deref, DerefMut}, path::Path, io::{Seek, BufRead}};
-use image::{ImageBuffer, io::Reader};
-use parking_lot::FairMutex;
-use crate::{core::*, context::{Context, Global}, buffer::{flags::{HostPtr, FullMemFlags, MemAccess}, manager::AccessManager}, event::WaitList, prelude::Event};
-use super::{RawImage, ImageDesc, channel::{RawPixel, FromDynamic}, IntoSlice, events::{ReadImage2D, WriteImage2D, CopyImage}};
+use std::{ptr::NonNull, os::raw::c_void, marker::PhantomData, ops::{Deref, DerefMut}, path::Path, io::{Seek, BufRead}, borrow::Borrow};
+use image::{ImageBuffer, io::Reader, ImageFormat};
+use num_traits::AsPrimitive;
+use crate::{core::*, context::{Context, Global}, buffer::{flags::{HostPtr, FullMemFlags, MemAccess}}, event::WaitList};
+use super::{RawImage, ImageDesc, channel::{RawPixel, FromDynamic}, IntoSlice, events::{ReadImage2D, WriteImage2D, CopyImage, FillImage}};
 
 #[derive(Debug)]
 pub struct Image2D<P: RawPixel, C: Context = Global> {
@@ -149,6 +149,11 @@ impl<P: RawPixel, C: Context> Image2D<P, C> where P::Subpixel: Unpin {
     #[inline(always)]
     pub fn copy_to<'src, 'dst> (&'src self, offset_src: [usize; 2], dst: &'dst mut Self, offset_dst: [usize; 2], region: [usize; 2], wait: impl Into<WaitList>) -> Result<CopyImage<'src, 'dst>> {
         unsafe { CopyImage::new(&self.inner, offset_src, dst, offset_dst, region, self.ctx.next_queue(), wait) }
+    }
+
+    #[inline]
+    pub fn fill<'dst> (&'dst mut self, color: impl Borrow<P>, slice: impl IntoSlice<2>, wait: impl Into<WaitList>) -> Result<FillImage<'dst>> where P::Subpixel: AsPrimitive<f32> {
+        unsafe { FillImage::new(&mut self.inner, color.borrow(), slice, self.ctx.next_queue(), wait) }
     }
 }
 
