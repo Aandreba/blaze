@@ -1,9 +1,41 @@
 use rscl_proc::error;
-pub type Result<T> = core::result::Result<T, Error>;
+pub type Result<T> = ::core::result::Result<T, Error>;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Error {
+    pub ty: ErrorType,
+    pub desc: Option<String>
+}
+
+impl Error {
+    #[inline(always)]
+    pub fn new (ty: ErrorType, desc: impl ToString) -> Self {
+        Self { ty, desc: Some(desc.to_string()) }
+    }
+
+    #[inline(always)]
+    pub const fn from_type (ty: ErrorType) -> Self {
+        Self { ty, desc: None }
+    }
+}
+
+impl From<ErrorType> for Error {
+    #[inline(always)]
+    fn from(ty: ErrorType) -> Self {
+        Self::from_type(ty)
+    }
+}
+
+impl From<i32> for Error {
+    #[inline(always)]
+    fn from(x: i32) -> Self {
+        Self::from_type(ErrorType::from(x))
+    }
+}
 
 error! {
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    pub enum Error {
+    pub enum ErrorType {
         const CL_DEVICE_NOT_FOUND,
         const CL_DEVICE_NOT_AVAILABLE,
         const CL_COMPILER_NOT_AVAILABLE,

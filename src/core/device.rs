@@ -796,8 +796,8 @@ impl Device {
     #[inline]
     pub fn version (&self) -> Result<Version> {
         let version = self.version_string()?;
-        let section = version.split(' ').nth(1).ok_or(Error::InvalidValue)?;
-        Version::from_str(section).map_err(|_| Error::InvalidValue)
+        let section = version.split(' ').nth(1).ok_or(ErrorType::InvalidValue)?;
+        Version::from_str(section).map_err(|_| ErrorType::InvalidValue.into())
     }
 
     /// Is ```true``` if the device supports work-group collective functions (e.g. work_group_broadcast, work_group_reduce and work_group_scan), and ```false``` otherwise.
@@ -818,7 +818,7 @@ impl Device {
     #[inline(always)]
     pub fn driver_version (&self) -> Result<Version> {
         let driver = self.driver_version_string()?;
-        Version::from_str(&driver).map_err(|_| Error::InvalidValue)
+        Version::from_str(&driver).map_err(|_| ErrorType::InvalidValue.into())
     }
 
     /// Creates an array of sub-devices that each reference a non-intersecting set of compute units within in_device, according to the partition scheme given by properties. 

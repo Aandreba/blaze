@@ -20,17 +20,15 @@ impl<T: Copy + Unpin> Event for ReadBufferEvent<T> {
     type Output = Vec<T>;
 
     #[inline(always)]
+    fn as_raw(&self) -> &RawEvent {
+        &self.event
+    }
+
+    #[inline(always)]
     fn consume (self) -> Self::Output {
         let mut result = Pin::into_inner(self.result);
         unsafe { result.set_len(result.capacity()) }
         result
-    }
-}
-
-impl<T: Copy> AsRef<RawEvent> for ReadBufferEvent<T> {
-    #[inline(always)]
-    fn as_ref(&self) -> &RawEvent {
-        &self.event
     }
 }
 
@@ -54,9 +52,12 @@ impl<T: Copy + Unpin, P: DerefMut<Target = [T]>> Event for ReadBufferInto<T, P> 
     type Output = ();
 
     #[inline(always)]
-    fn consume (self) -> Self::Output {
-       ()
+    fn as_raw(&self) -> &RawEvent {
+        &self.event
     }
+
+    #[inline(always)]
+    fn consume (self) -> Self::Output {}
 }
 
 impl<T: Copy, P: DerefMut<Target = [T]>> AsRef<RawEvent> for ReadBufferInto<T, P> {

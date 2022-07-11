@@ -26,10 +26,13 @@ fn program () -> Result<()> {
 #[cfg(feature = "image")]
 #[test]
 fn flag () {
-    use image::io::Reader;
-    use rscl::image::Image2D;
+    use std::time::Instant;
+    use image::{Rgba};
+    use rscl::{image::Image2D, buffer::flags::MemAccess};
 
-    let img = Reader::open("tests/test.png").unwrap().decode().unwrap().into_rgba32f();
-    let cl = Image2D::new(&img, false).unwrap();
-    
+    let time = Instant::now();
+    let cl = Image2D::<Rgba<u8>>::read("tests/test.png", MemAccess::READ_WRITE, false).unwrap();
+    let time = time.elapsed();
+
+    println!("{cl:?} in {time:?}")
 }

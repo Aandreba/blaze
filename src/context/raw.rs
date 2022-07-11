@@ -126,13 +126,13 @@ impl RawContext {
 #[docfg(feature = "cl3")]
 impl RawContext {
     #[inline(always)]
-    pub fn on_destruct (&self, f: impl 'static + FnOnce()) -> Result<()> {
+    pub fn on_destruct (&self, f: impl 'static + FnOnce() + Send) -> Result<()> {
         let f = Box::new(f) as Box<_>;
         self.on_destruct_boxed(f)
     }
 
     #[inline(always)]
-    pub fn on_destruct_boxed (&self, f: Box<dyn FnOnce()>) -> Result<()> {
+    pub fn on_destruct_boxed (&self, f: Box<dyn FnOnce() + Send>) -> Result<()> {
         let data = Box::into_raw(Box::new(f));
         unsafe { self.on_destruct_raw(destructor_callback, data.cast()) }
     }
@@ -169,6 +169,6 @@ unsafe impl Sync for RawContext {}
 
 #[cfg(feature = "cl3")]
 unsafe extern "C" fn destructor_callback (context: cl_context, user_data: *mut c_void) {
-    let f = *Box::from_raw(user_data as *mut Box<dyn FnOnce()>);
+    let f = *Box::from_raw(user_data as *mut Box<dyn FnOnce() + Send>);
     f()
 }

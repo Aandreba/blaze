@@ -3,7 +3,7 @@ use opencl_sys::{CL_COMMAND_NDRANGE_KERNEL, CL_COMMAND_TASK, CL_COMMAND_NATIVE_K
 use rscl_proc::docfg;
 use crate::core::*;
 
-flat_mod!(status, raw);
+flat_mod!(status, raw, various);
 
 #[docfg(feature = "cl1_1")]
 flat_mod!(flag);
@@ -13,8 +13,11 @@ flat_mod!(wait);
 
 /// An complex OpenCL event.\
 /// [`Event`] is designed to be able to safely return a value after the underlying [`RawEvent`] has completed
-pub trait Event: AsRef<RawEvent> {
+pub trait Event {
     type Output;
+
+    /// Returns a reference to the underlying [`RawEvent`]
+    fn as_raw (&self) -> &RawEvent;
 
     /// Returns the data associated with the event, with the assumtion that it has completed successfuly.
     fn consume (self) -> Self::Output;
@@ -22,26 +25,17 @@ pub trait Event: AsRef<RawEvent> {
     /// Returns the underlying [`RawEvent`]
     #[inline(always)]
     fn raw (&self) -> RawEvent {
-        self.as_ref().clone()
+        self.as_raw().clone()
     }
 
     /// Blocks the current thread util the event has completed, returning `Ok(data)` if it completed correctly, and `Err(e)` otherwise.
     #[inline(always)]
     fn wait (self) -> Result<Self::Output> where Self: Sized {
-        self.as_ref().wait_by_ref()?;
+        self.as_raw().wait_by_ref()?;
         Ok(self.consume())
     }
 
-    /// Returns a future that resolves when the event has completed, correctly or otherwise. This allows to wait for events in a
-    /// non-blocking manner.
-    /// # Example
-    /// ```rust
-    /// use rscl::{prelude::*, event::FlagEvent};
-    /// 
-    /// fn main () {
-    ///     let event = FlagEvent::new();
-    /// }
-    /// ```
+    /// Returns a future that waits for the event to complete without blocking.
     #[inline(always)]
     #[docfg(feature = "futures")]
     fn wait_async (self) -> Result<crate::event::EventWait<Self>> where Self: Sized {
@@ -51,20 +45,20 @@ pub trait Event: AsRef<RawEvent> {
     /// Returns the event's type
     #[inline(always)]
     fn ty (&self) -> Result<CommandType> {
-        self.as_ref().get_info(CL_EVENT_COMMAND_TYPE)
+        self.as_raw().get_info(CL_EVENT_COMMAND_TYPE)
     }
 
     /// Returns the event's current status
     #[inline(always)]
     fn status (&self) -> Result<EventStatus> {
-        let int : i32 = self.as_ref().get_info(CL_EVENT_COMMAND_EXECUTION_STATUS)?;
+        let int : i32 = self.as_raw().get_info(CL_EVENT_COMMAND_EXECUTION_STATUS)?;
         EventStatus::try_from(int)
     }
 
     /// Returns the event's underlying command queue
     #[inline(always)]
     fn command_queue (&self) -> Result<CommandQueue> {
-        self.as_ref().get_info(CL_EVENT_COMMAND_QUEUE)
+        self.as_raw().get_info(CL_EVENT_COMMAND_QUEUE)
     }
 }
 

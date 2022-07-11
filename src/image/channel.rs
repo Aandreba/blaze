@@ -1,4 +1,5 @@
-use image::{Pixel, Rgb, Rgba, Luma};
+use std::ops::Deref;
+use image::{Pixel, Rgb, Rgba, Luma, DynamicImage, ImageBuffer};
 use super::{ChannelOrder, ChannelType, ImageFormat};
 
 pub trait RawPixel: Pixel {
@@ -180,3 +181,81 @@ impl RawPixel for Rgba<::half::f16> {
     const ORDER : ChannelOrder = ChannelOrder::RGBA;
     const TY : ChannelType = ChannelType::F16;
 }*/
+
+pub trait FromDynamic: RawPixel {
+    type Container: Deref<Target = [Self::Subpixel]>;
+
+    fn from_dynamic (v: DynamicImage) -> ImageBuffer<Self, Self::Container>;
+}
+
+impl FromDynamic for Luma<u8> {
+    type Container = Vec<u8>;
+
+    #[inline(always)]
+    fn from_dynamic (v: DynamicImage) -> ImageBuffer<Self, Self::Container> {
+        v.into_luma8()
+    }
+}
+
+impl FromDynamic for Luma<u16> {
+    type Container = Vec<u16>;
+
+    #[inline(always)]
+    fn from_dynamic (v: DynamicImage) -> ImageBuffer<Self, Self::Container> {
+        v.into_luma16()
+    }
+}
+
+impl FromDynamic for Rgb<u8> {
+    type Container = Vec<u8>;
+
+    #[inline(always)]
+    fn from_dynamic (v: DynamicImage) -> ImageBuffer<Self, Self::Container> {
+        v.into_rgb8()
+    }
+}
+
+impl FromDynamic for Rgb<u16> {
+    type Container = Vec<u16>;
+
+    #[inline(always)]
+    fn from_dynamic (v: DynamicImage) -> ImageBuffer<Self, Self::Container> {
+        v.into_rgb16()
+    }
+}
+
+impl FromDynamic for Rgb<f32> {
+    type Container = Vec<f32>;
+
+    #[inline(always)]
+    fn from_dynamic (v: DynamicImage) -> ImageBuffer<Self, Self::Container> {
+        v.into_rgb32f()
+    }
+}
+
+impl FromDynamic for Rgba<u8> {
+    type Container = Vec<u8>;
+
+    #[inline(always)]
+    fn from_dynamic (v: DynamicImage) -> ImageBuffer<Self, Self::Container> {
+        v.into_rgba8()
+    }
+}
+
+impl FromDynamic for Rgba<u16> {
+    type Container = Vec<u16>;
+
+    #[inline(always)]
+    fn from_dynamic (v: DynamicImage) -> ImageBuffer<Self, Self::Container> {
+        v.into_rgba16()
+    }
+}
+
+impl FromDynamic for Rgba<f32> {
+    type Container = Vec<f32>;
+
+    #[inline(always)]
+    fn from_dynamic (v: DynamicImage) -> ImageBuffer<Self, Self::Container> {
+        v.into_rgba32f()
+    }
+}

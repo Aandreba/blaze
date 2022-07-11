@@ -2,7 +2,7 @@ use std::{marker::PhantomData, ptr::{NonNull}, ops::{RangeBounds, Deref, DerefMu
 use parking_lot::FairMutex;
 use rscl_proc::docfg;
 
-use crate::{context::{Context, Global, RawContext}, event::{RawEvent, WaitList}};
+use crate::{context::{Context, Global, RawContext}, event::{RawEvent, WaitList}, prelude::Event};
 use crate::core::*;
 use crate::buffer::{flags::{FullMemFlags, HostPtr, MemAccess}, events::{ReadBufferEvent, WriteBufferEvent, ReadBufferInto, write_from_static, write_from_ptr}, manager::AccessManager, RawBuffer};
 
@@ -72,7 +72,7 @@ pub trait BufferExt<T: Copy + Unpin, C: Context>: AsRef<RawBuffer> + AsMut<RawBu
         access.extend_to_read(&mut wait);
 
         let evt = unsafe { ReadBufferEvent::new(self.as_ref(), range, self.context().next_queue(), wait)? };
-        access.read(evt.as_ref().clone());
+        access.read(evt.raw());
         
         Ok(evt)
     }
@@ -101,7 +101,7 @@ pub trait BufferExt<T: Copy + Unpin, C: Context>: AsRef<RawBuffer> + AsMut<RawBu
 
         let queue = self.context().next_queue().clone();
         let evt = unsafe { WriteBufferEvent::new(src, self.as_mut(), offset, &queue, wait)? };
-        access.write(evt.as_ref().clone());
+        access.write(evt.raw());
 
         Ok(evt)
     }

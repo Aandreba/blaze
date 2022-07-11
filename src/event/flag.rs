@@ -28,7 +28,7 @@ impl FlagEvent {
     }
 
     #[inline(always)]
-    pub fn set_complete (&self, error: Option<Error>) -> Result<()> {
+    pub fn set_complete (&self, error: Option<ErrorType>) -> Result<()> {
         let status = error.map_or(CL_COMPLETE, Into::into);
 
         unsafe {
@@ -48,12 +48,10 @@ impl Event for FlagEvent {
     type Output = ();
 
     #[inline(always)]
-    fn consume (self) -> Self::Output {}
-}
-
-impl AsRef<RawEvent> for FlagEvent {
-    #[inline(always)]
-    fn as_ref(&self) -> &RawEvent {
+    fn as_raw(&self) -> &RawEvent {
         &self.0
     }
+
+    #[inline(always)]
+    fn consume (self) -> Self::Output {}
 }

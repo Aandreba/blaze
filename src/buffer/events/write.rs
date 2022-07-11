@@ -22,15 +22,13 @@ impl<T: Copy + Unpin, P: Deref<Target = [T]>> Event for WriteBufferEvent<T, P> {
     type Output = ();
 
     #[inline(always)]
+    fn as_raw(&self) -> &RawEvent {
+        &self.event
+    }
+
+    #[inline(always)]
     fn consume (self) -> Self::Output {
        ()
-    }
-}
-
-impl<T: Copy + Unpin, P: Deref<Target = [T]>> AsRef<RawEvent> for WriteBufferEvent<T, P> {
-    #[inline(always)]
-    fn as_ref(&self) -> &RawEvent {
-        &self.event
     }
 }
 
