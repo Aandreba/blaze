@@ -12,8 +12,8 @@ pub fn global_context (input: ItemStatic) -> TokenStream {
 
         #[doc(hidden)]
         #[no_mangle]
-        extern "Rust" fn __rscl__global__raw_context () -> &'static ::rscl::context::RawContext {
-            ::rscl::context::Context::raw_context(::rscl::once_cell::sync::Lazy::force(&#ident))
+        extern "Rust" fn __rscl__global__as_raw () -> &'static ::rscl::context::RawContext {
+            ::rscl::context::Context::as_raw(::rscl::once_cell::sync::Lazy::force(&#ident))
         }
 
         #[doc(hidden)]

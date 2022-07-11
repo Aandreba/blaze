@@ -72,7 +72,7 @@ pub trait BufferExt<T: Copy + Unpin, C: Context>: AsRef<RawBuffer> + AsMut<RawBu
         access.extend_to_read(&mut wait);
 
         let evt = unsafe { ReadBufferEvent::new(self.as_ref(), range, self.context().next_queue(), wait)? };
-        access.read(evt.raw());
+        access.read(evt.to_raw());
         
         Ok(evt)
     }
@@ -101,7 +101,7 @@ pub trait BufferExt<T: Copy + Unpin, C: Context>: AsRef<RawBuffer> + AsMut<RawBu
 
         let queue = self.context().next_queue().clone();
         let evt = unsafe { WriteBufferEvent::new(src, self.as_mut(), offset, &queue, wait)? };
-        access.write(evt.raw());
+        access.write(evt.to_raw());
 
         Ok(evt)
     }

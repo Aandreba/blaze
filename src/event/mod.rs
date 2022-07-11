@@ -11,7 +11,7 @@ flat_mod!(flag);
 #[docfg(feature = "futures")]
 flat_mod!(wait);
 
-/// An complex OpenCL event.\
+/// An complex OpenCL event, with a syntax simillar to Rust's [`Future`](std::future::Future).\
 /// [`Event`] is designed to be able to safely return a value after the underlying [`RawEvent`] has completed
 pub trait Event {
     type Output;
@@ -31,7 +31,7 @@ pub trait Event {
 
     /// Returns the underlying [`RawEvent`]
     #[inline(always)]
-    fn raw (&self) -> RawEvent {
+    fn to_raw (&self) -> RawEvent {
         self.as_raw().clone()
     }
 
@@ -74,6 +74,12 @@ pub trait Event {
     fn raw_context (&self) -> Result<crate::prelude::RawContext> {
         self.as_raw().get_info(opencl_sys::CL_EVENT_CONTEXT)
     }
+
+    /// Returns `true` if the status of the event is [`EventStatus::Complete`] or an error, `false` otherwise.
+    #[inline(always)]
+    fn has_completed (&self) -> bool {
+        self.status().as_ref().map_or(true, EventStatus::has_completed)
+    }
 }
 
 pub trait EventExt: Sized + Event {
@@ -91,9 +97,12 @@ pub trait EventExt: Sized + Event {
         })
     }
 
-    #[inline]
-    fn inspect<F: FnOnce(&Self::Output)> (self) {
-        todo!()
+    #[inline(always)]
+    fn inspect<F: FnOnce(&Self::Output)> (self, f: F) -> Inspect<Self, F> {
+        Inspect {
+            parent: self,
+            f
+        }
     }
 
     /// Wrap the event in a [`Box`].
@@ -204,10 +213,10 @@ impl Extend<RawEvent> for WaitList {
     }
 }
 
-impl<T: AsRef<RawEvent>> From<T> for WaitList {
+impl<T: Event> From<&T> for WaitList {
     #[inline(always)]
-    fn from(x: T) -> Self {
-        Self::from_array([x.as_ref().clone()])
+    fn from(x: &T) -> Self {
+        Self::from_event(T::as_raw(x).clone())
     }
 }
 

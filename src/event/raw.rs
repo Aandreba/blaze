@@ -6,6 +6,7 @@ use rscl_proc::docfg;
 use super::{Event};
 
 /// A raw OpenCL event
+#[derive(Debug)]
 #[repr(transparent)]
 pub struct RawEvent (NonNull<c_void>);
 
@@ -146,6 +147,30 @@ impl Event for RawEvent {
     #[inline(always)]
     fn consume (self, error: Option<Error>) -> Result<Self::Output> {
         if let Some(err) = error { return Err(err); }
+        Ok(())
+    }
+
+    #[inline(always)]
+    fn wait (self) -> Result<()> {
+        unsafe {
+            tri!(clWaitForEvents(1, addr_of!(self).cast()))
+        }
+
+        Ok(())
+    }
+}
+
+impl Event for &RawEvent {
+    type Output = ();
+
+    #[inline(always)]
+    fn as_raw (&self) -> &RawEvent {
+        self
+    }
+
+    #[inline(always)]
+    fn consume (self, err: Option<Error>) -> Result<Self::Output> {
+        if let Some(err) = err { return Err(err); }
         Ok(())
     }
 

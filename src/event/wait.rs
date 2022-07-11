@@ -19,7 +19,7 @@ impl<E: Event> EventWait<E> {
 
         unsafe {
             Arc::increment_strong_count(waker);
-            match event.as_raw().on_complete_raw(wake_future, waker as *mut _) {
+            match event.parent_event().on_complete_raw(wake_future, waker as *mut _) {
                 Ok(_) => {
                     let waker = Arc::from_raw(waker);
                     Ok(Self { event: Some(event), waker })

@@ -52,7 +52,7 @@ pub mod prelude {
     pub use crate::core::*;
     pub use crate::macros::*;
     pub use crate::context::{Context, Global, RawContext};
-    pub use crate::event::{RawEvent, Event};
+    pub use crate::event::{RawEvent, Event, EventExt};
 }
 
 #[doc(hidden)]

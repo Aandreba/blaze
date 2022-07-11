@@ -1,3 +1,4 @@
 /target
 /Cargo.lock
-/tests/test.png
+/tests/test*.png
+/tests/test*.jpg

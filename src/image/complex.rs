@@ -1,9 +1,10 @@
 use std::{ptr::NonNull, os::raw::c_void, marker::PhantomData, ops::{Deref, DerefMut}, path::Path, io::{Seek, BufRead}};
 use image::{ImageBuffer, io::Reader};
-use crate::{core::*, context::{Context, Global}, buffer::flags::{HostPtr, FullMemFlags, MemAccess}};
-use super::{RawImage, ImageDesc, channel::{RawPixel, FromDynamic}};
+use parking_lot::FairMutex;
+use crate::{core::*, context::{Context, Global}, buffer::{flags::{HostPtr, FullMemFlags, MemAccess}, manager::AccessManager}, event::WaitList, prelude::Event};
+use super::{RawImage, ImageDesc, channel::{RawPixel, FromDynamic}, IntoSlice, events::{ReadImage2D, WriteImage2D, CopyImage}};
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Image2D<P: RawPixel, C: Context = Global> {
     inner: RawImage,
     ctx: C,
@@ -12,8 +13,8 @@ pub struct Image2D<P: RawPixel, C: Context = Global> {
 
 impl<P: RawPixel> Image2D<P> {
     #[inline(always)]
-    pub fn read (path: impl AsRef<Path>, access: MemAccess, alloc: bool) -> Result<Self> where P: FromDynamic {
-        Self::read_in(Global, path, access, alloc)
+    pub fn from_file (path: impl AsRef<Path>, access: MemAccess, alloc: bool) -> Result<Self> where P: FromDynamic {
+        Self::from_file_in(Global, path, access, alloc)
     }
 
     #[inline(always)]
@@ -44,7 +45,7 @@ impl<P: RawPixel> Image2D<P> {
 
 impl<P: RawPixel, C: Context> Image2D<P, C> {
     #[inline]
-    pub fn read_in (ctx: C, path: impl AsRef<Path>, access: MemAccess, alloc: bool) -> Result<Self> where P: FromDynamic {
+    pub fn from_file_in (ctx: C, path: impl AsRef<Path>, access: MemAccess, alloc: bool) -> Result<Self> where P: FromDynamic {
         let reader = match Reader::open(path) {
             Ok(x) => x,
             Err(e) => return Err(Error::new(ErrorType::InvalidValue, e))
@@ -99,6 +100,55 @@ impl<P: RawPixel, C: Context> Image2D<P, C> {
         let inner = RawImage::new_2d(ctx.raw_context(), flags, P::FORMAT, desc, host_ptr)?;
 
         Ok(Self { inner, ctx, phtm: PhantomData })
+    }
+
+    /// Returns a reference to the image's [`RawImage`].
+    #[inline(always)]
+    pub fn as_raw (&self) -> &RawImage {
+        &self.inner
+    }
+
+    /// Returns a reference to the image's [`Context`].
+    #[inline(always)]
+    pub fn context (&self) -> &C {
+        &self.ctx
+    }
+}
+
+impl<P: RawPixel, C: Context> Image2D<P, C> where P::Subpixel: Unpin {
+    #[inline(always)]
+    pub fn read_all (&self, wait: impl Into<WaitList>) -> Result<ReadImage2D<P>> {
+        self.read((.., ..), wait)
+    }
+
+    #[inline(always)]
+    pub fn read (&self, slice: impl IntoSlice<2>, wait: impl Into<WaitList>) -> Result<ReadImage2D<P>> {
+        self.read_with_pitch(slice, None, None, wait)
+    }
+
+    #[inline(always)]
+    pub fn read_with_pitch (&self, slice: impl IntoSlice<2>, row_pitch: Option<usize>, slice_pitch: Option<usize>, wait: impl Into<WaitList>) -> Result<ReadImage2D<P>> {
+        unsafe { ReadImage2D::new(self, self.context().next_queue(), slice, row_pitch, slice_pitch, wait) }
+    }
+
+    #[inline(always)]
+    pub fn write<'src, 'dst, Raw: Deref<Target = [P::Subpixel]>> (&'dst mut self, src: &'src ImageBuffer<P, Raw>, offset: [usize; 2], wait: impl Into<WaitList>) -> Result<WriteImage2D<'src, 'dst, P>> {
+        self.write_with_pitch(src, offset, None, None, wait)
+    }
+
+    #[inline(always)]
+    pub fn write_with_pitch<'src, 'dst, Raw: Deref<Target = [P::Subpixel]>> (&'dst mut self, src: &'src ImageBuffer<P, Raw>, offset: [usize; 2], row_pitch: Option<usize>, slice_pitch: Option<usize>, wait: impl Into<WaitList>) -> Result<WriteImage2D<'src, 'dst, P>> {
+        unsafe { WriteImage2D::new(src, &mut self.inner, self.ctx.next_queue(), offset, row_pitch, slice_pitch, wait) }
+    }
+
+    #[inline(always)]
+    pub fn copy_from<'src, 'dst> (&'dst mut self, offset_dst: [usize; 2], src: &'src Self, offset_src: [usize; 2], region: [usize; 2], wait: impl Into<WaitList>) -> Result<CopyImage<'src, 'dst>> {
+        unsafe { CopyImage::new(src, offset_src, &mut self.inner, offset_dst, region, self.ctx.next_queue(), wait) }
+    }
+
+    #[inline(always)]
+    pub fn copy_to<'src, 'dst> (&'src self, offset_src: [usize; 2], dst: &'dst mut Self, offset_dst: [usize; 2], region: [usize; 2], wait: impl Into<WaitList>) -> Result<CopyImage<'src, 'dst>> {
+        unsafe { CopyImage::new(&self.inner, offset_src, dst, offset_dst, region, self.ctx.next_queue(), wait) }
     }
 }
 

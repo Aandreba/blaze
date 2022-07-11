@@ -1,8 +1,8 @@
-use opencl_sys::{cl_image_info, clGetImageInfo, cl_image_format, CL_IMAGE_FORMAT, CL_IMAGE_ELEMENT_SIZE, CL_IMAGE_ROW_PITCH, CL_IMAGE_SLICE_PITCH, CL_IMAGE_WIDTH, CL_IMAGE_HEIGHT, CL_IMAGE_DEPTH, CL_IMAGE_ARRAY_SIZE, cl_mem, clEnqueueReadImage, CL_FALSE, clEnqueueWriteImage};
+use opencl_sys::{cl_image_info, clGetImageInfo, cl_image_format, CL_IMAGE_FORMAT, CL_IMAGE_ELEMENT_SIZE, CL_IMAGE_ROW_PITCH, CL_IMAGE_SLICE_PITCH, CL_IMAGE_WIDTH, CL_IMAGE_HEIGHT, CL_IMAGE_DEPTH, cl_mem, clEnqueueReadImage, CL_FALSE, clEnqueueWriteImage, clEnqueueCopyImage};
 use rscl_proc::docfg;
-use std::{ptr::{NonNull, addr_of_mut}, ffi::c_void, ops::{Deref, RangeBounds, Bound}, mem::MaybeUninit, num::NonZeroUsize};
-use crate::{core::*, context::RawContext, buffer::{flags::FullMemFlags}, event::WaitList, prelude::RawEvent};
-use super::{ImageFormat, ImageDesc, channel::RawPixel};
+use std::{ptr::{NonNull, addr_of_mut}, ffi::c_void, ops::{Deref}, mem::MaybeUninit};
+use crate::{core::*, context::RawContext, buffer::{flags::FullMemFlags}, event::WaitList, prelude::RawEvent, image::ImageSlice};
+use super::{ImageFormat, ImageDesc};
 
 #[derive(Debug, Clone)]
 #[repr(transparent)]
@@ -157,29 +157,46 @@ impl RawImage {
 
 impl RawImage {
     #[inline]
-    pub unsafe fn read_to_ptr<const N: usize> (&self, origin: [usize; N], region: [usize; N], row_pitch: Option<usize>, slice_pitch: Option<usize>, dst: *mut c_void, queue: &CommandQueue, wait: impl Into<WaitList>) -> Result<RawEvent> {
+    pub unsafe fn read_to_ptr (&self, slice: ImageSlice, row_pitch: Option<usize>, slice_pitch: Option<usize>, dst: *mut c_void, queue: &CommandQueue, wait: impl Into<WaitList>) -> Result<RawEvent> {
         let row_pitch = row_pitch.unwrap_or_default();
         let slice_pitch = slice_pitch.unwrap_or_default();
+        let (origin, region) = slice.raw_parts();
 
         let wait : WaitList = wait.into();
         let (num_events_in_wait_list, event_wait_list) = wait.raw_parts();
         
         let mut evt = core::ptr::null_mut();
-        tri!(clEnqueueReadImage(queue.id(), self.id(), CL_FALSE, origin.as_ptr(), region.as_ptr(), row_pitch, slice_pitch, dst, num_events_in_wait_list, event_wait_list, addr_of_mut!(evt)));
+        tri!(clEnqueueReadImage(queue.id(), self.id(), CL_FALSE, origin, region, row_pitch, slice_pitch, dst, num_events_in_wait_list, event_wait_list, addr_of_mut!(evt)));
         Ok(RawEvent::from_id(evt).unwrap())
     }
 
     #[inline]
-    pub unsafe fn write_from_ptr<const N: usize> (&mut self, origin: [usize; N], region: [usize; N], row_pitch: Option<usize>, slice_pitch: Option<usize>, src: *const c_void, queue: &CommandQueue, wait: impl Into<WaitList>) -> Result<RawEvent> {
+    pub unsafe fn write_from_ptr (&mut self, slice: ImageSlice, row_pitch: Option<usize>, slice_pitch: Option<usize>, src: *const c_void, queue: &CommandQueue, wait: impl Into<WaitList>) -> Result<RawEvent> {
         let row_pitch = row_pitch.unwrap_or_default();
         let slice_pitch = slice_pitch.unwrap_or_default();
+        let (origin, region) = slice.raw_parts();
 
         let wait : WaitList = wait.into();
         let (num_events_in_wait_list, event_wait_list) = wait.raw_parts();
         
         let mut evt = core::ptr::null_mut();
-        tri!(clEnqueueWriteImage(queue.id(), self.id(), CL_FALSE, origin.as_ptr(), region.as_ptr(), row_pitch, slice_pitch, src, num_events_in_wait_list, event_wait_list, addr_of_mut!(evt)));
+        tri!(clEnqueueWriteImage(queue.id(), self.id(), CL_FALSE, origin, region, row_pitch, slice_pitch, src, num_events_in_wait_list, event_wait_list, addr_of_mut!(evt)));
         Ok(RawEvent::from_id(evt).unwrap())
+    }
+
+    #[inline]
+    pub unsafe fn copy_from<const N: usize> (&mut self, offset_dst: [usize;N], src: &RawImage, offset_src: [usize;N], region: [usize;N], queue: &CommandQueue, wait: impl Into<WaitList>) -> Result<RawEvent> {
+        let wait : WaitList = wait.into();
+        let (num_events_in_wait_list, event_wait_list) = wait.raw_parts();
+        
+        let mut evt = core::ptr::null_mut();
+        tri!(clEnqueueCopyImage(queue.id(), src.id(), self.id(), offset_src.as_ptr(), offset_dst.as_ptr(), region.as_ptr(), num_events_in_wait_list, event_wait_list, addr_of_mut!(evt)));
+        Ok(RawEvent::from_id(evt).unwrap())
+    }
+
+    #[inline(always)]
+    pub unsafe fn copy_to<const N: usize> (&self, offset_src: [usize;N], dst: &mut RawImage, offset_dst: [usize;N], region: [usize;N], queue: &CommandQueue, wait: impl Into<WaitList>) -> Result<RawEvent> {
+        Self::copy_from(dst, offset_dst, self, offset_src, region, queue, wait)
     }
 }
 

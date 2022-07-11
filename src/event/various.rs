@@ -5,6 +5,7 @@ use super::{Event};
 #[cfg(feature = "cl1_1")]
 use super::FlagEvent;
 
+/// Event for [`EventExt::map`]
 #[docfg(feature = "cl1_1")]
 #[derive(Clone)]
 pub struct Map<E, F> {
@@ -44,6 +45,7 @@ impl<T, E: Event, F: FnOnce(E::Output) -> T> Event for Map<E, F> {
     }
 }
 
+/// Event for [`EventExt::inspect`]
 #[derive(Debug, Clone)]
 pub struct Inspect<E, F> {
     pub(super) parent: E,

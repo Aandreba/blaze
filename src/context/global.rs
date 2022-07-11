@@ -3,7 +3,7 @@ use crate::core::CommandQueue;
 use super::{Context, RawContext};
 
 extern "Rust" {
-    fn __rscl__global__raw_context () -> &'static RawContext;
+    fn __rscl__global__as_raw () -> &'static RawContext;
     fn __rscl__global__next_queue () -> &'static CommandQueue;
 }
 
@@ -16,6 +16,11 @@ impl Context for Global {
     fn next_queue (&self) -> &CommandQueue {
         unsafe { __rscl__global__next_queue() } 
     }
+
+    #[inline(always)]
+    fn as_raw (&self) -> &RawContext {
+        unsafe { __rscl__global__as_raw() } 
+    }
 }
 
 impl Deref for Global {
@@ -23,6 +28,6 @@ impl Deref for Global {
 
     #[inline(always)]
     fn deref(&self) -> &Self::Target {
-        unsafe { __rscl__global__raw_context () } 
+        self.as_raw()
     }
 }

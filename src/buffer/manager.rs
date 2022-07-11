@@ -1,6 +1,6 @@
 use crate::event::{WaitList, RawEvent};
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub enum AccessManager {
     None,
     Reading (Vec<RawEvent>),
@@ -36,5 +36,12 @@ impl AccessManager {
     #[inline]
     pub fn write (&mut self, evt: RawEvent) {
         *self = Self::Writing(evt)
+    }
+}
+
+impl Default for AccessManager {
+    #[inline(always)]
+    fn default() -> Self {
+        AccessManager::None
     }
 }

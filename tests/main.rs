@@ -26,11 +26,16 @@ fn program () -> Result<()> {
 #[cfg(feature = "image")]
 #[test]
 fn flag () {
-    use rscl::{event::FlagEvent, prelude::Event};
+    use image::{Rgba, io::Reader, imageops::{resize, FilterType}};
+    use rscl::{image::Image2D, buffer::flags::MemAccess};
 
-    let test = FlagEvent::new().unwrap();
-    let test = test.map(|_| "hello").unwrap();
+    let img2 = Reader::open("tests/test2.jpg").unwrap()
+        .decode().unwrap()
+        .into_rgba8();
 
-    let wait = test.wait();
-    println!("")
+    let mut img1 = Image2D::<Rgba<u8>>::from_file("tests/test.png", MemAccess::default(), false).unwrap();
+    let img2 = resize(&img2, 64, 64, FilterType::Gaussian);
+
+    // todo test write
+    image.save("tests/test_slice.png").unwrap();
 }
