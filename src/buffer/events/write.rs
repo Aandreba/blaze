@@ -1,25 +1,23 @@
-use std::{pin::Pin, ops::{RangeBounds, Deref}, marker::PhantomData};
-use crate::{core::*, event::{RawEvent, Event, WaitList}, buffer::{RawBuffer}};
+use std::{marker::PhantomData};
+use crate::{core::*, event::{RawEvent, Event, WaitList}, buffer::{RawBuffer, IntoRange, BufferRange}};
 
 #[repr(transparent)]
 pub struct WriteBuffer<'src, 'dst> {
     event: RawEvent,
     src: PhantomData<&'src [()]>,
-    
+    dst: PhantomData<&'dst mut RawBuffer>
 }
 
-impl<'src> WriteBuffer<'src> {
+impl<'src, 'dst> WriteBuffer<'src, 'dst> {
     #[inline(always)]
-    pub unsafe fn new<T: Copy + Unpin, P: Deref<Target = [T]>> (src: P, dst: &mut RawBuffer, offset: usize, queue: &CommandQueue, wait: impl Into<WaitList>) -> Result<Self> {
-        let src = Pin::new(src);
-        let range = offset..(offset + src.len());
-
+    pub unsafe fn new<T: Copy + Unpin> (src: &'src [T], offset: usize, dst: &'dst mut RawBuffer, queue: &CommandQueue, wait: impl Into<WaitList>) -> Result<Self> {
+        let range = BufferRange::from_parts::<T>(offset, dst.size()?).unwrap();
         let event = dst.write_from_ptr(range, src.as_ptr(), queue, wait)?;
-        Ok(Self { event, src })
+        Ok(Self { event, src: PhantomData, dst: PhantomData })
     }
 }
 
-impl<T: Copy + Unpin, P: Deref<Target = [T]>> Event for WriteBuffer<T, P> {
+impl<'src, 'dst> Event for WriteBuffer<'src, 'dst> {
     type Output = ();
 
     #[inline(always)]
@@ -32,15 +30,4 @@ impl<T: Copy + Unpin, P: Deref<Target = [T]>> Event for WriteBuffer<T, P> {
         if let Some(err) = error { return Err(err); }
         Ok(())
     }
-}
-
-#[inline(always)]
-pub unsafe fn write_from_ptr<T: Copy> (src: *const T, dst: &mut RawBuffer, range: impl RangeBounds<usize>, queue: &CommandQueue, wait: impl Into<WaitList>) -> Result<RawEvent> {
-    dst.write_from_ptr(range, src, queue, wait)
-}
-
-#[inline(always)]
-pub unsafe fn write_from_static<T: Copy> (src: &'static [T], dst: &mut RawBuffer, offset: usize, queue: &CommandQueue, wait: impl Into<WaitList>) -> Result<RawEvent> {
-    let range = offset..(offset + src.len());
-    write_from_ptr(src.as_ptr(), dst, range, queue, wait)
 }

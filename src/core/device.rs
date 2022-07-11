@@ -956,6 +956,7 @@ unsafe impl Send for Device {}
 unsafe impl Sync for Device {}
 
 #[docfg(feature = "cl3")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub struct AtomicCapabilities {
     pub order: core::sync::atomic::Ordering,
@@ -965,14 +966,16 @@ pub struct AtomicCapabilities {
 }
 
 #[docfg(feature = "cl3")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
+#[repr(u64)]
 pub enum AtomicScope {
     /// Support for memory ordering constraints that apply to all work-items in a work-group.
-    WorkGroup,
+    WorkGroup = opencl_sys::CL_DEVICE_ATOMIC_SCOPE_WORK_GROUP,
     /// Support for memory ordering constraints that apply to all work-items executing on the device.
-    Device,
+    Device = opencl_sys::CL_DEVICE_ATOMIC_SCOPE_DEVICE,
     /// Support for memory ordering constraints that apply to all work-items executing across all devices that can share SVM memory with each other and the host process.
-    AllDevices
+    AllDevices = opencl_sys::CL_DEVICE_ATOMIC_SCOPE_ALL_DEVICES
 }
 
 #[cfg(feature = "cl3")]

@@ -1,5 +1,5 @@
-use std::{pin::Pin, ops::{RangeBounds, DerefMut}, marker::PhantomData};
-use crate::{core::*, event::{RawEvent, Event, WaitList}, buffer::{RawBuffer, range_len}};
+use std::{pin::Pin, marker::PhantomData};
+use crate::{core::*, event::{RawEvent, Event, WaitList}, buffer::{RawBuffer, IntoRange, BufferRange}};
 
 pub struct ReadBuffer<'src, T: Copy> {
     event: RawEvent,
@@ -8,9 +8,9 @@ pub struct ReadBuffer<'src, T: Copy> {
 }
 
 impl<'src, T: Copy + Unpin> ReadBuffer<'src, T> {
-    pub unsafe fn new (src: &'src RawBuffer, range: impl RangeBounds<usize>, queue: &CommandQueue, wait: impl Into<WaitList>) -> Result<Self> {
-        let len = range_len(core::mem::size_of::<T>(), &range);
-        let mut result = Pin::new(Vec::with_capacity(len));
+    pub unsafe fn new (src: &'src RawBuffer, range: impl IntoRange, queue: &CommandQueue, wait: impl Into<WaitList>) -> Result<Self> {
+        let range = range.into_range::<T>(src)?;
+        let mut result = Pin::new(Vec::with_capacity(range.cb / core::mem::size_of::<T>()));
 
         let event = src.read_to_ptr(range, result.as_mut_ptr(), queue, wait)?;
         Ok(Self { event, dst: result, src: PhantomData })
@@ -42,9 +42,9 @@ pub struct ReadBufferInto<'src, 'dst> {
 }
 
 impl<'src, 'dst> ReadBufferInto<'src, 'dst> {
-    pub unsafe fn new<T: Copy + Unpin> (src: &'src RawBuffer, dst: &'dst mut [T], offset: usize, queue: &CommandQueue, wait: impl Into<WaitList>) -> Result<Self> {
+    pub unsafe fn new<T: Copy + Unpin> (src: &'src RawBuffer, offset: usize, dst: &'dst mut [T], queue: &CommandQueue, wait: impl Into<WaitList>) -> Result<Self> {
         let mut dst = Pin::new(dst);
-        let range = offset..(offset + dst.len());
+        let range = BufferRange::from_parts::<T>(offset, dst.len()).unwrap();
 
         let event = src.read_to_ptr(range, dst.as_mut_ptr(), queue, wait)?;
         Ok(Self { event, src: PhantomData, dst: PhantomData })

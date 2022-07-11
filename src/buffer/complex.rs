@@ -1,13 +1,12 @@
-use std::{marker::PhantomData, ptr::{NonNull}, ops::{RangeBounds, Deref, DerefMut}, sync::Arc};
-
-use crate::{context::{Context, Global}, event::{RawEvent, WaitList}, prelude::Event};
+use std::{marker::PhantomData, ptr::{NonNull}, ops::{Deref}, fmt::Debug};
+use crate::{context::{Context, Global}, event::{WaitList}, prelude::Event};
 use crate::core::*;
-use crate::buffer::{flags::{FullMemFlags, HostPtr, MemAccess}, events::{ReadBuffer, WriteBuffer, ReadBufferInto, write_from_static, write_from_ptr}, manager::AccessManager, RawBuffer};
+use crate::buffer::{flags::{FullMemFlags, HostPtr, MemAccess}, events::{ReadBuffer, WriteBuffer, ReadBufferInto}, RawBuffer};
 
 #[cfg(not(debug_assertions))]
 use std::hint::unreachable_unchecked;
 
-use super::offset_cb;
+use super::{events::CopyBuffer, IntoRange};
 
 pub struct Buffer<T: Copy, C: Context = Global> {
     inner: RawBuffer,
@@ -60,88 +59,49 @@ impl<T: Copy, C: Context> Buffer<T, C> {
 
 impl<T: Copy + Unpin, C: Context> Buffer<T, C> {
     #[inline(always)]
-    fn read_all (&self, wait: impl Into<WaitList>) -> Result<ReadBuffer<T>> {
+    pub fn read_all (&self, wait: impl Into<WaitList>) -> Result<ReadBuffer<T>> {
         self.read(.., wait)
     }
 
     #[inline(always)]
-    fn read<'src> (&'src self, range: impl RangeBounds<usize>, wait: impl Into<WaitList>) -> Result<ReadBuffer<'src, T>> {
+    pub fn read<'src> (&'src self, range: impl IntoRange, wait: impl Into<WaitList>) -> Result<ReadBuffer<'src, T>> {
         unsafe { ReadBuffer::new(&self.inner, range, self.ctx.next_queue(), wait) }
     }
 
     #[inline(always)]
-    fn read_into<'src, 'dst> (&'src self, dst: &'dst mut [T], offset: usize, wait: impl Into<WaitList>) -> Result<ReadBufferInto<'src, 'dst>> {
-        unsafe { ReadBufferInto::new(&self.inner, dst, offset, self.ctx.next_queue(), wait) }
-    }
-
-    #[inline]
-    fn write<P: Deref<Target = [T]>> (&mut self, src: P, offset: usize, wait: impl Into<WaitList>) -> Result<WriteBuffer<T, P>> {
-        let access = self.access_mananer();
-        let mut access = access.lock();
-
-        let mut wait : WaitList = wait.into();
-        access.extend_to_write(&mut wait);
-
-        let queue = self.context().next_queue().clone();
-        let evt = unsafe { WriteBuffer::new(src, self.as_mut(), offset, &queue, wait)? };
-        access.write(evt.to_raw());
-
-        Ok(evt)
-    }
-
-    #[inline]
-    fn write_static (&mut self, src: &'static [T], offset: usize, wait: impl Into<WaitList>) -> Result<RawEvent> {
-        let access = self.access_mananer();
-        let mut access = access.lock();
-
-        let mut wait : WaitList = wait.into();
-        access.extend_to_write(&mut wait);
-
-        let queue = self.context().next_queue().clone();
-        let evt = unsafe { write_from_static(src, self.as_mut(), offset, &queue, wait)? };
-        access.write(evt.clone());
-
-        Ok(evt)
-    }
-
-    #[inline]
-    unsafe fn write_ptr (&mut self, src: *const T, range: impl RangeBounds<usize>, wait: impl Into<WaitList>) -> Result<RawEvent> {
-        let access = self.access_mananer();
-        let mut access = access.lock();
-
-        let mut wait : WaitList = wait.into();
-        access.extend_to_write(&mut wait);
-
-        let queue = self.context().next_queue().clone();
-        let evt = write_from_ptr(src, self.as_mut(), range, &queue, wait)?;
-        access.write(evt.clone());
-
-        Ok(evt)
+    pub fn read_into<'src, 'dst> (&'src self, offset: usize, dst: &'dst mut [T], wait: impl Into<WaitList>) -> Result<ReadBufferInto<'src, 'dst>> {
+        unsafe { ReadBufferInto::new(&self.inner, offset, dst, self.ctx.next_queue(), wait) }
     }
 
     #[inline(always)]
-    fn copy_from (&mut self, offset: usize, src: &Self, range: impl RangeBounds<usize>, wait: impl Into<WaitList>) -> Result<RawEvent> {
-        let dst_offset = offset.checked_mul(core::mem::size_of::<T>()).unwrap();
-        let (src_offset, size) = offset_cb(src.as_ref(), core::mem::size_of::<T>(), range)?;
-
-        let (dst_access, src_access) = (self.access_mananer(), src.access_mananer());
-        let mut src_access = src_access.lock();
-        let mut dst_access = dst_access.lock();
-
-        let mut wait : WaitList = wait.into();
-        src_access.extend_to_read(&mut wait);
-        dst_access.extend_to_write(&mut wait);
-
-        let queue = self.context().next_queue().clone();
-        let evt = unsafe { self.as_mut().copy_from(dst_offset, src.as_ref(), src_offset, size, &queue, wait)? };
-        src_access.read(evt.clone());
-        dst_access.write(evt.clone());
-
-        Ok(evt)
+    pub fn write<'src, 'dst> (&'dst mut self, offset: usize, src: &'src [T], wait: impl Into<WaitList>) -> Result<WriteBuffer<'src, 'dst>> {
+        unsafe { WriteBuffer::new(src, offset, &mut self.inner, self.ctx.next_queue(), wait) }
     }
 
     #[inline(always)]
-    fn copy_to (&self, range: impl RangeBounds<usize>, dst: &mut Self, offset: usize, wait: impl Into<WaitList>) -> Result<RawEvent> {
-        dst.copy_from(offset, self, range, wait)
+    pub fn copy_from<'src, 'dst, W: Into<WaitList>> (&'dst mut self, offset_dst: usize, src: &'src Self, offset_src: usize, len: usize, wait: W) -> Result<CopyBuffer<'src, 'dst>> {
+        unsafe { CopyBuffer::new::<T, W>(&src.inner, offset_src, &mut self.inner, offset_dst, len, self.ctx.next_queue(), wait) }
+    }
+
+    #[inline(always)]
+    pub fn copy_to<'src, 'dst, W: Into<WaitList>> (&'src self, offset_src: usize, dst: &'dst mut Self, offset_dst: usize, len: usize, wait: W) -> Result<CopyBuffer<'src, 'dst>> {
+        dst.copy_from(offset_dst, self, offset_src, len, wait)
+    }
+}
+
+impl<T: Copy, C: Context> Deref for Buffer<T, C> {
+    type Target = RawBuffer;
+
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+
+impl<T: Copy + Unpin + Debug, C: Context> Debug for Buffer<T, C> {
+    #[inline(always)]
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let v = self.read_all(WaitList::EMPTY).unwrap().wait().unwrap();
+        Debug::fmt(&v, f)
     }
 }

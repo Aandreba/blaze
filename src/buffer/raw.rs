@@ -1,8 +1,8 @@
 use std::{ptr::{NonNull, addr_of_mut}, ops::{RangeBounds, Bound, Deref}};
 use opencl_sys::{cl_mem, clCreateBuffer, CL_FALSE, clEnqueueReadBuffer, clEnqueueWriteBuffer, clEnqueueCopyBuffer};
 use rscl_proc::docfg;
-use crate::{core::*, context::RawContext, event::{WaitList, RawEvent}};
-use super::{flags::{FullMemFlags}};
+use crate::{core::*, context::RawContext, event::{WaitList, RawEvent}, buffer::BufferRange};
+use super::{flags::{FullMemFlags}, IntoRange};
 
 /// A raw OpenCL memory object
 #[repr(transparent)]
@@ -64,8 +64,8 @@ impl RawBuffer {
 
 impl RawBuffer {
     /// Reads the contents of this 
-    pub unsafe fn read_to_ptr<T: Copy> (&self, src_range: impl RangeBounds<usize>, dst: *mut T, queue: &CommandQueue, wait: impl Into<WaitList>) -> Result<RawEvent> {
-        let (offset, cb) = offset_cb(self, core::mem::size_of::<T>(), src_range)?;
+    pub unsafe fn read_to_ptr<T: Copy> (&self, range: impl IntoRange, dst: *mut T, queue: &CommandQueue, wait: impl Into<WaitList>) -> Result<RawEvent> {
+        let BufferRange { offset, cb } = range.into_range::<T>(self)?; 
         let wait : WaitList = wait.into();
         let (num_events_in_wait_list, event_wait_list) = wait.raw_parts();
     
@@ -75,8 +75,8 @@ impl RawBuffer {
         return Ok(RawEvent::from_id(event).unwrap())
     }
     
-    pub unsafe fn write_from_ptr<T: Copy> (&mut self, dst_range: impl RangeBounds<usize>, src: *const T, queue: &CommandQueue, wait: impl Into<WaitList>) -> Result<RawEvent> {
-        let (offset, cb) = offset_cb(self, core::mem::size_of::<T>(), dst_range)?;
+    pub unsafe fn write_from_ptr<T: Copy> (&mut self, range: impl IntoRange, src: *const T, queue: &CommandQueue, wait: impl Into<WaitList>) -> Result<RawEvent> {
+        let BufferRange { offset, cb } = range.into_range::<T>(self)?; 
         let wait : WaitList = wait.into();
         let (num_events_in_wait_list, event_wait_list) = wait.raw_parts();
     

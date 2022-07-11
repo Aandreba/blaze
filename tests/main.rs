@@ -1,4 +1,4 @@
-use rscl::{core::*, context::{SimpleContext, Global}};
+use rscl::{core::*, context::{SimpleContext, Global}, buffer::{Buffer, flags::MemAccess}};
 use rscl_proc::global_context;
 
 #[global_context]
@@ -19,21 +19,12 @@ fn program () -> Result<()> {
     println!("{}", core::mem::size_of::<Option<bool>>());
 
     let dev = Device::first().unwrap();
-    println!("{:?}", Global.num_devices());
+    println!("{:?}", dev.atomic_memory_capabilities());
     Ok(())
 }
 
-#[cfg(feature = "image")]
 #[test]
 fn flag () {
-    use image::{Rgba};
-    use rscl::{image::Image2D, buffer::flags::MemAccess, event::WaitList, prelude::{Event, Context}};
-
-    let mut img1 = Image2D::<Rgba<u8>>::from_file("tests/test.png", MemAccess::default(), false).unwrap();
-    img1.fill(Rgba([255, 255, 255, 0]), (32..64, 32..50), WaitList::EMPTY).unwrap().wait().unwrap();
-    Global.next_queue().flush().unwrap();
-    let image = img1.read_all(WaitList::EMPTY).unwrap().wait().unwrap();
-
-    // todo test write
-    image.save("tests/test_slice.png").unwrap();
+    let buf = Buffer::new(&[1u64, 2, 3, 4, u64::MAX], MemAccess::default(), false).unwrap();
+    println!("{buf:?}")
 }
