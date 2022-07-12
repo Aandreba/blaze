@@ -1,7 +1,9 @@
-use std::{mem::MaybeUninit, ptr::{NonNull}, ffi::c_void, ops::{RangeBounds, Bound}};
-use opencl_sys::{cl_mem, clRetainMemObject, clReleaseMemObject, clGetMemObjectInfo, CL_MEM_CONTEXT, CL_MEM_REFERENCE_COUNT, CL_MEM_MAP_COUNT, CL_MEM_HOST_PTR, CL_MEM_SIZE, cl_mem_info, CL_MEM_FLAGS, CL_MEM_OBJECT_BUFFER, CL_MEM_OBJECT_IMAGE2D, CL_MEM_OBJECT_IMAGE3D, CL_MEM_OBJECT_PIPE, CL_MEM_TYPE, CL_MEM_OBJECT_IMAGE1D, CL_MEM_OBJECT_IMAGE1D_ARRAY, CL_MEM_OBJECT_IMAGE2D_ARRAY, CL_MEM_OBJECT_IMAGE1D_BUFFER};
+use std::{mem::MaybeUninit, ptr::{NonNull}, ffi::c_void};
+use opencl_sys::*;
 use rscl_proc::docfg;
 use crate::{core::*, context::RawContext, buffer::flags::FullMemFlags};
+
+use super::MemObjectType;
 
 /// A raw OpenCL memory object
 #[derive(Debug)]
@@ -108,7 +110,7 @@ impl MemObject {
 
 #[docfg(feature = "cl1_1")]
 impl MemObject {
-    /// Adds a callback to be executed when the memory object is destructed by OpenCL
+    /// Adds a callback to be executed when the memory object is destructed by OpenCL.
     #[inline(always)]
     pub fn on_destruct (&self, f: impl 'static + FnOnce() + Send) -> Result<()> {
         let f = Box::new(f) as Box<_>;
@@ -150,45 +152,6 @@ impl Drop for MemObject {
 
 unsafe impl Send for MemObject {}
 unsafe impl Sync for MemObject {}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[repr(u32)]
-pub enum MemObjectType {
-    Buffer = CL_MEM_OBJECT_BUFFER,
-    Pipe = CL_MEM_OBJECT_PIPE,
-    Image1D = CL_MEM_OBJECT_IMAGE1D,
-    Image2D = CL_MEM_OBJECT_IMAGE2D,
-    Image3D = CL_MEM_OBJECT_IMAGE3D,
-    Image1DArray = CL_MEM_OBJECT_IMAGE1D_ARRAY,
-    Image2DArray = CL_MEM_OBJECT_IMAGE2D_ARRAY,
-    Image1DBuffer = CL_MEM_OBJECT_IMAGE1D_BUFFER,
-}
-
-impl Into<u32> for MemObjectType {
-    #[inline(always)]
-    fn into(self) -> u32 {
-        self as u32
-    }
-}
-
-#[allow(unused)]
-#[inline]
-pub(crate) fn offset_cb_plain (buffer: &MemObject, range: impl RangeBounds<usize>) -> Result<(usize, usize)> {
-    let start = match range.start_bound() {
-        Bound::Excluded(x) => x.checked_add(1).unwrap(),
-        Bound::Included(x) => *x,
-        Bound::Unbounded => 0
-    };
-
-    let end = match range.end_bound() {
-        Bound::Excluded(x) => *x,
-        Bound::Included(x) => x.checked_add(1).unwrap(),
-        Bound::Unbounded => buffer.size()?
-    };
-
-    let len = end - start;
-    Ok((start, len))
-}
 
 #[cfg(feature = "cl1_1")]
 unsafe extern "C" fn destructor_callback (memobj: cl_mem, user_data: *mut c_void) {

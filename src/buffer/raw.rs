@@ -1,7 +1,7 @@
-use std::{ptr::{NonNull, addr_of_mut}, ops::{RangeBounds, Bound, Deref}};
-use opencl_sys::{cl_mem, clCreateBuffer, CL_FALSE, clEnqueueReadBuffer, clEnqueueWriteBuffer, clEnqueueCopyBuffer};
+use std::{ptr::{NonNull, addr_of_mut}, ops::{RangeBounds, Bound, Deref, DerefMut}};
+use opencl_sys::*;
 use rscl_proc::docfg;
-use crate::{core::*, context::RawContext, event::{WaitList, RawEvent}, buffer::BufferRange};
+use crate::{core::*, context::RawContext, event::{WaitList, RawEvent}, buffer::BufferRange, memobj::{MemObject, MemObjectType}};
 use super::{flags::{FullMemFlags}, IntoRange};
 
 /// A raw OpenCL memory object
@@ -95,6 +95,47 @@ impl RawBuffer {
     
         return Ok(RawEvent::from_id(event).unwrap())
     }
+
+    #[docfg(feature = "cl1_2")]
+    pub unsafe fn fill<T: Copy> (&mut self, v: T, range: impl IntoRange, queue: &CommandQueue, wait: impl Into<WaitList>) -> Result<RawEvent> {
+        let BufferRange { offset, cb } = range.into_range::<T>(self)?;
+        let wait : WaitList = wait.into();
+        let (num_events_in_wait_list, event_wait_list) = wait.raw_parts();
+
+        let mut event = core::ptr::null_mut();
+        tri!(clEnqueueFillBuffer(queue.id(), self.id(), std::ptr::addr_of!(v).cast(), core::mem::size_of::<T>(), offset, cb, num_events_in_wait_list, event_wait_list, addr_of_mut!(event)));
+
+        Ok(RawEvent::from_id(event).unwrap())
+    }
+
+    #[inline(always)]
+    pub unsafe fn map_read<T, R: IntoRange, W: Into<WaitList>> (&self, range: R, queue: &CommandQueue, wait: W) -> Result<(*const T, RawEvent)> {
+        let (ptr, evt) = self.__map_inner::<T, R, W, CL_MAP_READ>(range, queue, wait)?;
+        Ok((ptr as *const _, evt))
+    }
+
+    #[inline(always)]
+    pub unsafe fn map_write<T, R: IntoRange, W: Into<WaitList>> (&self, range: R, queue: &CommandQueue, wait: W) -> Result<(*mut T, RawEvent)> {
+        self.__map_inner::<T, R, W, CL_MAP_WRITE>(range, queue, wait)
+    }
+
+    #[inline(always)]
+    pub unsafe fn map_read_write<T, R: IntoRange, W: Into<WaitList>> (&self, range: R, queue: &CommandQueue, wait: W) -> Result<(*mut T, RawEvent)> {
+        self.__map_inner::<T, R, W, {CL_MAP_READ | CL_MAP_WRITE}>(range, queue, wait)
+    }
+
+    unsafe fn __map_inner<T, R: IntoRange, W: Into<WaitList>, const FLAGS : cl_mem_flags> (&self, range: R, queue: &CommandQueue, wait: W) -> Result<(*mut T, RawEvent)> {
+        let BufferRange { offset, cb } = range.into_range::<T>(self)?;
+        let wait : WaitList = wait.into();
+        let (num_events_in_wait_list, event_wait_list) = wait.raw_parts();
+        
+        let mut evt = core::ptr::null_mut();
+        let mut err = 0;
+        let ptr = clEnqueueMapBuffer(queue.id(), self.id(), CL_FALSE, FLAGS, offset, cb, num_events_in_wait_list, event_wait_list, addr_of_mut!(evt), addr_of_mut!(err));
+        
+        if err != 0 { return Err(Error::from(err)) }
+        Ok((ptr.cast(), RawEvent::from_id(evt).unwrap()))
+    }
 }
 
 impl Deref for RawBuffer {
@@ -106,6 +147,20 @@ impl Deref for RawBuffer {
     }
 }
 
+impl DerefMut for RawBuffer {
+    #[inline(always)]
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl Into<MemObject> for RawBuffer {
+    #[inline(always)]
+    fn into(self) -> MemObject {
+        self.0
+    }
+}
+ 
 #[allow(unused)]
 #[inline]
 pub(crate) fn offset_cb_plain (buffer: &RawBuffer, range: impl RangeBounds<usize>) -> Result<(usize, usize)> {
@@ -123,39 +178,4 @@ pub(crate) fn offset_cb_plain (buffer: &RawBuffer, range: impl RangeBounds<usize
 
     let len = end - start;
     Ok((start, len))
-}
-
-#[inline]
-pub(crate) fn offset_cb (buffer: &RawBuffer, size: usize, range: impl RangeBounds<usize>) -> Result<(usize, usize)> {
-    let start = match range.start_bound() {
-        Bound::Excluded(x) => x.checked_add(1).and_then(|x| x.checked_mul(size)).unwrap(),
-        Bound::Included(x) => x.checked_mul(size).unwrap(),
-        Bound::Unbounded => 0
-    };
-
-    let end = match range.end_bound() {
-        Bound::Excluded(x) => x.checked_mul(size).unwrap(),
-        Bound::Included(x) => x.checked_add(1).and_then(|x| x.checked_mul(size)).unwrap(),
-        Bound::Unbounded => buffer.size()?
-    };
-
-    let len = end - start;
-    Ok((start, len))
-}
-
-#[inline]
-pub(crate) fn range_len (len: usize, range: &impl RangeBounds<usize>) -> usize {
-    let start = match range.start_bound() {
-        Bound::Excluded(x) => *x + 1,
-        Bound::Included(x) => *x,
-        Bound::Unbounded => 0
-    };
-
-    let end = match range.end_bound() {
-        Bound::Excluded(x) => *x,
-        Bound::Included(x) => x + 1,
-        Bound::Unbounded => len
-    };
-
-    end - start
 }

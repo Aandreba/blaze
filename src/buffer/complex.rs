@@ -1,4 +1,6 @@
-use std::{marker::PhantomData, ptr::{NonNull}, ops::{Deref}, fmt::Debug};
+use std::{marker::PhantomData, ptr::{NonNull}, ops::{Deref, DerefMut}, fmt::Debug};
+use rscl_proc::docfg;
+
 use crate::{context::{Context, Global}, event::{WaitList}, prelude::Event};
 use crate::core::*;
 use crate::buffer::{flags::{FullMemFlags, HostPtr, MemAccess}, events::{ReadBuffer, WriteBuffer, ReadBufferInto}, RawBuffer};
@@ -6,7 +8,7 @@ use crate::buffer::{flags::{FullMemFlags, HostPtr, MemAccess}, events::{ReadBuff
 #[cfg(not(debug_assertions))]
 use std::hint::unreachable_unchecked;
 
-use super::{events::CopyBuffer, IntoRange};
+use super::{events::{CopyBuffer}, IntoRange};
 
 pub struct Buffer<T: Copy, C: Context = Global> {
     inner: RawBuffer,
@@ -55,6 +57,12 @@ impl<T: Copy, C: Context> Buffer<T, C> {
             phtm: PhantomData
         })
     }
+
+    #[inline(always)]
+    pub unsafe fn transmute<U: Copy> (self) -> Buffer<U, C> {
+        assert_eq!(core::mem::size_of::<T>(), core::mem::size_of::<U>());
+        Buffer { inner: self.inner, ctx: self.ctx, phtm: PhantomData }
+    }
 }
 
 impl<T: Copy + Unpin, C: Context> Buffer<T, C> {
@@ -87,6 +95,24 @@ impl<T: Copy + Unpin, C: Context> Buffer<T, C> {
     pub fn copy_to<'src, 'dst, W: Into<WaitList>> (&'src self, offset_src: usize, dst: &'dst mut Self, offset_dst: usize, len: usize, wait: W) -> Result<CopyBuffer<'src, 'dst>> {
         dst.copy_from(offset_dst, self, offset_src, len, wait)
     }
+
+    #[docfg(feature = "cl1_2")]
+    #[inline(always)]
+    pub fn fill<'dst> (&'dst mut self, v: T, range: impl IntoRange, wait: impl Into<WaitList>) -> Result<super::events::FillBuffer<'dst>> {
+        unsafe { super::events::FillBuffer::new(v, &mut self.inner, range, self.ctx.next_queue(), wait) }
+    }
+
+    #[docfg(feature = "map")]
+    #[inline(always)]
+    pub fn map<'a> (&'a self, range: impl IntoRange, wait: impl Into<WaitList>) -> Result<super::events::MapRefBuffer< 'a,T,C>> where C: Clone {
+        unsafe { super::events::MapRefBuffer::new(self.ctx.clone(), self, range, wait) }
+    }
+
+    #[docfg(feature = "map")]
+    #[inline(always)]
+    pub fn map_mut<'a> (&'a mut self, range: impl IntoRange, wait: impl Into<WaitList>) -> Result<super::events::MapMutBuffer< 'a,T,C>> where C: Clone {
+        unsafe { super::events::MapMutBuffer::new(self.ctx.clone(), self, range, wait) }
+    }
 }
 
 impl<T: Copy, C: Context> Deref for Buffer<T, C> {
@@ -95,6 +121,13 @@ impl<T: Copy, C: Context> Deref for Buffer<T, C> {
     #[inline(always)]
     fn deref(&self) -> &Self::Target {
         &self.inner
+    }
+}
+
+impl<T: Copy, C: Context> DerefMut for Buffer<T, C> {
+    #[inline(always)]
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.inner
     }
 }
 

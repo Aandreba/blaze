@@ -100,8 +100,8 @@ impl RawContext {
 
     /// Get the list of image formats supported by an OpenCL implementation.
     #[cfg(feature = "image")]
-    pub fn supported_image_formats (&self, access: MemAccess, ty: MemObjectType) -> Result<Vec<crate::image::ImageFormat>> {
-        use crate::image::ImageFormat;
+    pub fn supported_image_formats (&self, access: MemAccess, ty: crate::memobj::MemObjectType) -> Result<Vec<crate::image::ImageFormat>> {
+        use crate::{image::ImageFormat};
 
         let mut size = 0;
         unsafe {

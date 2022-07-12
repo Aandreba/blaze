@@ -65,68 +65,68 @@ impl BufferRange {
 }
 
 pub trait IntoRange {
-    fn into_range<T: Copy> (self, buf: &RawBuffer) -> Result<BufferRange>;
+    fn into_range<T> (self, buf: &RawBuffer) -> Result<BufferRange>;
 }
 
 impl IntoRange for BufferRange {
     #[inline(always)]
-    fn into_range<T: Copy> (self, buf: &RawBuffer) -> Result<BufferRange> {
+    fn into_range<T> (self, _buf: &RawBuffer) -> Result<BufferRange> {
         Ok(self)
     }
 }
 
 impl IntoRange for Range<usize> {
     #[inline(always)]
-    fn into_range<T: Copy> (self, buf: &RawBuffer) -> Result<BufferRange> {
+    fn into_range<T> (self, buf: &RawBuffer) -> Result<BufferRange> {
         Ok(BufferRange::from_range::<T, Self>(self, buf.size()?).unwrap())
     }
 }
 
 impl IntoRange for RangeFrom<usize> {
     #[inline(always)]
-    fn into_range<T: Copy> (self, buf: &RawBuffer) -> Result<BufferRange> {
+    fn into_range<T> (self, buf: &RawBuffer) -> Result<BufferRange> {
         Ok(BufferRange::from_range::<T, Self>(self, buf.size()?).unwrap())
     }
 }
 
 impl IntoRange for RangeFull {
     #[inline(always)]
-    fn into_range<T: Copy> (self, buf: &RawBuffer) -> Result<BufferRange> {
+    fn into_range<T> (self, buf: &RawBuffer) -> Result<BufferRange> {
         Ok(BufferRange::from_range::<T, Self>(self, buf.size()?).unwrap())
     }
 }
 
 impl IntoRange for RangeInclusive<usize> {
     #[inline(always)]
-    fn into_range<T: Copy> (self, buf: &RawBuffer) -> Result<BufferRange> {
+    fn into_range<T> (self, buf: &RawBuffer) -> Result<BufferRange> {
         Ok(BufferRange::from_range::<T, Self>(self, buf.size()?).unwrap())
     }
 }
 
 impl IntoRange for RangeTo<usize> {
     #[inline(always)]
-    fn into_range<T: Copy> (self, buf: &RawBuffer) -> Result<BufferRange> {
+    fn into_range<T> (self, buf: &RawBuffer) -> Result<BufferRange> {
         Ok(BufferRange::from_range::<T, Self>(self, buf.size()?).unwrap())
     }
 }
 
 impl IntoRange for RangeToInclusive<usize> {
     #[inline(always)]
-    fn into_range<T: Copy> (self, buf: &RawBuffer) -> Result<BufferRange> {
+    fn into_range<T> (self, buf: &RawBuffer) -> Result<BufferRange> {
         Ok(BufferRange::from_range::<T, Self>(self, buf.size()?).unwrap())
     }
 }
 
 impl IntoRange for [usize; 2] {
     #[inline(always)]
-    fn into_range<T: Copy> (self, _buf: &RawBuffer) -> Result<BufferRange> {
+    fn into_range<T> (self, _buf: &RawBuffer) -> Result<BufferRange> {
         Ok(BufferRange::from_parts::<T>(self[0], self[1]).unwrap())
     }
 }
 
 impl IntoRange for (usize, usize) {
     #[inline(always)]
-    fn into_range<T: Copy> (self, _buf: &RawBuffer) -> Result<BufferRange> {
+    fn into_range<T> (self, _buf: &RawBuffer) -> Result<BufferRange> {
         Ok(BufferRange::from_parts::<T>(self.0, self.1).unwrap())
     }
 }

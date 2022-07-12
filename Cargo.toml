@@ -15,6 +15,7 @@ cl3 = ["cl2_2", "opencl-sys/CL_VERSION_3_0"]
 # Rscl features
 half = ["dep:half"]
 image = ["dep:image"]
+map = []
 svm = ["cl2"]
 atomics = ["svm"]
 futures = ["cl1_1", "dep:futures"]

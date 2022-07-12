@@ -1,6 +1,6 @@
 use std::{ptr::NonNull, os::raw::c_void, marker::PhantomData, ops::{Deref, DerefMut}, path::Path, io::{Seek, BufRead}, borrow::Borrow};
 use image::{ImageBuffer, io::Reader};
-use crate::{core::*, context::{Context, Global}, buffer::{flags::{HostPtr, FullMemFlags, MemAccess}}, event::WaitList};
+use crate::{core::*, context::{Context, Global}, buffer::{flags::{HostPtr, FullMemFlags, MemAccess}}, event::WaitList, memobj::MemObjectType};
 use super::{RawImage, ImageDesc, channel::{RawPixel, FromDynamic, FromPrimitive}, IntoSlice, events::{ReadImage2D, WriteImage2D, CopyImage, FillImage}};
 
 #[derive(Debug)]

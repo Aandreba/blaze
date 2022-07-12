@@ -1,8 +1,8 @@
 use image::Primitive;
 use opencl_sys::{cl_image_info, clGetImageInfo, cl_image_format, CL_IMAGE_FORMAT, CL_IMAGE_ELEMENT_SIZE, CL_IMAGE_ROW_PITCH, CL_IMAGE_SLICE_PITCH, CL_IMAGE_WIDTH, CL_IMAGE_HEIGHT, CL_IMAGE_DEPTH, cl_mem, clEnqueueReadImage, CL_FALSE, clEnqueueWriteImage, clEnqueueCopyImage, clEnqueueFillImage};
 use rscl_proc::docfg;
-use std::{ptr::{NonNull, addr_of_mut}, ffi::c_void, ops::{Deref}, mem::MaybeUninit};
-use crate::{core::*, context::RawContext, buffer::{flags::FullMemFlags}, event::WaitList, prelude::RawEvent, image::ImageSlice};
+use std::{ptr::{NonNull, addr_of_mut}, ffi::c_void, ops::{Deref, DerefMut}, mem::MaybeUninit};
+use crate::{core::*, context::RawContext, buffer::{flags::FullMemFlags}, event::WaitList, prelude::RawEvent, image::ImageSlice, memobj::MemObject};
 use super::{ImageFormat, ImageDesc};
 
 #[derive(Debug, Clone)]
@@ -218,5 +218,19 @@ impl Deref for RawImage {
     #[inline(always)]
     fn deref(&self) -> &Self::Target {
         &self.0
+    }
+}
+
+impl DerefMut for RawImage {
+    #[inline(always)]
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl Into<MemObject> for RawImage {
+    #[inline(always)]
+    fn into(self) -> MemObject {
+        self.0
     }
 }

@@ -1,5 +1,5 @@
 use opencl_sys::{cl_image_desc, cl_mem_object_type};
-use crate::prelude::*;
+use crate::{memobj::{MemObjectType, MemObject}};
 
 #[derive(Clone)]
 #[non_exhaustive]

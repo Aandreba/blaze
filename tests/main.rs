@@ -1,4 +1,4 @@
-use rscl::{core::*, context::{SimpleContext, Global}, buffer::{Buffer, flags::MemAccess}};
+use rscl::{core::*, context::{SimpleContext, Global}, buffer::{Buffer, flags::MemAccess}, event::WaitList, prelude::Event};
 use rscl_proc::global_context;
 
 #[global_context]
@@ -25,6 +25,12 @@ fn program () -> Result<()> {
 
 #[test]
 fn flag () {
-    let buf = Buffer::new(&[1u64, 2, 3, 4, u64::MAX], MemAccess::default(), false).unwrap();
+    let mut buf = Buffer::new(&[1u64, 2, 3, 4, u64::MAX], MemAccess::default(), false).unwrap();
+    let map = buf.map(1.., WaitList::EMPTY).unwrap().wait().unwrap();
+
+    for i in map.into_iter() {
+        println!("{i}")
+    }
+
     println!("{buf:?}")
 }
