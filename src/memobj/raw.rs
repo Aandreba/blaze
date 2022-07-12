@@ -1,7 +1,7 @@
 use std::{mem::MaybeUninit, ptr::{NonNull}, ffi::c_void};
 use opencl_sys::*;
 use rscl_proc::docfg;
-use crate::{core::*, context::RawContext, buffer::flags::FullMemFlags};
+use crate::{core::*, context::RawContext, buffer::flags::MemFlags};
 
 use super::MemObjectType;
 
@@ -47,9 +47,9 @@ impl MemObject {
 
     /// Return the flags argument value specified when memobj is created.
     #[inline(always)]
-    pub fn flags (&self) -> Result<FullMemFlags> {
+    pub fn flags (&self) -> Result<MemFlags> {
         let flags = self.get_info(CL_MEM_FLAGS)?;
-        Ok(FullMemFlags::from_bits(flags))
+        Ok(MemFlags::from_bits(flags))
     }
 
     /// Return actual size of the data store associated with memobj in bytes.

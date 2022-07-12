@@ -1,40 +1,46 @@
-use opencl_sys::{cl_mem_flags, CL_MEM_READ_WRITE, CL_MEM_WRITE_ONLY, CL_MEM_READ_ONLY, CL_MEM_USE_HOST_PTR, CL_MEM_ALLOC_HOST_PTR, CL_MEM_COPY_HOST_PTR};
+use opencl_sys::*;
+use rscl_proc::docfg;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 #[non_exhaustive]
 pub struct MemFlags {
     pub access: MemAccess,
-    pub alloc: bool
+    #[cfg_attr(docsrs, doc(cfg(feature = "cl1_2")))]
+    #[cfg(feature = "cl1_2")]
+    pub host_access: MemAccess,
+    pub host: HostPtr
 }
 
 impl MemFlags {
     #[inline(always)]
-    pub const fn new (access: MemAccess, alloc_host: bool) -> Self {
-        Self { access, alloc: alloc_host }
+    pub const fn new (access: MemAccess, host: HostPtr) -> Self {
+        Self { access, host, #[cfg(feature = "cl1_2")] host_access: MemAccess::READ_WRITE }
     }
 
+    #[docfg(feature = "cl1_2")]
     #[inline(always)]
-    pub const fn from_full (flags: FullMemFlags) -> Self {
-        FullMemFlags::to_reduced(flags)
-    }
-
-    #[inline(always)]
-    pub const fn to_full (self) -> FullMemFlags {
-        FullMemFlags::from_reduced(self)
+    pub const fn with_host_access (access: MemAccess, host_access: MemAccess, host: HostPtr) -> Self {
+        Self { access, host, host_access }
     }
 
     #[inline(always)]
     pub const fn from_bits (bits: cl_mem_flags) -> Self {
         let access = MemAccess::from_bits(bits);
-        let alloc = bits & CL_MEM_ALLOC_HOST_PTR != 0;
-        Self::new(access, alloc)
+        #[cfg(feature = "cl1_2")]
+        let host_access = MemAccess::from_bits_host(bits);
+        let host = HostPtr::from_bits(bits);
+
+        Self { access, #[cfg(feature = "cl1_2")] host_access, host }
     }
 
     #[inline(always)]
     pub const fn to_bits (self) -> cl_mem_flags {
-        self.access.to_bits() | match self.alloc {
-            true => CL_MEM_ALLOC_HOST_PTR,
-            _ => 0
+        cfg_if::cfg_if! {
+            if #[cfg(feature = "cl1_2")] {
+                self.access.to_bits() | self.host.to_bits() | self.host_access.to_bits()
+            } else {
+                self.access.to_bits() | self.host.to_bits()
+            }
         }
     }
 }
@@ -50,71 +56,6 @@ impl From<cl_mem_flags> for MemFlags {
     #[inline(always)]
     fn from (bits: cl_mem_flags) -> Self {
         Self::from_bits(bits)
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
-#[non_exhaustive]
-pub struct FullMemFlags {
-    pub access: MemAccess,
-    pub host: HostPtr
-}
-
-impl FullMemFlags {
-    #[inline(always)]
-    pub const fn new (access: MemAccess, host: HostPtr) -> Self {
-        Self { access, host }
-    }
-
-    #[inline(always)]
-    pub const fn from_bits (bits: cl_mem_flags) -> Self {
-        let access = MemAccess::from_bits(bits);
-        let host = HostPtr::from_bits(bits);
-        Self::new(access, host)
-    }
-
-    #[inline(always)]
-    pub const fn to_bits (self) -> cl_mem_flags {
-        self.access.to_bits() | self.host.to_bits()
-    }
-
-    #[inline(always)]
-    pub const fn from_reduced (v: MemFlags) -> Self {
-        let host = HostPtr::new(v.alloc, false);
-        Self::new(v.access, host)
-    }
-
-    #[inline(always)]
-    pub const fn to_reduced (self) -> MemFlags {
-        MemFlags::new(self.access, self.host.is_alloc())
-    }
-}
-
-impl Into<cl_mem_flags> for FullMemFlags {
-    #[inline(always)]
-    fn into (self) -> cl_mem_flags {
-        self.to_bits()
-    }
-}
-
-impl From<cl_mem_flags> for FullMemFlags {
-    #[inline(always)]
-    fn from (bits: cl_mem_flags) -> Self {
-        Self::from_bits(bits)
-    }
-}
-
-impl Into<MemFlags> for FullMemFlags {
-    #[inline(always)]
-    fn into(self) -> MemFlags {
-        self.to_reduced()
-    }
-}
-
-impl From<MemFlags> for FullMemFlags {
-    #[inline(always)]
-    fn from(v: MemFlags) -> Self {
-        v.to_full()
     }
 }
 
@@ -157,6 +98,15 @@ impl MemAccess {
         Self::new(read, write)
     }
 
+    #[docfg(feature = "cl1_2")]
+    #[inline]
+    pub const fn from_bits_host (flags: cl_mem_flags) -> Self {
+        let read = (flags & CL_MEM_HOST_WRITE_ONLY) != 0;
+        let write = (flags & CL_MEM_HOST_READ_ONLY) != 0;
+
+        Self::new(!read, !write)
+    }
+
     #[inline(always)]
     pub const fn to_bits (self) -> cl_mem_flags {
         match self.unwrap() {
@@ -165,7 +115,17 @@ impl MemAccess {
             (false, true) => CL_MEM_WRITE_ONLY,
             (false, false) => 0
         }
+    }
 
+    #[docfg(feature = "cl1_2")]
+    #[inline(always)]
+    pub const fn to_bits_host (self) -> cl_mem_flags {
+        match self.unwrap() {
+            (true, true) => 0,
+            (true, false) => CL_MEM_HOST_READ_ONLY,
+            (false, true) => CL_MEM_HOST_WRITE_ONLY,
+            (false, false) => CL_MEM_HOST_NO_ACCESS
+        }
     }
 }
 
@@ -179,14 +139,7 @@ impl Default for MemAccess {
 impl Into<MemFlags> for MemAccess {
     #[inline(always)]
     fn into(self) -> MemFlags {
-        MemFlags::new(self, false)
-    }
-}
-
-impl Into<FullMemFlags> for MemAccess {
-    #[inline(always)]
-    fn into(self) -> FullMemFlags {
-        FullMemFlags::new(self, HostPtr::default())
+        MemFlags::new(self, HostPtr::default())
     }
 }
 
@@ -267,9 +220,9 @@ impl Default for HostPtr {
     }
 }
 
-impl Into<FullMemFlags> for HostPtr {
+impl Into<MemFlags> for HostPtr {
     #[inline(always)]
-    fn into(self) -> FullMemFlags {
-        FullMemFlags::new(MemAccess::default(), self)
+    fn into(self) -> MemFlags {
+        MemFlags::new(MemAccess::default(), self)
     }
 }

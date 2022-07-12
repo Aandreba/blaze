@@ -305,7 +305,7 @@ cfg_if::cfg_if! {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub struct CommandQueueProperties {
     /// Determines whether the commands queued in the command-queue are executed in-order or out-of-order.
@@ -346,6 +346,18 @@ impl CommandQueueProperties {
         }
 
         bits
+    }
+}
+
+impl Default for CommandQueueProperties {
+    fn default() -> Self {
+        Self { 
+            out_of_order_exec: Default::default(), 
+            #[cfg(any(test, debug_assertions))]
+            profiling: true,
+            #[cfg(not(any(test, debug_assertions)))]
+            profiling: false
+        }
     }
 }
 

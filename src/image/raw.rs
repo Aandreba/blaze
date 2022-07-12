@@ -1,7 +1,7 @@
 use opencl_sys::*;
 use rscl_proc::docfg;
 use std::{ptr::{NonNull, addr_of_mut}, ffi::c_void, ops::{Deref, DerefMut}, mem::MaybeUninit};
-use crate::{core::*, context::RawContext, buffer::{flags::FullMemFlags}, event::WaitList, prelude::RawEvent, image::ImageSlice, memobj::MemObject};
+use crate::{core::*, context::RawContext, buffer::{flags::MemFlags}, event::WaitList, prelude::RawEvent, image::ImageSlice, memobj::MemObject};
 use super::{ImageFormat, ImageDesc, IntoSlice};
 
 #[derive(Debug, Clone)]
@@ -10,7 +10,7 @@ pub struct RawImage (MemObject);
 
 impl RawImage {
     #[docfg(feature = "cl1_2")]
-    pub unsafe fn new (ctx: &RawContext, flags: FullMemFlags, format: ImageFormat, desc: ImageDesc, host_ptr: Option<NonNull<c_void>>) -> Result<Self> {
+    pub unsafe fn new (ctx: &RawContext, flags: MemFlags, format: ImageFormat, desc: ImageDesc, host_ptr: Option<NonNull<c_void>>) -> Result<Self> {
         use std::ptr::addr_of;
         
         let image_format = format.into_raw();
@@ -31,7 +31,7 @@ impl RawImage {
     }
 
     #[cfg_attr(feature = "cl1_2", deprecated(note = "use `new`"))]
-    pub unsafe fn new_2d (ctx: &RawContext, flags: FullMemFlags, format: ImageFormat, desc: ImageDesc, host_ptr: Option<NonNull<c_void>>) -> Result<Self> {
+    pub unsafe fn new_2d (ctx: &RawContext, flags: MemFlags, format: ImageFormat, desc: ImageDesc, host_ptr: Option<NonNull<c_void>>) -> Result<Self> {
         let mut image_format = format.into_raw();
         let flags = flags.to_bits();
         let host_ptr = match host_ptr {
@@ -49,7 +49,7 @@ impl RawImage {
     }
 
     #[cfg_attr(feature = "cl1_2", deprecated(note = "use `new`"))]
-    pub unsafe fn new_3d (ctx: &RawContext, flags: FullMemFlags, format: ImageFormat, desc: ImageDesc, host_ptr: Option<NonNull<c_void>>) -> Result<Self> {
+    pub unsafe fn new_3d (ctx: &RawContext, flags: MemFlags, format: ImageFormat, desc: ImageDesc, host_ptr: Option<NonNull<c_void>>) -> Result<Self> {
         let mut image_format = format.into_raw();
         let flags = flags.to_bits();
         let host_ptr = match host_ptr {

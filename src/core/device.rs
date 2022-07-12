@@ -878,6 +878,26 @@ impl Device {
         Ok((device, host))
     }
 
+    /// Query the host clock.
+    #[docfg(feature = "cl2_1")]
+    #[inline(always)]
+    pub fn host_clock_nanos (&self) -> Result<u64> {
+        let mut host = 0;
+        unsafe {
+            tri!(clGetHostTimer(self.id(), addr_of_mut!(host)))
+        }
+
+        Ok(host)
+    }
+
+    /// Query the host clock.
+    #[docfg(feature = "cl2_1")]
+    #[inline(always)]
+    pub fn host_clock (&self) -> Result<SystemTime> {
+        let host = self.host_clock_nanos()?;
+        Ok(std::time::UNIX_EPOCH + Duration::from_nanos(host))
+    }
+
     #[inline(always)]
     pub fn has_f16 (&self) -> Result<bool> {
         let ext = self.extensions_string()?;

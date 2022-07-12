@@ -1,7 +1,7 @@
 use std::{ptr::NonNull, os::raw::c_void, marker::PhantomData, ops::{Deref, DerefMut}, path::Path, io::{Seek, BufRead}, borrow::Borrow};
 use image::{ImageBuffer, io::Reader};
 use rscl_proc::docfg;
-use crate::{core::*, context::{Context, Global}, buffer::{flags::{HostPtr, FullMemFlags, MemAccess}}, event::WaitList, memobj::MemObjectType};
+use crate::{core::*, context::{Context, Global}, buffer::{flags::{HostPtr, MemFlags, MemAccess}}, event::WaitList, memobj::MemObjectType};
 use super::{RawImage, ImageDesc, channel::{RawPixel, FromDynamic, FromPrimitive}, IntoSlice, events::{ReadImage2D, WriteImage2D, CopyImage, FillImage}};
 
 #[derive(Debug)]
@@ -38,7 +38,7 @@ impl<P: RawPixel> Image2D<P> {
     }
 
     #[inline(always)]
-    pub unsafe fn create (width: usize, height: usize, flags: impl Into<FullMemFlags>, host_ptr: Option<NonNull<c_void>>) -> Result<Self> {
+    pub unsafe fn create (width: usize, height: usize, flags: impl Into<MemFlags>, host_ptr: Option<NonNull<c_void>>) -> Result<Self> {
         Self::create_in(Global, width, height, flags, host_ptr)
     }
 }
@@ -79,18 +79,18 @@ impl<P: RawPixel, C: Context> Image2D<P, C> {
     /// Creates a new 2D image from it's raw pixels.
     #[inline(always)]
     pub fn from_raw_in (ctx: C, v: &[P::Subpixel], width: usize, height: usize, access: MemAccess, alloc: bool) -> Result<Self> {
-        let host = FullMemFlags::new(access, HostPtr::new(alloc, true));
+        let host = MemFlags::new(access, HostPtr::new(alloc, true));
         unsafe { Self::create_in(ctx, width, height, host, NonNull::new(v as *const _ as *mut _)) }
     }
 
     #[inline(always)]
     pub unsafe fn uninit_in (ctx: C, width: usize, height: usize, access: MemAccess, alloc: bool) -> Result<Self> {
-        let host = FullMemFlags::new(access, HostPtr::new(alloc, false));
+        let host = MemFlags::new(access, HostPtr::new(alloc, false));
         Self::create_in(ctx, width, height, host, None)
     }
     
     #[inline]
-    pub unsafe fn create_in (ctx: C, width: usize, height: usize, flags: impl Into<FullMemFlags>, host_ptr: Option<NonNull<c_void>>) -> Result<Self> {
+    pub unsafe fn create_in (ctx: C, width: usize, height: usize, flags: impl Into<MemFlags>, host_ptr: Option<NonNull<c_void>>) -> Result<Self> {
         let flags = flags.into();
         let desc = ImageDesc::new(MemObjectType::Image2D, width, height);
 

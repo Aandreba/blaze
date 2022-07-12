@@ -3,7 +3,7 @@ use rscl_proc::docfg;
 
 use crate::{context::{Context, Global}, event::{WaitList}, prelude::Event};
 use crate::core::*;
-use crate::buffer::{flags::{FullMemFlags, HostPtr, MemAccess}, events::{ReadBuffer, WriteBuffer, ReadBufferInto}, RawBuffer};
+use crate::buffer::{flags::{MemFlags, HostPtr, MemAccess}, events::{ReadBuffer, WriteBuffer, ReadBufferInto}, RawBuffer};
 
 #[cfg(not(debug_assertions))]
 use std::hint::unreachable_unchecked;
@@ -28,7 +28,7 @@ impl<T: Copy> Buffer<T> {
     }
 
     #[inline(always)]
-    pub fn create (len: usize, flags: FullMemFlags, host_ptr: Option<NonNull<T>>) -> Result<Self> {
+    pub fn create (len: usize, flags: MemFlags, host_ptr: Option<NonNull<T>>) -> Result<Self> {
         Self::create_in(Global, len, flags, host_ptr)
     }
 }
@@ -36,18 +36,18 @@ impl<T: Copy> Buffer<T> {
 impl<T: Copy, C: Context> Buffer<T, C> {
     #[inline]
     pub fn new_in (ctx: C, v: &[T], access: MemAccess, alloc: bool) -> Result<Self> {
-        let flags = FullMemFlags::new(access, HostPtr::new(alloc, true));
+        let flags = MemFlags::new(access, HostPtr::new(alloc, true));
         Self::create_in(ctx, v.len(), flags, NonNull::new(v.as_ptr() as *mut _))
     }
 
     #[inline(always)]
     pub unsafe fn uninit_in (ctx: C, len: usize, access: MemAccess, alloc: bool) -> Result<Self> {
-        let host = FullMemFlags::new(access, HostPtr::new(alloc, false));
+        let host = MemFlags::new(access, HostPtr::new(alloc, false));
         Self::create_in(ctx, len, host, None)
     }
 
     #[inline]
-    pub fn create_in (ctx: C, len: usize, flags: FullMemFlags, host_ptr: Option<NonNull<T>>) -> Result<Self> {
+    pub fn create_in (ctx: C, len: usize, flags: MemFlags, host_ptr: Option<NonNull<T>>) -> Result<Self> {
         let size = len.checked_mul(core::mem::size_of::<T>()).unwrap();
         let inner = RawBuffer::new(size, flags, host_ptr, ctx.as_raw())?;
 

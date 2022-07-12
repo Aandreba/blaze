@@ -111,9 +111,13 @@ impl RawEvent {
     #[inline(always)]
     pub fn on_status_boxed (&self, status: EventStatus, f: Box<dyn FnOnce(RawEvent, Result<EventStatus>) + Send>) -> Result<()> {
         let user_data = Box::into_raw(Box::new(f));
+        
         unsafe {
-            self.on_status_raw(status, event_listener, user_data.cast())
+            self.on_status_raw(status, event_listener, user_data.cast())?;
+            tri!(clRetainEvent(self.id()));
         }
+
+        Ok(())
     }
     
     #[inline(always)]

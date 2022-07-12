@@ -1,4 +1,4 @@
-flat_mod!(raw, flags, complex, slice);
+flat_mod!(raw, flags, complex, slice, sampler);
 pub mod channel;
 pub mod events;
 

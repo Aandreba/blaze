@@ -1,1 +1,3 @@
-- Semi-rework of buffers
+- [x] Semi-rework of buffers
+- [ ] Check `core` items have `new` and `new_in` methods
+- [ ] `strict` feature

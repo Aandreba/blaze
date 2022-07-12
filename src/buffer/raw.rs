@@ -2,7 +2,7 @@ use std::{ptr::{NonNull, addr_of_mut}, ops::{RangeBounds, Bound, Deref, DerefMut
 use opencl_sys::*;
 use rscl_proc::docfg;
 use crate::{core::*, context::RawContext, event::{WaitList, RawEvent}, buffer::BufferRange, memobj::{MemObject, MemObjectType}};
-use super::{flags::{FullMemFlags}, IntoRange};
+use super::{flags::{MemFlags}, IntoRange};
 
 /// A raw OpenCL memory object
 #[repr(transparent)]
@@ -10,7 +10,7 @@ pub struct RawBuffer (MemObject);
 
 impl RawBuffer {
     #[inline]
-    pub fn new<T> (size: usize, flags: FullMemFlags, host_ptr: Option<NonNull<T>>, ctx: &RawContext) -> Result<Self> {
+    pub fn new<T> (size: usize, flags: MemFlags, host_ptr: Option<NonNull<T>>, ctx: &RawContext) -> Result<Self> {
         let host_ptr = match host_ptr {
             Some(x) => x.as_ptr().cast(),
             None => core::ptr::null_mut()
