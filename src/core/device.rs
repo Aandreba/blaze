@@ -1,6 +1,6 @@
 use core::{mem::MaybeUninit, num::{NonZeroUsize, NonZeroU32, NonZeroU64, IntErrorKind}, fmt::{Debug, Display}, str::FromStr};
-use std::{ptr::NonNull, ffi::c_void};
-use opencl_sys::{cl_device_id, clGetDeviceIDs, CL_DEVICE_TYPE_ALL, cl_device_info, clGetDeviceInfo, CL_DEVICE_PLATFORM, CL_DEVICE_ADDRESS_BITS, cl_bool, CL_DEVICE_AVAILABLE, CL_FP_DENORM, CL_FP_INF_NAN, CL_FP_ROUND_TO_NEAREST, CL_FP_ROUND_TO_ZERO, CL_FP_ROUND_TO_INF, cl_device_fp_config, CL_DEVICE_ENDIAN_LITTLE, CL_DEVICE_ERROR_CORRECTION_SUPPORT, cl_device_exec_capabilities, CL_EXEC_KERNEL, CL_EXEC_NATIVE_KERNEL, CL_DEVICE_EXECUTION_CAPABILITIES, CL_DEVICE_EXTENSIONS, CL_DEVICE_GLOBAL_MEM_CACHE_SIZE, CL_NONE, CL_READ_ONLY_CACHE, cl_device_mem_cache_type, CL_DEVICE_GLOBAL_MEM_CACHE_TYPE, CL_READ_WRITE_CACHE, CL_DEVICE_GLOBAL_MEM_CACHELINE_SIZE, CL_DEVICE_GLOBAL_MEM_SIZE, CL_DEVICE_HALF_FP_CONFIG, CL_DEVICE_IMAGE_SUPPORT, CL_DEVICE_IMAGE2D_MAX_HEIGHT, CL_DEVICE_IMAGE2D_MAX_WIDTH, CL_DEVICE_IMAGE3D_MAX_WIDTH, CL_DEVICE_IMAGE3D_MAX_HEIGHT, CL_DEVICE_IMAGE3D_MAX_DEPTH, CL_DEVICE_LOCAL_MEM_SIZE, CL_LOCAL, CL_GLOBAL, CL_DEVICE_LOCAL_MEM_TYPE, CL_DEVICE_MAX_COMPUTE_UNITS, CL_DEVICE_MAX_CONSTANT_ARGS, CL_DEVICE_MAX_CONSTANT_BUFFER_SIZE, CL_DEVICE_MAX_MEM_ALLOC_SIZE, CL_DEVICE_MAX_PARAMETER_SIZE, CL_DEVICE_MAX_READ_IMAGE_ARGS, CL_DEVICE_MAX_SAMPLERS, CL_DEVICE_MAX_WORK_GROUP_SIZE, CL_DEVICE_MAX_WORK_ITEM_DIMENSIONS, CL_DEVICE_MAX_WORK_ITEM_SIZES, CL_DEVICE_MAX_WRITE_IMAGE_ARGS, CL_DEVICE_MEM_BASE_ADDR_ALIGN, CL_DEVICE_MIN_DATA_TYPE_ALIGN_SIZE, CL_DEVICE_NAME, CL_DEVICE_PROFILE, CL_DEVICE_PROFILING_TIMER_RESOLUTION, CL_DEVICE_SINGLE_FP_CONFIG, cl_device_type, CL_DEVICE_TYPE_CPU, CL_DEVICE_TYPE_GPU, CL_DEVICE_TYPE_ACCELERATOR, CL_DEVICE_TYPE_CUSTOM, CL_DEVICE_TYPE, CL_DEVICE_VENDOR, CL_DEVICE_VENDOR_ID, CL_DEVICE_VERSION, CL_DRIVER_VERSION, cl_device_svm_capabilities, CL_DEVICE_SVM_COARSE_GRAIN_BUFFER, CL_DEVICE_SVM_FINE_GRAIN_BUFFER, CL_DEVICE_SVM_FINE_GRAIN_SYSTEM, CL_DEVICE_SVM_ATOMICS, cl_version, CL_VERSION_PATCH_BITS, CL_VERSION_MINOR_BITS, CL_VERSION_MAJOR_MASK, CL_VERSION_MINOR_MASK, CL_VERSION_PATCH_MASK, CL_FP_FMA, CL_FP_CORRECTLY_ROUNDED_DIVIDE_SQRT, CL_FP_SOFT_FLOAT, CL_DEVICE_COMPILER_AVAILABLE, CL_DEVICE_QUEUE_PROPERTIES, cl_command_queue_properties};
+use std::{ptr::{NonNull, addr_of_mut}, ffi::c_void, time::{Instant, Duration, SystemTime}};
+use opencl_sys::*;
 use rscl_proc::docfg;
 use crate::buffer::flags::MemAccess;
 
@@ -852,6 +852,30 @@ impl Device {
         }
 
         Ok(())
+    }
+
+    /// Query synchronized host and device timestamps.
+    #[docfg(feature = "cl2_1")]
+    #[inline]
+    pub fn device_and_host_timer_nanos (&self) -> Result<[u64; 2]> {
+        let mut device = 0;
+        let mut host = 0;
+
+        unsafe {
+            tri!(clGetDeviceAndHostTimer(self.id(), addr_of_mut!(device), addr_of_mut!(host)))
+        }
+
+        Ok([device, host])
+    }
+
+    /// Query synchronized host and device timestamps.
+    #[docfg(feature = "cl2_1")]
+    #[inline(always)]
+    pub fn device_and_host_timer (&self) -> Result<(SystemTime, SystemTime)> {
+        let [device, host] = self.device_and_host_timer_nanos()?;
+        let device = std::time::UNIX_EPOCH.checked_add(Duration::from_nanos(device)).unwrap();
+        let host = std::time::UNIX_EPOCH.checked_add(Duration::from_nanos(host)).unwrap();
+        Ok((device, host))
     }
 
     #[inline(always)]

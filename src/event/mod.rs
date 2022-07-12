@@ -3,7 +3,7 @@ use opencl_sys::{CL_COMMAND_NDRANGE_KERNEL, CL_COMMAND_TASK, CL_COMMAND_NATIVE_K
 use rscl_proc::docfg;
 use crate::{core::*};
 
-flat_mod!(status, raw, various);
+flat_mod!(status, raw, various, info);
 
 #[docfg(feature = "cl1_1")]
 flat_mod!(flag);

@@ -114,10 +114,17 @@ impl<'a, T, C: Context> MapRefBox<'a, T, C> {
 }
 
 impl<'a, T, C: Context> Deref for MapRefBox<'a, T, C> {
-    type Target = Box<[T], MapRef<'a, C>>;
+    type Target = [T];
 
     #[inline(always)]
     fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<'a, T, C: Context> AsRef<Box<[T], MapRef<'a, C>>> for MapRefBox<'a, T, C> {
+    #[inline(always)]
+    fn as_ref(&self) -> &Box<[T], MapRef<'a, C>> {
         &self.0
     }
 }
@@ -150,7 +157,7 @@ impl<T, C: Context> MapBoxExt<T> for MapRefBox<'_, T, C> {
     #[inline]
     unsafe fn unmap_wait (self, wait: impl Into<WaitList>) -> Result<RawEvent> {
         let this = ManuallyDrop::new(self);
-        let alloc = Box::allocator(&this);
+        let alloc = Box::allocator(this.as_ref());
         alloc.unmap(this.as_ptr().cast(), wait)
     }
 }

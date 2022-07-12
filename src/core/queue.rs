@@ -1,8 +1,8 @@
 use super::*;
 use std::{mem::MaybeUninit, ptr::NonNull, ffi::c_void};
-use opencl_sys::{cl_command_queue, CL_QUEUE_OUT_OF_ORDER_EXEC_MODE_ENABLE, CL_QUEUE_PROPERTIES, clRetainCommandQueue, clReleaseCommandQueue, clFlush, clFinish, cl_command_queue_info, clGetCommandQueueInfo, CL_QUEUE_CONTEXT, CL_QUEUE_DEVICE, CL_QUEUE_REFERENCE_COUNT, cl_command_queue_properties, CL_QUEUE_PROFILING_ENABLE};
+use opencl_sys::*;
 use rscl_proc::docfg;
-use crate::context::RawContext;
+use crate::{context::RawContext, prelude::RawEvent, event::WaitList};
 use std::ptr::addr_of_mut;
 
 #[repr(transparent)]
@@ -120,7 +120,7 @@ impl CommandQueue {
         Ok(())
     }
 
-    /// Blocks until all previously queued OpenCL commands in a command-queue are issued to the associated device and have completed.
+    /// Blocks the current thread until all previously queued OpenCL commands in a command-queue are issued to the associated device and have completed.
     #[inline(always)]
     pub fn finish (&self) -> Result<()> {
         unsafe {
@@ -128,6 +128,43 @@ impl CommandQueue {
         }
 
         Ok(())
+    }
+
+    /// A synchronization point that enqueues a barrier operation.\
+    /// If the wait list is empty, then this particular command waits until all previous enqueued commands to command_queue have completed.
+    /// The barrier command either waits for a list of events to complete, or if the list is empty it waits for all commands previously enqueued in the queue to complete before it completes.
+    /// This command blocks command execution, that is, any following commands enqueued after it do not execute until it completes. 
+    /// This command returns an event which can be waited on, i.e. this event can be waited on to insure that all events either in the wait list or all previously enqueued commands, 
+    /// queued before this command to the command queue, have completed.
+    #[docfg(feature = "cl1_2")]
+    #[inline(always)]
+    pub fn barrier (&self, wait: impl Into<WaitList>) -> Result<RawEvent> {
+        let wait : WaitList = wait.into();
+        let (num_events_in_wait_list, event_wait_list) = wait.raw_parts();
+
+
+        let mut evt = core::ptr::null_mut();
+        unsafe {
+            tri!(clEnqueueBarrierWithWaitList(self.id(), num_events_in_wait_list, event_wait_list, addr_of_mut!(evt)))
+        }
+
+        Ok(RawEvent::from_id(evt).unwrap())
+    }
+
+    /// Enqueues a marker command which waits for either a list of events to complete, or all previously enqueued commands to complete.
+    #[docfg(feature = "cl1_2")]
+    #[inline(always)]
+    pub fn marker (&self, wait: impl Into<WaitList>) -> Result<RawEvent> {
+        let wait : WaitList = wait.into();
+        let (num_events_in_wait_list, event_wait_list) = wait.raw_parts();
+
+
+        let mut evt = core::ptr::null_mut();
+        unsafe {
+            tri!(clEnqueueMarkerWithWaitList(self.id(), num_events_in_wait_list, event_wait_list, addr_of_mut!(evt)))
+        }
+
+        Ok(RawEvent::from_id(evt).unwrap())
     }
 
     #[inline]
@@ -139,6 +176,7 @@ impl CommandQueue {
         }
     }
 
+    #[allow(unused)]
     #[inline]
     fn get_info_array<T> (&self, ty: cl_command_queue_info) -> Result<Box<[T]>> {
         let mut size = 0;

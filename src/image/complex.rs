@@ -1,5 +1,6 @@
 use std::{ptr::NonNull, os::raw::c_void, marker::PhantomData, ops::{Deref, DerefMut}, path::Path, io::{Seek, BufRead}, borrow::Borrow};
 use image::{ImageBuffer, io::Reader};
+use rscl_proc::docfg;
 use crate::{core::*, context::{Context, Global}, buffer::{flags::{HostPtr, FullMemFlags, MemAccess}}, event::WaitList, memobj::MemObjectType};
 use super::{RawImage, ImageDesc, channel::{RawPixel, FromDynamic, FromPrimitive}, IntoSlice, events::{ReadImage2D, WriteImage2D, CopyImage, FillImage}};
 
@@ -153,6 +154,18 @@ impl<P: RawPixel, C: Context> Image2D<P, C> where P::Subpixel: Unpin {
     #[inline]
     pub fn fill<'dst> (&'dst mut self, color: impl Borrow<P>, slice: impl IntoSlice<2>, wait: impl Into<WaitList>) -> Result<FillImage<'dst>> where f32: FromPrimitive<P::Subpixel> {
         unsafe { FillImage::new(&mut self.inner, color.borrow(), slice, self.ctx.next_queue(), wait) }
+    }
+
+    #[docfg(feature = "map")]
+    #[inline(always)]
+    pub fn map<'a> (&'a self, slice: impl IntoSlice<2>, wait: impl Into<WaitList>) -> Result<super::events::MapRefImage2D<'a, P, C>> where C: Clone {
+        unsafe { super::events::MapRefImage2D::new(self.ctx.clone(), self, slice, wait) }
+    }
+
+    #[docfg(feature = "map")]
+    #[inline(always)]
+    pub fn map_mut<'a> (&'a mut self, slice: impl IntoSlice<2>, wait: impl Into<WaitList>) -> Result<super::events::MapMutImage2D<'a, P, C>> where C: Clone {
+        unsafe { super::events::MapMutImage2D::new(self.ctx.clone(), self, slice, wait) }
     }
 }
 

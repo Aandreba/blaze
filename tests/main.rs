@@ -1,4 +1,7 @@
-use rscl::{core::*, context::{SimpleContext, Global}, buffer::{Buffer, flags::MemAccess}, event::WaitList, prelude::Event};
+use std::{ops::{DerefMut, Deref}, io::Write};
+
+use image::{Rgba, imageops};
+use rscl::{core::*, context::{SimpleContext, Global}, buffer::{Buffer, flags::MemAccess}, event::WaitList, prelude::Event, memobj::MapBoxExt, image::Image2D};
 use rscl_proc::global_context;
 
 #[global_context]
@@ -19,18 +22,16 @@ fn program () -> Result<()> {
     println!("{}", core::mem::size_of::<Option<bool>>());
 
     let dev = Device::first().unwrap();
-    println!("{:?}", dev.atomic_memory_capabilities());
+    println!("{:?}", dev.device_and_host_timer());
     Ok(())
 }
 
 #[test]
 fn flag () {
-    let mut buf = Buffer::new(&[1u64, 2, 3, 4, u64::MAX], MemAccess::default(), false).unwrap();
-    let map = buf.map(1.., WaitList::EMPTY).unwrap().wait().unwrap();
+    let mut img = Image2D::<Rgba<u8>>::from_file("tests/test.png", MemAccess::default(), false).unwrap();
+    let mut map = img.map_mut((32..64, 32..75), WaitList::EMPTY).unwrap().wait().unwrap();
+    imageops::rotate180_in_place(&mut map);
 
-    for i in map.into_iter() {
-        println!("{i}")
-    }
-
-    println!("{buf:?}")
+    drop(map);
+    img.read_all(WaitList::EMPTY).unwrap().wait().unwrap().save("tests/test_map.png").unwrap();
 }
