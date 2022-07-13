@@ -72,6 +72,13 @@ impl ImageSlice {
     pub fn raw_parts (&self) -> (*const usize, *const usize) {
         (self.offset.as_ptr(), self.region.as_ptr())
     }
+
+    #[inline(always)]
+    pub fn scaled_parts<T> (&self) -> ([usize; 3], [usize; 3]) {
+        let offset = self.offset.map(|x| x.checked_mul(core::mem::size_of::<T>()).unwrap());
+        let region = self.region.map(|x| x.checked_mul(core::mem::size_of::<T>()).unwrap());
+        (offset, region)
+    }
 }
 
 impl From<[[usize;2];2]> for ImageSlice {

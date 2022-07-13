@@ -1,4 +1,4 @@
-use std::{marker::PhantomData, ptr::{NonNull}, ops::{Deref, DerefMut}, fmt::Debug};
+use std::{marker::PhantomData, ptr::{NonNull}, ops::{Deref, DerefMut}, fmt::Debug, mem::ManuallyDrop};
 use rscl_proc::docfg;
 
 use crate::{context::{Context, Global}, event::{WaitList}, prelude::Event};
@@ -12,7 +12,7 @@ use super::{events::{CopyBuffer}, IntoRange};
 
 pub struct Buffer<T: Copy, C: Context = Global> {
     inner: RawBuffer,
-    ctx: C,
+    pub(super) ctx: C,
     phtm: PhantomData<T>
 }
 
@@ -28,7 +28,7 @@ impl<T: Copy> Buffer<T> {
     }
 
     #[inline(always)]
-    pub fn create (len: usize, flags: MemFlags, host_ptr: Option<NonNull<T>>) -> Result<Self> {
+    pub unsafe fn create (len: usize, flags: MemFlags, host_ptr: Option<NonNull<T>>) -> Result<Self> {
         Self::create_in(Global, len, flags, host_ptr)
     }
 }
@@ -37,7 +37,7 @@ impl<T: Copy, C: Context> Buffer<T, C> {
     #[inline]
     pub fn new_in (ctx: C, v: &[T], access: MemAccess, alloc: bool) -> Result<Self> {
         let flags = MemFlags::new(access, HostPtr::new(alloc, true));
-        Self::create_in(ctx, v.len(), flags, NonNull::new(v.as_ptr() as *mut _))
+        unsafe { Self::create_in(ctx, v.len(), flags, NonNull::new(v.as_ptr() as *mut _)) }
     }
 
     #[inline(always)]
@@ -47,7 +47,7 @@ impl<T: Copy, C: Context> Buffer<T, C> {
     }
 
     #[inline]
-    pub fn create_in (ctx: C, len: usize, flags: MemFlags, host_ptr: Option<NonNull<T>>) -> Result<Self> {
+    pub unsafe fn create_in (ctx: C, len: usize, flags: MemFlags, host_ptr: Option<NonNull<T>>) -> Result<Self> {
         let size = len.checked_mul(core::mem::size_of::<T>()).unwrap();
         let inner = RawBuffer::new_in(&ctx, size, flags, host_ptr)?;
 

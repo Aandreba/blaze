@@ -71,8 +71,21 @@ impl RawBuffer {
     
         let mut event = core::ptr::null_mut();
         tri!(clEnqueueReadBuffer(queue.id(), self.id(), CL_FALSE, offset, cb, dst.cast(), num_events_in_wait_list, event_wait_list, addr_of_mut!(event)));
-    
-        return Ok(RawEvent::from_id(event).unwrap())
+        Ok(RawEvent::from_id(event).unwrap())
+    }
+
+    #[docfg(feature = "cl1_1")]
+    pub unsafe fn read_rect_to_ptr<T: Copy> (
+        &self, buffer_origin: [usize; 3], host_origin: [usize;3], region: [usize;3], 
+        buffer_row_pitch: Option<usize>, buffer_slice_pitch: Option<usize>, host_row_pitch: Option<usize>,
+        host_slice_pitch: Option<usize>, dst: *mut T, queue: &CommandQueue, wait: impl Into<WaitList>
+    ) -> Result<RawEvent> {
+        let wait : WaitList = wait.into();
+        let (num_events_in_wait_list, event_wait_list) = wait.raw_parts();
+
+        let mut evt = core::ptr::null_mut();
+        tri!(clEnqueueReadBufferRect(queue.id(), self.id(), CL_FALSE, buffer_origin.as_ptr(), host_origin.as_ptr(), region.as_ptr(), buffer_row_pitch.unwrap_or_default(), buffer_slice_pitch.unwrap_or_default(), host_row_pitch.unwrap_or_default(), host_slice_pitch.unwrap_or_default(), dst.cast(), num_events_in_wait_list, event_wait_list, addr_of_mut!(evt)));
+        Ok(RawEvent::from_id(evt).unwrap())
     }
     
     pub unsafe fn write_from_ptr<T: Copy> (&mut self, range: impl IntoRange, src: *const T, queue: &CommandQueue, wait: impl Into<WaitList>) -> Result<RawEvent> {

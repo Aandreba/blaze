@@ -1,6 +1,6 @@
 use std::{ops::{DerefMut, Deref}, io::Write, time::Duration, sync::Arc};
 use image::{Rgba, imageops};
-use rscl::{core::*, context::{SimpleContext}, buffer::{Buffer, flags::MemAccess}, event::{WaitList, FlagEvent}, prelude::Event, image::{Image2D, Sampler, SamplerProperties, AddressingMode}};
+use rscl::{core::*, context::{SimpleContext}, buffer::{Buffer, flags::MemAccess, BufferRect2D}, event::{WaitList, FlagEvent}, prelude::Event, image::{Image2D, Sampler, SamplerProperties, AddressingMode}};
 use rscl_proc::global_context;
 
 #[global_context]
@@ -22,10 +22,7 @@ fn program () -> Result<()> {
 
 #[test]
 fn flag () {
-    let buf = Arc::new(Buffer::new(&[1, 2, 3, 4, 5], MemAccess::default(), false).unwrap());
-    let map = buf.map_owned(0..2, WaitList::EMPTY).unwrap().wait_unwrap();
-
-    for i in map.into_iter() {
-        println!("{i}")
-    }
+    let mut buf = BufferRect2D::new(&[1, 2, 3, 4, 5, 6, 7, 8, 9], 3, 3, MemAccess::default(), false).unwrap();
+    let read = buf.read((.., ..), WaitList::EMPTY).unwrap().wait_unwrap();
+    println!("{read:?}")
 }
