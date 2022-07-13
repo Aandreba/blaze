@@ -1,6 +1,6 @@
-use std::{ops::{DerefMut, Deref}, io::Write, time::Duration};
+use std::{ops::{DerefMut, Deref}, io::Write, time::Duration, sync::Arc};
 use image::{Rgba, imageops};
-use rscl::{core::*, context::{SimpleContext}, buffer::{Buffer, flags::MemAccess}, event::{WaitList, FlagEvent}, prelude::Event, memobj::MapBoxExt, image::{Image2D, Sampler, SamplerProperties, AddressingMode}};
+use rscl::{core::*, context::{SimpleContext}, buffer::{Buffer, flags::MemAccess}, event::{WaitList, FlagEvent}, prelude::Event, image::{Image2D, Sampler, SamplerProperties, AddressingMode}};
 use rscl_proc::global_context;
 
 #[global_context]
@@ -22,17 +22,10 @@ fn program () -> Result<()> {
 
 #[test]
 fn flag () {
-    let mut img = Image2D::<Rgba<u8>>::from_file("tests/test.png", MemAccess::default(), false).unwrap();
-    let map_evt = img.map_mut((32..64, 32..75), WaitList::EMPTY).unwrap(); 
-    
-    map_evt.as_raw().on_complete(|evt, _| {
-        let prof = evt.profiling_time().unwrap();
-        println!("{:?}", prof.duration())
-    }).unwrap();
+    let buf = Arc::new(Buffer::new(&[1, 2, 3, 4, 5], MemAccess::default(), false).unwrap());
+    let map = buf.map_owned(0..2, WaitList::EMPTY).unwrap().wait_unwrap();
 
-    let mut map = map_evt.wait().unwrap();
-    imageops::rotate180_in_place(&mut map);
-
-    drop(map);
-    img.read_all(WaitList::EMPTY).unwrap().wait().unwrap().save("tests/test_map.png").unwrap();
+    for i in map.into_iter() {
+        println!("{i}")
+    }
 }

@@ -156,17 +156,29 @@ impl<P: RawPixel, C: Context> Image2D<P, C> where P::Subpixel: Unpin {
         unsafe { FillImage::new(&mut self.inner, color.borrow(), slice, self.ctx.next_queue(), wait) }
     }
 
-    #[docfg(feature = "map")]
+    /*#[docfg(feature = "map")]
     #[inline(always)]
-    pub fn map<'a> (&'a self, slice: impl IntoSlice<2>, wait: impl Into<WaitList>) -> Result<super::events::MapRefImage2D<'a, P, C>> where C: Clone {
-        unsafe { super::events::MapRefImage2D::new(self.ctx.clone(), self, slice, wait) }
+    pub fn map<'a> (&'a self, slice: impl IntoSlice<2>, wait: impl Into<WaitList>) -> Result<super::events::MapImage2D<P, &'a Self, C>> where P: 'static, C: 'static + Clone {
+        Self::map_by_deref(self, slice, wait)
     }
 
     #[docfg(feature = "map")]
     #[inline(always)]
-    pub fn map_mut<'a> (&'a mut self, slice: impl IntoSlice<2>, wait: impl Into<WaitList>) -> Result<super::events::MapMutImage2D<'a, P, C>> where C: Clone {
-        unsafe { super::events::MapMutImage2D::new(self.ctx.clone(), self, slice, wait) }
+    pub fn map_mut<'a> (&'a mut self, slice: impl IntoSlice<2>, wait: impl Into<WaitList>) -> Result<super::events::MapMutImage2D<P, &'a mut Self, C>> where P: 'static, C: 'static + Clone {
+        Self::map_by_deref_mut(self, slice, wait)
     }
+
+    #[docfg(feature = "map")]
+    #[inline(always)]
+    pub fn map_by_deref<D: Deref<Target = Self>> (this: D, slice: impl IntoSlice<2>, wait: impl Into<WaitList>) -> Result<super::events::MapImage2D<P, D, C>> where P: 'static, C: 'static + Clone {
+        unsafe { super::events::MapImage2D::new(this.ctx.clone(), this, slice, wait) }
+    }
+
+    #[docfg(feature = "map")]
+    #[inline(always)]
+    pub fn map_by_deref_mut<D: DerefMut<Target = Self>> (this: D, slice: impl IntoSlice<2>, wait: impl Into<WaitList>) -> Result<super::events::MapMutImage2D<P, D, C>> where P: 'static, C: 'static + Clone {
+        unsafe { super::events::MapMutImage2D::new(this.ctx.clone(), this, slice, wait) }
+    }*/
 }
 
 impl<P: RawPixel, C: Context> Deref for Image2D<P, C> {

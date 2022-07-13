@@ -1,7 +1,7 @@
 use std::{ptr::{NonNull, addr_of_mut}, ops::{RangeBounds, Bound, Deref, DerefMut}};
 use opencl_sys::*;
 use rscl_proc::docfg;
-use crate::{core::*, context::RawContext, event::{WaitList, RawEvent}, buffer::BufferRange, memobj::{MemObject, MemObjectType}};
+use crate::{core::*, context::RawContext, event::{WaitList, RawEvent}, buffer::BufferRange, memobj::{MemObject}, prelude::Global};
 use super::{flags::{MemFlags}, IntoRange};
 
 /// A raw OpenCL memory object
@@ -9,8 +9,13 @@ use super::{flags::{MemFlags}, IntoRange};
 pub struct RawBuffer (MemObject);
 
 impl RawBuffer {
+    #[inline(always)]
+    pub fn new<T> (size: usize, flags: MemFlags, host_ptr: Option<NonNull<T>>) -> Result<Self> {
+        Self::new_in(&Global, size, flags, host_ptr)
+    }
+
     #[inline]
-    pub fn new<T> (size: usize, flags: MemFlags, host_ptr: Option<NonNull<T>>, ctx: &RawContext) -> Result<Self> {
+    pub fn new_in<T> (ctx: &RawContext, size: usize, flags: MemFlags, host_ptr: Option<NonNull<T>>) -> Result<Self> {
         let host_ptr = match host_ptr {
             Some(x) => x.as_ptr().cast(),
             None => core::ptr::null_mut()
@@ -25,7 +30,7 @@ impl RawBuffer {
             return Err(Error::from(err))
         }
 
-        Ok(Self::from_id(id).unwrap())
+        unsafe { Ok(Self::from_id(id).unwrap()) }
     }
 
     #[inline(always)]
@@ -34,13 +39,8 @@ impl RawBuffer {
     }
 
     #[inline(always)]
-    pub fn from_id (id: cl_mem) -> Option<Self> {
-        let memobj = MemObject::from_id(id)?;
-        if memobj.ty() == Ok(MemObjectType::Buffer) {
-            return Some(Self(memobj))
-        }
-
-        None
+    pub unsafe fn from_id (id: cl_mem) -> Option<Self> {
+        MemObject::from_id(id).map(Self)
     }
 
     /// Creates a new buffer object (referred to as a sub-buffer object) from an existing buffer object.
@@ -58,7 +58,7 @@ impl RawBuffer {
             return Err(Error::from(err))
         }
 
-        Ok(RawBuffer::from_id(id).unwrap())
+        unsafe { Ok(RawBuffer::from_id(id).unwrap()) }
     }
 }
 

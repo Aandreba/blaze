@@ -49,7 +49,7 @@ impl<T: Copy, C: Context> Buffer<T, C> {
     #[inline]
     pub fn create_in (ctx: C, len: usize, flags: MemFlags, host_ptr: Option<NonNull<T>>) -> Result<Self> {
         let size = len.checked_mul(core::mem::size_of::<T>()).unwrap();
-        let inner = RawBuffer::new(size, flags, host_ptr, ctx.as_raw())?;
+        let inner = RawBuffer::new_in(&ctx, size, flags, host_ptr)?;
 
         Ok(Self {
             inner,
@@ -104,14 +104,32 @@ impl<T: Copy + Unpin, C: Context> Buffer<T, C> {
 
     #[docfg(feature = "map")]
     #[inline(always)]
-    pub fn map<'a> (&'a self, range: impl IntoRange, wait: impl Into<WaitList>) -> Result<super::events::MapRefBuffer< 'a,T,C>> where C: Clone {
-        unsafe { super::events::MapRefBuffer::new(self.ctx.clone(), self, range, wait) }
+    pub fn map<'a> (&'a self, range: impl IntoRange, wait: impl Into<WaitList>) -> Result<super::events::MapBuffer<T, &'a Self, C>> where T: 'static, C: 'static + Clone {
+        Self::map_by_deref(self, range, wait)
     }
 
     #[docfg(feature = "map")]
     #[inline(always)]
-    pub fn map_mut<'a> (&'a mut self, range: impl IntoRange, wait: impl Into<WaitList>) -> Result<super::events::MapMutBuffer< 'a,T,C>> where C: Clone {
-        unsafe { super::events::MapMutBuffer::new(self.ctx.clone(), self, range, wait) }
+    pub fn map_mut<'a> (&'a mut self, range: impl IntoRange, wait: impl Into<WaitList>) -> Result<super::events::MapMutBuffer<T, &'a mut Self, C>> where T: 'static, C: 'static + Clone {
+        Self::map_by_deref_mut(self, range, wait)
+    }
+
+    #[docfg(feature = "map")]
+    #[inline(always)]
+    pub fn map_owned<'a> (self: std::sync::Arc<Self>, range: impl IntoRange, wait: impl Into<WaitList>) -> Result<super::events::MapBuffer<T, std::sync::Arc<Self>, C>> where T: 'static, C: 'static + Clone {
+        Self::map_by_deref(self, range, wait)
+    }
+
+    #[docfg(feature = "map")]
+    #[inline(always)]
+    pub fn map_by_deref<D: Deref<Target = Self>> (this: D, range: impl IntoRange, wait: impl Into<WaitList>) -> Result<super::events::MapBuffer<T,D,C>> where T: 'static, C: 'static + Clone {
+        unsafe { super::events::MapBuffer::new(this.ctx.clone(), this, range, wait) }
+    }
+
+    #[docfg(feature = "map")]
+    #[inline(always)]
+    pub fn map_by_deref_mut<D: DerefMut<Target = Self>> (this: D, range: impl IntoRange, wait: impl Into<WaitList>) -> Result<super::events::MapMutBuffer<T,D,C>> where T: 'static, C: 'static + Clone {
+        unsafe { super::events::MapMutBuffer::new(this.ctx.clone(), this, range, wait) }
     }
 }
 

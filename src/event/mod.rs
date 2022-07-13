@@ -42,6 +42,12 @@ pub trait Event {
         self.consume(err)
     }
 
+    /// Blocks the current thread util the event has completed, returning `data` if it completed correctly, and panicking otherwise.
+    #[inline(always)]
+    fn wait_unwrap (self) -> Self::Output where Self: Sized {
+        self.wait().unwrap()
+    }
+
     /// Returns a future that waits for the event to complete without blocking.
     #[inline(always)]
     #[docfg(feature = "futures")]
