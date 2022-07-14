@@ -2,6 +2,7 @@
 #![cfg_attr(any(feature = "svm", feature = "map"), feature(allocator_api, strict_provenance, layout_for_ptr))]
 #![cfg_attr(feature = "atomics", feature(cfg_target_has_atomic, core_intrinsics))]
 #![cfg_attr(docsrs, feature(doc_cfg, proc_macro_hygiene))]
+#![cfg_attr(debug_assertions, feature(backtrace, backtrace_frames))]
 
 macro_rules! flat_mod {
     ($($i:ident),+) => {

@@ -14,12 +14,11 @@ impl<'src, T: Copy + Unpin> ReadBufferRect2D<'src, T> {
         src: &'src RawBuffer, max_rows: usize, max_cols: usize, slice: impl IntoSlice2D,
         buffer_row_pitch: Option<usize>, queue: &CommandQueue, wait: impl Into<WaitList>
     ) -> Result<Self> {
-
         if let Some(slice) = slice.into_slice(max_rows, max_cols) {
             let [offset, region] = slice.raw_parts_buffer::<T>();
-
+            
             let mut dst = Rect2D::<T>::new_uninit(slice.width(), slice.height()).unwrap();
-            let event = src.read_rect_to_ptr(offset, core::mem::zeroed(), region, buffer_row_pitch, Some(0), Some(region[0]), Some(0), dst.as_mut_ptr() as *mut T, queue, wait)?;
+            let event = src.read_rect_to_ptr(offset, [0, 0, 0], region, buffer_row_pitch, Some(0), Some(0), Some(0), dst.as_mut_ptr() as *mut T, queue, wait)?;
             return Ok(Self { event, dst, src: PhantomData })
         }
 

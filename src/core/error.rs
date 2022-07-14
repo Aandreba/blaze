@@ -1,21 +1,35 @@
+use std::{backtrace::Backtrace, sync::Arc, fmt::{Display, Debug}};
 use rscl_proc::error;
 pub type Result<T> = ::core::result::Result<T, Error>;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone)]
+#[non_exhaustive]
 pub struct Error {
     pub ty: ErrorType,
-    pub desc: Option<String>
+    pub desc: Option<String>,
+    #[cfg(debug_assertions)]
+    pub backtrace: Arc<Backtrace>
 }
 
 impl Error {
     #[inline(always)]
     pub fn new (ty: ErrorType, desc: impl ToString) -> Self {
-        Self { ty, desc: Some(desc.to_string()) }
+        Self { 
+            ty,
+            desc: Some(desc.to_string()),
+            #[cfg(debug_assertions)]
+            backtrace: Arc::new(Backtrace::capture())
+        }
     }
 
     #[inline(always)]
-    pub const fn from_type (ty: ErrorType) -> Self {
-        Self { ty, desc: None }
+    pub fn from_type (ty: ErrorType) -> Self {
+        Self { 
+            ty,
+            desc: None,
+            #[cfg(debug_assertions)]
+            backtrace: Arc::new(Backtrace::capture())
+        }
     }
 }
 
@@ -30,6 +44,29 @@ impl From<i32> for Error {
     #[inline(always)]
     fn from(x: i32) -> Self {
         Self::from_type(ErrorType::from(x))
+    }
+}
+
+impl Debug for Error {
+    #[inline(always)]
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        Display::fmt(&self, f)
+    }
+}
+
+impl Display for Error {
+    #[inline]
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        Debug::fmt(&self.ty, f)?;
+        
+        if let Some(ref desc) = self.desc {
+            write!(f, ": {desc}")?;
+        }
+
+        #[cfg(debug_assertions)]
+        write!(f, "\n{}", self.backtrace)?;
+
+        Ok(())
     }
 }
 

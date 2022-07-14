@@ -15,8 +15,8 @@ impl<T> Rect2D<T> {
     }
 
     #[inline(always)]
-    pub fn new_row_major (v: &[T], rows: usize) -> Option<Self> where T: Copy {
-        Self::new_row_major_in(v, rows, Global)
+    pub fn new_row_major (v: &[T], cols: usize) -> Option<Self> where T: Copy {
+        Self::new_row_major_in(v, cols, Global)
     }
 
     #[inline(always)]
@@ -65,6 +65,16 @@ impl<T, A: Allocator> Rect2D<T, A> {
             inner: self,
             idx: 0,
         }
+    }
+
+    #[inline(always)]
+    pub fn as_slice (&self) -> &[T] {
+        unsafe { core::slice::from_raw_parts(self.ptr.as_ptr(), self.rows() * self.cols()) }
+    }
+
+    #[inline(always)]
+    pub fn as_mut_slice (&mut self) -> &mut [T] {
+        unsafe { core::slice::from_raw_parts_mut(self.ptr.as_ptr(), self.rows() * self.cols()) }
     }
 
     #[inline(always)]
@@ -199,9 +209,9 @@ impl<T, A: Allocator> Rect2D<T, A> {
         Some(Self { ptr, alloc, rows, cols })
     }
 
-    pub fn new_row_major_in (v: &[T], rows: usize, alloc: A) -> Option<Self> where T: Copy {
-        let rows = NonZeroUsize::new(rows)?;
-        let cols = NonZeroUsize::new(v.len() / rows)?;
+    pub fn new_row_major_in (v: &[T], cols: usize, alloc: A) -> Option<Self> where T: Copy {
+        let cols = NonZeroUsize::new(cols)?;
+        let rows = NonZeroUsize::new(v.len() / cols)?;
 
         let layout = Layout::array::<MaybeUninit<T>>(v.len()).ok()?;
         let ptr = alloc.allocate(layout).unwrap().cast::<T>();

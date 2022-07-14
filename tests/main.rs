@@ -22,9 +22,24 @@ fn program () -> Result<()> {
 
 #[test]
 fn flag () {
-    let rect = Rect2D::new_row_major(&[1, 2, 3, 4, 5, 6, 7, 8, 9], 3).unwrap();
+    /*
+        [
+            [1, 2, 3],
+            [4, 5, 6],
+            [7, 8, 9]
+        ]
+    */
+    let rect = Rect2D::<u16>::new_row_major(&[1, 2, 3, 4, 5, 6, 7, 8, 9], 3).unwrap(); // 3 x 3
+    println!("{rect:?}");
+
     let buf = BufferRect2D::new(&rect, MemAccess::default(), false).unwrap();
 
-    let read = buf.read((1.., ..), WaitList::EMPTY).unwrap().wait_unwrap(); // todo fix
+    /*
+        [
+            [1, 2, 3],
+            [4, 5, 6]
+        ]
+    */
+    let read = buf.read((..2, ..), WaitList::EMPTY).unwrap().wait_unwrap();
     println!("{read:?}")
 }

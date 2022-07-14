@@ -96,7 +96,7 @@ impl<T: Copy, C: Context> BufferRect2D<T, C> {
 impl<T: Copy + Unpin, C: Context> BufferRect2D<T, C> {
     #[inline(always)]
     pub fn read<'src> (&'src self, slice: impl IntoSlice2D, wait: impl Into<WaitList>) -> Result<ReadBufferRect2D<'src, T>> {
-        unsafe { ReadBufferRect2D::new(self, self.rows.get(), self.cols.get(), slice, None, self.inner.ctx.next_queue(), wait) }
+        unsafe { ReadBufferRect2D::new(self, self.rows.get(), self.cols.get(), slice, Some(self.row_pitch()), self.inner.ctx.next_queue(), wait) }
     }
 }
 
