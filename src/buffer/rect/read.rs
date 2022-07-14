@@ -1,5 +1,5 @@
 use std::{marker::PhantomData, mem::MaybeUninit};
-use crate::{buffer::RawBuffer, prelude::*, event::WaitList, image::{IntoSlice, ImageSlice}};
+use crate::{buffer::RawBuffer, prelude::*, event::WaitList, memobj::IntoSlice2D};
 use super::Rect2D;
 
 pub struct ReadBufferRect2D<'src, T> {
@@ -11,18 +11,23 @@ pub struct ReadBufferRect2D<'src, T> {
 impl<'src, T: Copy + Unpin> ReadBufferRect2D<'src, T> {
     #[inline]
     pub unsafe fn new (
-        src: &'src RawBuffer, max_rows: usize, max_cols: usize, slice: impl IntoSlice<2>, 
+        src: &'src RawBuffer, max_rows: usize, max_cols: usize, slice: impl IntoSlice2D, 
         buffer_row_pitch: Option<usize>, buffer_slice_pitch: Option<usize>, queue: &CommandQueue, wait: impl Into<WaitList>
     ) -> Result<Self> {
+        let unscaled_slice = slice.into_slice(max_rows, max_cols);
 
-        let slice : ImageSlice = slice.into_slice([max_rows, max_cols]);
-        let (offset, region) = slice.scaled_parts::<T>();
-        let host_row_pitch = region[0].checked_mul(core::mem::size_of::<T>()).unwrap();
-        let host_slice_pitch = region[1].checked_mul(host_row_pitch).unwrap();
+        if let Some(slice) = unscaled_slice.and_then(|x| x * core::mem::size_of::<T>()) {
+            let unscaled_slice = unsafe { unscaled_slice.unwrap_unchecked() };
+            let [offset, region] = slice.raw_parts();
 
-        let mut dst = Rect2D::<T>::new_uninit(region[0], region[1]).unwrap();
-        let event = src.read_rect_to_ptr(offset, core::mem::zeroed(), region, buffer_row_pitch, buffer_slice_pitch, Some(host_row_pitch), Some(host_slice_pitch), dst.as_mut_ptr() as *mut T, queue, wait)?;
-        Ok(Self { event, dst, src: PhantomData })
+            let mut dst = Rect2D::<T>::new_uninit(slice.region_x.get(), slice.region_y.get()).unwrap();
+            let host_slice_pitch = region[0].checked_mul(unscaled_slice.region_y.get()).unwrap();
+
+            let event = src.read_rect_to_ptr(offset, core::mem::zeroed(), region, buffer_row_pitch, buffer_slice_pitch, Some(region[0]), Some(host_slice_pitch), dst.as_mut_ptr() as *mut T, queue, wait)?;
+            Ok(Self { event, dst, src: PhantomData })
+        }
+
+        Err(Error::new(ErrorType::InvalidBufferSize, "error calculating buffer size (possible arithmetic overflow)"))
     }
 }
 

@@ -1,8 +1,7 @@
 use std::{ptr::NonNull, os::raw::c_void, marker::PhantomData, ops::{Deref, DerefMut}, path::Path, io::{Seek, BufRead}, borrow::Borrow};
 use image::{ImageBuffer, io::Reader};
-use rscl_proc::docfg;
-use crate::{core::*, context::{Context, Global}, buffer::{flags::{HostPtr, MemFlags, MemAccess}}, event::WaitList, memobj::MemObjectType};
-use super::{RawImage, ImageDesc, channel::{RawPixel, FromDynamic, FromPrimitive}, IntoSlice, events::{ReadImage2D, WriteImage2D, CopyImage, FillImage}};
+use crate::{core::*, context::{Context, Global}, buffer::{flags::{HostPtr, MemFlags, MemAccess}}, event::WaitList, memobj::{MemObjectType, IntoSlice2D}};
+use super::{RawImage, ImageDesc, channel::{RawPixel, FromDynamic, FromPrimitive}, events::{ReadImage2D, WriteImage2D, CopyImage, FillImage}};
 
 #[derive(Debug)]
 pub struct Image2D<P: RawPixel, C: Context = Global> {
@@ -122,12 +121,12 @@ impl<P: RawPixel, C: Context> Image2D<P, C> where P::Subpixel: Unpin {
     }
 
     #[inline(always)]
-    pub fn read (&self, slice: impl IntoSlice<2>, wait: impl Into<WaitList>) -> Result<ReadImage2D<P>> {
+    pub fn read (&self, slice: impl IntoSlice2D, wait: impl Into<WaitList>) -> Result<ReadImage2D<P>> {
         self.read_with_pitch(slice, None, None, wait)
     }
 
     #[inline(always)]
-    pub fn read_with_pitch (&self, slice: impl IntoSlice<2>, row_pitch: Option<usize>, slice_pitch: Option<usize>, wait: impl Into<WaitList>) -> Result<ReadImage2D<P>> {
+    pub fn read_with_pitch (&self, slice: impl IntoSlice2D, row_pitch: Option<usize>, slice_pitch: Option<usize>, wait: impl Into<WaitList>) -> Result<ReadImage2D<P>> {
         unsafe { ReadImage2D::new(self, self.context().next_queue(), slice, row_pitch, slice_pitch, wait) }
     }
 
@@ -143,16 +142,26 @@ impl<P: RawPixel, C: Context> Image2D<P, C> where P::Subpixel: Unpin {
 
     #[inline(always)]
     pub fn copy_from<'src, 'dst> (&'dst mut self, offset_dst: [usize; 2], src: &'src Self, offset_src: [usize; 2], region: [usize; 2], wait: impl Into<WaitList>) -> Result<CopyImage<'src, 'dst>> {
-        unsafe { CopyImage::new(src, offset_src, &mut self.inner, offset_dst, region, self.ctx.next_queue(), wait) }
+        let mut new_offset_dst = [0; 3];
+        let mut new_offset_src = [0; 3];
+        let mut new_region = [1; 3];
+
+        unsafe {
+            core::ptr::copy_nonoverlapping(offset_dst.as_ptr(), new_offset_dst.as_mut_ptr(), 2);
+            core::ptr::copy_nonoverlapping(offset_src.as_ptr(), new_offset_src.as_mut_ptr(), 2);
+            core::ptr::copy_nonoverlapping(region.as_ptr(), new_region.as_mut_ptr(), 2);
+        }
+
+        unsafe { CopyImage::new(src, new_offset_src, &mut self.inner, new_offset_dst, new_region, self.ctx.next_queue(), wait) }
     }
 
     #[inline(always)]
     pub fn copy_to<'src, 'dst> (&'src self, offset_src: [usize; 2], dst: &'dst mut Self, offset_dst: [usize; 2], region: [usize; 2], wait: impl Into<WaitList>) -> Result<CopyImage<'src, 'dst>> {
-        unsafe { CopyImage::new(&self.inner, offset_src, dst, offset_dst, region, self.ctx.next_queue(), wait) }
+        dst.copy_from(offset_dst, self, offset_src, region, wait)
     }
 
-    #[inline]
-    pub fn fill<'dst> (&'dst mut self, color: impl Borrow<P>, slice: impl IntoSlice<2>, wait: impl Into<WaitList>) -> Result<FillImage<'dst>> where f32: FromPrimitive<P::Subpixel> {
+    #[inline(always)]
+    pub fn fill<'dst> (&'dst mut self, color: impl Borrow<P>, slice: impl IntoSlice2D, wait: impl Into<WaitList>) -> Result<FillImage<'dst>> where f32: FromPrimitive<P::Subpixel> {
         unsafe { FillImage::new(&mut self.inner, color.borrow(), slice, self.ctx.next_queue(), wait) }
     }
 

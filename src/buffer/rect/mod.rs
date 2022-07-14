@@ -1,7 +1,7 @@
 flat_mod!(host, read);
 
 use std::{ptr::NonNull, ops::{Deref, DerefMut}, num::NonZeroUsize};
-use crate::{prelude::*, image::IntoSlice, event::WaitList};
+use crate::{prelude::*, event::WaitList, memobj::IntoSlice2D};
 use super::{Buffer, flags::{MemFlags, MemAccess, HostPtr}};
 
 pub struct BufferRect2D<T: Copy, C: Context = Global> {
@@ -99,7 +99,7 @@ impl<T: Copy, C: Context> BufferRect2D<T, C> {
 
 impl<T: Copy + Unpin, C: Context> BufferRect2D<T, C> {
     #[inline(always)]
-    pub fn read<'src> (&'src self, slice: impl IntoSlice<2>, wait: impl Into<WaitList>) -> Result<ReadBufferRect2D<'src, T>> {
+    pub fn read<'src> (&'src self, slice: impl IntoSlice2D, wait: impl Into<WaitList>) -> Result<ReadBufferRect2D<'src, T>> {
         unsafe { ReadBufferRect2D::new(self, self.rows().get(), self.cols().get(), slice, Some(self.row_pitch().unwrap()), Some(self.slice_pitch().unwrap()), self.inner.ctx.next_queue(), wait) }
     }
 }

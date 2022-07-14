@@ -1,4 +1,4 @@
-flat_mod!(raw, flags, utils);
+flat_mod!(raw, flags, region, utils);
 
 #[cfg(feature = "map")]
 mod map;

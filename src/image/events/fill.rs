@@ -1,5 +1,5 @@
 use std::{marker::PhantomData, mem::MaybeUninit, ptr::addr_of};
-use crate::{prelude::*, image::{channel::{RawPixel, FromPrimitive}, RawImage, IntoSlice, ChannelOrder}, event::WaitList};
+use crate::{prelude::*, image::{channel::{RawPixel, FromPrimitive}, RawImage, ChannelOrder}, event::WaitList, memobj::IntoSlice2D};
 
 #[repr(transparent)]
 pub struct FillImage<'dst> {
@@ -9,19 +9,23 @@ pub struct FillImage<'dst> {
 
 impl<'dst> FillImage<'dst> {
     #[inline]
-    pub unsafe fn new<P: RawPixel> (dst: &'dst mut RawImage, color: &P, slice: impl IntoSlice<2>, queue: &CommandQueue, wait: impl Into<WaitList>) -> Result<Self> where f32: FromPrimitive<P::Subpixel> {
-        let color = Self::get_color(color);
-        let slice = slice.into_slice([dst.width()?, dst.height()?]);
-        let event = dst.fill(color.as_ptr().cast(), slice, queue, wait)?;
+    pub unsafe fn new<P: RawPixel> (dst: &'dst mut RawImage, color: &P, slice: impl IntoSlice2D, queue: &CommandQueue, wait: impl Into<WaitList>) -> Result<Self> where f32: FromPrimitive<P::Subpixel> {
+        if let Some(slice) = slice.into_slice(dst.width()?, dst.height()?) {
+            let [origin, region] = slice.raw_parts();
+            let color = Self::get_color(color);
+            let event = dst.fill(color.as_ptr().cast(), origin, region, queue, wait)?;
 
-        Ok(Self {
-            event,
-            dst: PhantomData
-        })
+            return Ok(Self {
+                event,
+                dst: PhantomData
+            })
+        }
+
+        todo!()
     }
 
-    fn get_color<P: RawPixel> (color: &P) -> MaybeUninit<[u8; 16]> where f32: FromPrimitive<P::Subpixel> {
-        let mut result = MaybeUninit::uninit();
+    fn get_color<P: RawPixel> (color: &P) -> [MaybeUninit<u8>; 16] where f32: FromPrimitive<P::Subpixel> {
+        let mut result = MaybeUninit::uninit_array::<16>();
         let ptr = result.as_mut_ptr();
 
         #[cfg(feature = "cl2")]

@@ -1,6 +1,6 @@
-use std::{pin::Pin, mem::MaybeUninit, marker::PhantomData};
+use std::{pin::Pin, mem::MaybeUninit, marker::PhantomData, num::NonZeroUsize};
 use image::ImageBuffer;
-use crate::{prelude::*, image::{channel::RawPixel, IntoSlice, RawImage}, event::WaitList};
+use crate::{prelude::*, image::{channel::RawPixel, RawImage}, event::WaitList, memobj::IntoSlice2D};
 
 pub struct ReadImage2D<'src, P: RawPixel> {
     event: RawEvent,
@@ -12,20 +12,24 @@ pub struct ReadImage2D<'src, P: RawPixel> {
 
 impl<'src, P: RawPixel> ReadImage2D<'src, P> where P::Subpixel: Unpin {
     #[inline]
-    pub unsafe fn new (src: &'src RawImage, queue: &CommandQueue, slice: impl IntoSlice<2>, row_pitch: Option<usize>, slice_pitch: Option<usize>, wait: impl Into<WaitList>) -> Result<Self> {
-        let slice = slice.into_slice([src.width()?, src.height()?]);
-        let size = slice.size().checked_mul(P::CHANNEL_COUNT as usize).unwrap();
+    pub unsafe fn new (src: &'src RawImage, queue: &CommandQueue, slice: impl IntoSlice2D, row_pitch: Option<usize>, slice_pitch: Option<usize>, wait: impl Into<WaitList>) -> Result<Self> {
+        if let Some(slice) = slice.into_slice(src.width()?, src.height()?) {
+            let [origin, region] = slice.raw_parts();
+            let size = slice.size().and_then(|x| x.checked_mul(NonZeroUsize::new(P::CHANNEL_COUNT as usize).unwrap())).unwrap().get();
 
-        let mut result = Pin::new(Box::new_uninit_slice(size));
-        let event = src.read_to_ptr(slice, row_pitch, slice_pitch, result.as_mut_ptr().cast(), queue, wait)?;
+            let mut result = Pin::new(Box::new_uninit_slice(size));
+            let event = src.read_to_ptr(origin, region, row_pitch, slice_pitch, result.as_mut_ptr().cast(), queue, wait)?;
 
-        Ok(Self {
-            event,
-            width: slice.width(),
-            height: slice.height(),
-            dst: result,
-            src: PhantomData
-        })
+            return Ok(Self {
+                event,
+                width: slice.width(),
+                height: slice.height(),
+                dst: result,
+                src: PhantomData
+            })
+        }
+
+        todo!()
     }
 }
 
