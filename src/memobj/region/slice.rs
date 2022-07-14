@@ -99,3 +99,9 @@ impl<X: RangeBounds<usize>, Y: RangeBounds<usize>> IntoSlice2D for (X, Y) {
         Slice2D::from_range(self.0, self.1, max_x, max_y)
     }
 }
+
+impl IntoSlice2D for [[usize;2];2] {
+    fn into_slice (self, _max_x: usize, _max_y: usize) -> Option<Slice2D> {
+        Slice2D::try_new(self[0][0], self[0][1], self[1][0], self[0][0])
+    }
+}
