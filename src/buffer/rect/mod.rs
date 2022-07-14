@@ -87,20 +87,15 @@ impl<T: Copy, C: Context> BufferRect2D<T, C> {
     }
 
     #[inline(always)]
-    pub fn row_pitch (&self) -> Option<usize> {
-        self.rows.get().checked_mul(core::mem::size_of::<T>())
-    }
-
-    #[inline(always)]
-    pub fn slice_pitch (&self) -> Option<usize> {
-        self.row_pitch().and_then(|x| x.checked_mul(self.cols.get()))
+    pub fn row_pitch (&self) -> usize {
+        self.rows.get() * core::mem::size_of::<T>()
     }
 }
 
 impl<T: Copy + Unpin, C: Context> BufferRect2D<T, C> {
     #[inline(always)]
     pub fn read<'src> (&'src self, slice: impl IntoSlice2D, wait: impl Into<WaitList>) -> Result<ReadBufferRect2D<'src, T>> {
-        unsafe { ReadBufferRect2D::new(self, self.rows().get(), self.cols().get(), slice, Some(self.row_pitch().unwrap()), Some(self.slice_pitch().unwrap()), self.inner.ctx.next_queue(), wait) }
+        unsafe { ReadBufferRect2D::new(self, self.rows.get(), self.cols.get(), slice, None, self.inner.ctx.next_queue(), wait) }
     }
 }
 

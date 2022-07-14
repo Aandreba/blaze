@@ -1,10 +1,11 @@
 use std::{num::NonZeroUsize, ops::{RangeBounds, Mul, Bound}};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Slice2D {
     pub offset_x: usize,
     pub offset_y: usize,
     pub region_x: NonZeroUsize,
-    pub region_y: NonZeroUsize,
+    pub region_y: NonZeroUsize
 }
 
 impl Slice2D {
@@ -72,28 +73,12 @@ impl Slice2D {
         let region = [self.region_x.get(), self.region_y.get(), 1];
         [offset, region]
     }
-}
-
-impl Mul<NonZeroUsize> for Slice2D {
-    type Output = Option<Self>;
 
     #[inline]
-    fn mul(self, rhs: NonZeroUsize) -> Self::Output {
-        let offset_x = self.offset_x.checked_mul(rhs.get())?;
-        let offset_y = self.offset_y.checked_mul(rhs.get())?;
-        let region_x = self.region_x.checked_mul(rhs)?;
-        let region_y = self.region_y.checked_mul(rhs)?;
-        Some(Self::new(offset_x, offset_y, region_x, region_y))
-    }
-}
-
-impl Mul<usize> for Slice2D {
-    type Output = Option<Self>;
-
-    #[inline(always)]
-    fn mul(self, rhs: usize) -> Self::Output {
-        let rhs = NonZeroUsize::new(rhs)?;
-        self * rhs
+    pub fn raw_parts_buffer<T> (&self) -> [[usize;3];2] {
+        let offset = [self.offset_x, self.offset_y, 0];
+        let region = [self.region_x.get() * core::mem::size_of::<T>(), self.region_y.get(), 1];
+        [offset, region]
     }
 }
 

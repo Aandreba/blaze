@@ -1,5 +1,5 @@
 use std::{marker::PhantomData, mem::MaybeUninit, ptr::addr_of};
-use crate::{prelude::*, image::{channel::{RawPixel, FromPrimitive}, RawImage, ChannelOrder}, event::WaitList, memobj::IntoSlice2D};
+use crate::{prelude::*, image::{channel::{RawPixel, FromPrimitive}, RawImage, ChannelOrder}, event::WaitList, memobj::{IntoSlice2D}};
 
 #[repr(transparent)]
 pub struct FillImage<'dst> {

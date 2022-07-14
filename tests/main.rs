@@ -23,6 +23,6 @@ fn program () -> Result<()> {
 #[test]
 fn flag () {
     let mut buf = BufferRect2D::new(&[1, 2, 3, 4, 5, 6, 7, 8, 9], 3, 3, MemAccess::default(), false).unwrap();
-    let read = buf.read((.., ..), WaitList::EMPTY).unwrap().wait_unwrap();
+    let read = buf.read((.., 1..), WaitList::EMPTY).unwrap().wait_unwrap();
     println!("{read:?}")
 }

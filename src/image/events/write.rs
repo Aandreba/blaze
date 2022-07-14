@@ -1,6 +1,6 @@
 use std::{pin::Pin, ops::Deref, marker::PhantomData};
 use image::ImageBuffer;
-use crate::{prelude::*, image::{channel::RawPixel, RawImage}, event::WaitList, memobj::Slice2D};
+use crate::{prelude::*, image::{channel::RawPixel, RawImage}, event::WaitList, memobj::{Slice2D}};
 
 #[repr(transparent)]
 pub struct WriteImage2D<'src, 'dst, P: RawPixel> where P::Subpixel: Unpin {

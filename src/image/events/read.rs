@@ -1,6 +1,6 @@
 use std::{pin::Pin, mem::MaybeUninit, marker::PhantomData, num::NonZeroUsize};
 use image::ImageBuffer;
-use crate::{prelude::*, image::{channel::RawPixel, RawImage}, event::WaitList, memobj::IntoSlice2D};
+use crate::{prelude::*, image::{channel::RawPixel, RawImage}, event::WaitList, memobj::{IntoSlice2D}};
 
 pub struct ReadImage2D<'src, P: RawPixel> {
     event: RawEvent,
