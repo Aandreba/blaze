@@ -1,4 +1,4 @@
-use std::{num::NonZeroUsize, ops::{RangeBounds, Mul, Bound}};
+use std::{num::NonZeroUsize, ops::{RangeBounds, Bound}};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Slice2D {

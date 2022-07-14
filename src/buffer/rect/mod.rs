@@ -4,6 +4,7 @@ use std::{ptr::NonNull, ops::{Deref, DerefMut}, num::NonZeroUsize};
 use crate::{prelude::*, event::WaitList, memobj::IntoSlice2D};
 use super::{Buffer, flags::{MemFlags, MemAccess, HostPtr}};
 
+/// Buffer that conatins a 2D rectangle.
 pub struct BufferRect2D<T: Copy, C: Context = Global> {
     inner: Buffer<T, C>,
     rows: NonZeroUsize,
@@ -12,8 +13,8 @@ pub struct BufferRect2D<T: Copy, C: Context = Global> {
 
 impl<T: Copy> BufferRect2D<T> {
     #[inline(always)]
-    pub fn new (v: &[T], rows: usize, cols: usize, access: MemAccess, alloc: bool) -> Result<Self> {
-        Self::new_in(Global, v, rows, cols, access, alloc)
+    pub fn new (v: &Rect2D<T>, access: MemAccess, alloc: bool) -> Result<Self> {
+        Self::new_in(Global, v, access, alloc)
     }
 
     #[inline(always)]
@@ -28,11 +29,11 @@ impl<T: Copy> BufferRect2D<T> {
 }
 
 impl<T: Copy, C: Context> BufferRect2D<T, C> {
+    /// Creates new rectangular buffer
     #[inline]
-    pub fn new_in (ctx: C, v: &[T], rows: usize, cols: usize, access: MemAccess, alloc: bool) -> Result<Self> {
-        assert_eq!(Some(v.len()), rows.checked_mul(cols));
+    pub fn new_in (ctx: C, v: &Rect2D<T>, access: MemAccess, alloc: bool) -> Result<Self> {
         let host = MemFlags::new(access, HostPtr::new(alloc, true));
-        unsafe { Self::create_in(ctx, rows, cols, host, NonNull::new(v.as_ptr() as *mut _)) }
+        unsafe { Self::create_in(ctx, v.rows(), v.cols(), host, NonNull::new(v.as_ptr() as *mut _)) }
     }
 
     #[inline]

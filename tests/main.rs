@@ -1,6 +1,6 @@
 use std::{ops::{DerefMut, Deref}, io::Write, time::Duration, sync::Arc};
 use image::{Rgba, imageops};
-use rscl::{core::*, context::{SimpleContext}, buffer::{Buffer, flags::MemAccess, BufferRect2D}, event::{WaitList, FlagEvent}, prelude::Event, image::{Image2D, Sampler, SamplerProperties, AddressingMode}};
+use rscl::{core::*, context::{SimpleContext}, buffer::{Buffer, flags::MemAccess, BufferRect2D, rect::Rect2D}, event::{WaitList, FlagEvent}, prelude::Event, image::{Image2D, Sampler, SamplerProperties, AddressingMode}};
 use rscl_proc::global_context;
 
 #[global_context]
@@ -22,7 +22,9 @@ fn program () -> Result<()> {
 
 #[test]
 fn flag () {
-    let mut buf = BufferRect2D::new(&[1, 2, 3, 4, 5, 6, 7, 8, 9], 3, 3, MemAccess::default(), false).unwrap();
-    let read = buf.read((.., 1..), WaitList::EMPTY).unwrap().wait_unwrap();
+    let rect = Rect2D::new_row_major(&[1, 2, 3, 4, 5, 6, 7, 8, 9], 3).unwrap();
+    let buf = BufferRect2D::new(&rect, MemAccess::default(), false).unwrap();
+
+    let read = buf.read((1.., ..), WaitList::EMPTY).unwrap().wait_unwrap(); // todo fix
     println!("{read:?}")
 }
