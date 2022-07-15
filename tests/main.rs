@@ -1,5 +1,3 @@
-use std::{ops::{DerefMut, Deref}, io::Write, time::Duration, sync::Arc};
-use image::{Rgba, imageops};
 use rscl::{core::*, context::{SimpleContext}, buffer::{Buffer, flags::MemAccess, BufferRect2D, rect::Rect2D}, event::{WaitList, FlagEvent}, prelude::Event, image::{Image2D, Sampler, SamplerProperties, AddressingMode}};
 use rscl_proc::global_context;
 
@@ -29,17 +27,18 @@ fn flag () {
             [7, 8, 9]
         ]
     */
-    let rect = Rect2D::<u16>::new(&[1, 2, 3, 4, 5, 6, 7, 8, 9], 3).unwrap(); // 3 x 3
+    let mut rect = Rect2D::<f32>::new(&[1.0, 2., 3., 4., 5., 6., 7., 8., 9.], 3).unwrap(); // 3 x 3
     let buf = BufferRect2D::new(&rect, MemAccess::default(), false).unwrap();
+    buf.read_into([1, 0], &mut rect, [0, 0], [2, 2], WaitList::EMPTY).unwrap().wait_unwrap();
+    // TODO FIX
 
     /*
         [
-            [2, 3],
-            [5, 6],
-            [8, 9]
+            [2, 3, 3],
+            [5, 6, 6],
+            [7, 8, 9]
         ]
     */
-    let read = buf.read((1.., ..), WaitList::EMPTY).unwrap().wait_unwrap();
-    println!("{read:?}")
-    //println!("{:?}", read.as_slice().into_iter().map(|x| format!("{:016b}", x >> 8)).collect::<Vec<_>>())
+
+    println!("{rect:?}")
 }

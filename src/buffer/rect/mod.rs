@@ -110,6 +110,12 @@ impl<T: Copy + Unpin, C: Context> BufferRect2D<T, C> {
         let (buffer_row_pitch, buffer_slice_pitch) = self.row_and_slice_pitch();
         unsafe { ReadBufferRect2D::new(self, self.width.get(), self.height.get(), slice, Some(buffer_row_pitch), Some(buffer_slice_pitch), self.inner.ctx.next_queue(), wait) }
     }
+
+    #[inline(always)]
+    pub fn read_into<'src, 'dst> (&'src self, offset_src: [usize; 2], dst: &'dst mut Rect2D<T>, offset_dst: [usize; 2], region: [usize; 2], wait: impl Into<WaitList>) -> Result<ReadIntoBufferRect2D<'src, 'dst>> {
+        let (buffer_row_pitch, buffer_slice_pitch) = self.row_and_slice_pitch();
+        unsafe { ReadIntoBufferRect2D::new(self, offset_src, dst, offset_dst, region, Some(buffer_row_pitch), Some(buffer_slice_pitch), self.inner.ctx.next_queue(), wait) }
+    }
 }
 
 impl<T: Copy, C: Context> Deref for BufferRect2D<T, C> {
