@@ -1,6 +1,6 @@
-use std::{marker::PhantomData, mem::MaybeUninit};
+use std::{marker::PhantomData, mem::MaybeUninit, ops::{DerefMut, Deref}};
 use crate::{buffer::RawBuffer, prelude::*, event::WaitList, memobj::{IntoSlice2D}};
-use super::Rect2D;
+use super::{Rect2D, BufferRect2D};
 
 pub struct ReadBufferRect2D<'src, T> {
     event: RawEvent,
@@ -41,24 +41,25 @@ impl<'src, T: Copy + Unpin> Event for ReadBufferRect2D<'src, T> {
     }
 }
 
-pub struct ReadIntoBufferRect2D<'src, 'dst> {
+pub struct ReadIntoBufferRect2D<T, Src, Dst> {
     event: RawEvent,
-    dst: PhantomData<&'dst mut ()>,
-    src: PhantomData<&'src RawBuffer>
+    dst: Dst,
+    src: Src
 }
 
-impl<'src, 'dst> ReadIntoBufferRect2D<'src, 'dst> {
+impl<T, Src: Deref<Target = Buffer>, Dst: DerefMut<Target = Rect2D<>>> ReadIntoBufferRect2D<'src, 'dst> {
     #[inline]
     pub unsafe fn new<T: Copy + Unpin> (
         src: &'src RawBuffer, offset_src: [usize; 2], dst: &'dst mut Rect2D<T>, offset_dst: [usize; 2], region: [usize; 2],
         buffer_row_pitch: Option<usize>, buffer_slice_pitch: Option<usize>, queue: &CommandQueue, wait: impl Into<WaitList>
     ) -> Result<Self> {
 
+        let host_row_pitch = dst.width() * core::mem::size_of::<T>();
         let buffer_origin = [offset_src[0] * core::mem::size_of::<T>(), offset_src[1], 0];
         let host_origin = [offset_dst[0] * core::mem::size_of::<T>(), offset_dst[1], 0];
         let region = [region[0] * core::mem::size_of::<T>(), region[1], 1];
 
-        let event = src.read_rect_to_ptr(buffer_origin, host_origin, region, buffer_row_pitch, buffer_slice_pitch, Some(0), Some(0), dst.as_mut_ptr(), queue, wait)?;
+        let event = src.read_rect_to_ptr(buffer_origin, host_origin, region, buffer_row_pitch, buffer_slice_pitch, Some(host_row_pitch), Some(0), dst.as_mut_ptr(), queue, wait)?;
         return Ok(Self { event, dst: PhantomData, src: PhantomData })
     }
 }

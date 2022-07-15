@@ -11,7 +11,7 @@ use std::hint::unreachable_unchecked;
 use super::{events::{CopyBuffer}, IntoRange};
 
 pub struct Buffer<T: Copy, C: Context = Global> {
-    inner: RawBuffer,
+    pub(super) inner: RawBuffer,
     pub(super) ctx: C,
     phtm: PhantomData<T>
 }

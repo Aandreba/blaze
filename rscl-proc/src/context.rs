@@ -18,6 +18,12 @@ pub fn global_context (input: ItemStatic) -> TokenStream {
 
         #[doc(hidden)]
         #[no_mangle]
+        extern "Rust" fn __rscl__global__queues () -> &'static [::rscl::core::CommandQueue] {
+            ::rscl::context::Context::queues(::rscl::once_cell::sync::Lazy::force(&#ident))
+        }
+
+        #[doc(hidden)]
+        #[no_mangle]
         extern "Rust" fn __rscl__global__next_queue () -> &'static ::rscl::core::CommandQueue {
             ::rscl::context::Context::next_queue(::rscl::once_cell::sync::Lazy::force(&#ident))
         }

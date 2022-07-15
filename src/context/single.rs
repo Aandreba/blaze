@@ -12,12 +12,17 @@ pub struct SimpleContext {
 impl SimpleContext {
     pub fn new (device: &Device, ctx_props: ContextProperties, props: impl Into<QueueProperties>) -> Result<Self> {
         let ctx = RawContext::new(ctx_props, core::slice::from_ref(device))?;
-        let queue = CommandQueue::new(props.into(), &ctx, device)?;
+        let queue = CommandQueue::new(&ctx, props.into(), device)?;
         Ok(Self { ctx, queue })
     }
 }
 
 impl Context for SimpleContext {
+    #[inline(always)]
+    fn queues (&self) -> &[CommandQueue] {
+        core::slice::from_ref(&&self.queue)
+    }
+
     #[inline(always)]
     fn next_queue (&self) -> &CommandQueue {
         &self.queue

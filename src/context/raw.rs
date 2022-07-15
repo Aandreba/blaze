@@ -1,7 +1,7 @@
 use std::{ptr::{addr_of_mut, NonNull}, ffi::c_void, mem::MaybeUninit};
-use opencl_sys::{cl_context, clCreateContext, clCreateContextFromType, clRetainContext, clReleaseContext, cl_context_info, clGetContextInfo, CL_CONTEXT_REFERENCE_COUNT, CL_CONTEXT_DEVICES, cl_device_id, cl_context_properties, CL_CONTEXT_PROPERTIES, clGetSupportedImageFormats, cl_image_format};
+use opencl_sys::*;
 use rscl_proc::docfg;
-use crate::{core::{*, device::DeviceType}, buffer::flags::{MemAccess}};
+use crate::{core::{*, device::DeviceType}, prelude::device::Version};
 use super::ContextProperties;
 
 #[repr(transparent)]
@@ -71,24 +71,53 @@ impl RawContext {
     /// Return the number of devices in context.
     #[inline]
     pub fn num_devices (&self) -> Result<u32> {
-        #[cfg(feature = "cl1_1")]
-        if let Ok(x) = self.get_info(opencl_sys::CL_CONTEXT_NUM_DEVICES) {
-            return Ok(x);
-        }
+        cfg_if::cfg_if! {
+            if #[cfg(all(feature = "cl1_1", feature = "strict"))] {
+                self.get_info(opencl_sys::CL_CONTEXT_NUM_DEVICES)
+            } else {
+                #[cfg(feature = "cl1_1")]
+                if let Ok(x) = self.get_info(opencl_sys::CL_CONTEXT_NUM_DEVICES) {
+                    return Ok(x);
+                }
 
-        let mut res = 0;
-        unsafe {
-            tri!(clGetContextInfo(self.id(), CL_CONTEXT_DEVICES, 0, core::ptr::null_mut(), addr_of_mut!(res)))
-        }
+                let mut res = 0;
+                unsafe {
+                    tri!(clGetContextInfo(self.id(), CL_CONTEXT_DEVICES, 0, core::ptr::null_mut(), addr_of_mut!(res)))
+                }
 
-        let res = u32::try_from(res / core::mem::size_of::<cl_device_id>()).unwrap();
-        Ok(res)
+                let res = u32::try_from(res / core::mem::size_of::<cl_device_id>()).unwrap();
+                Ok(res)
+            }
+        }
     }
 
     /// Return the list of devices and sub-devices in context.
     #[inline(always)]
     pub fn devices (&self) -> Result<Box<[Device]>> {
         self.get_info_array(CL_CONTEXT_DEVICES)
+    }
+
+    /// Returns the greatest common OpenCL version of this context's devices.
+    #[inline]
+    pub fn greatest_common_version (&self) -> Result<Version> {
+        let devices = self.devices()?;
+        let mut result = None;
+
+        for device in devices.into_iter() {
+            let version = device.version()?;
+            
+            if let Some(ref mut result) = result {
+                if &version < result {
+                    *result = version
+                }
+
+                continue
+            }
+
+            result = Some(version)
+        }
+
+        Ok(result.unwrap_or_else(|| Version::CL1))
     }
 
     /// Return the properties argument specified in creation
@@ -100,7 +129,7 @@ impl RawContext {
 
     /// Get the list of image formats supported by an OpenCL implementation.
     #[cfg(feature = "image")]
-    pub fn supported_image_formats (&self, access: MemAccess, ty: crate::memobj::MemObjectType) -> Result<Vec<crate::image::ImageFormat>> {
+    pub fn supported_image_formats (&self, access: crate::buffer::flags::MemAccess, ty: crate::memobj::MemObjectType) -> Result<Vec<crate::image::ImageFormat>> {
         use crate::{image::ImageFormat};
 
         let mut size = 0;
@@ -198,7 +227,7 @@ unsafe impl Send for RawContext {}
 unsafe impl Sync for RawContext {}
 
 #[cfg(feature = "cl3")]
-unsafe extern "C" fn destructor_callback (context: cl_context, user_data: *mut c_void) {
+unsafe extern "C" fn destructor_callback (_context: cl_context, user_data: *mut c_void) {
     let f = *Box::from_raw(user_data as *mut Box<dyn FnOnce() + Send>);
     f()
 }

@@ -4,6 +4,7 @@ use super::{Context, RawContext};
 
 extern "Rust" {
     fn __rscl__global__as_raw () -> &'static RawContext;
+    fn __rscl__global__queues () -> &'static [CommandQueue];
     fn __rscl__global__next_queue () -> &'static CommandQueue;
 }
 
@@ -20,6 +21,11 @@ impl Context for Global {
     #[inline(always)]
     fn as_raw (&self) -> &RawContext {
         unsafe { __rscl__global__as_raw() } 
+    }
+
+    #[inline(always)]
+    fn queues (&self) -> &[CommandQueue] {
+        unsafe { __rscl__global__queues() }
     }
 }
 

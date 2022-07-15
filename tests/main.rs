@@ -1,4 +1,4 @@
-use rscl::{core::*, context::{SimpleContext}, buffer::{Buffer, flags::MemAccess, BufferRect2D, rect::Rect2D}, event::{WaitList, FlagEvent}, prelude::Event, image::{Image2D, Sampler, SamplerProperties, AddressingMode}};
+use rscl::{core::*, context::{SimpleContext}, buffer::{Buffer, flags::MemAccess, BufferRect2D, rect::Rect2D}, event::{WaitList, FlagEvent}, prelude::{Event, Global, Context}, image::{Image2D, Sampler, SamplerProperties, AddressingMode}};
 use rscl_proc::global_context;
 
 #[global_context]
@@ -12,9 +12,8 @@ static PROGRAM : &str = "void kernel add (const ulong n, __global const float* r
 
 #[test]
 fn program () -> Result<()> {
-    let sampler = Sampler::new(SamplerProperties::new(false, AddressingMode::default(), rscl::image::FilterMode::Linear))?;
-    println!("{:?}", sampler.properties());
-
+    let version = Global.next_queue().size()?;
+    println!("{version:?}");
     Ok(())
 }
 

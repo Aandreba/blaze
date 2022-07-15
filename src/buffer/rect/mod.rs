@@ -1,4 +1,4 @@
-flat_mod!(host, read);
+flat_mod!(host, read, write);
 
 use std::{ptr::NonNull, ops::{Deref, DerefMut}, num::NonZeroUsize};
 use crate::{prelude::*, event::WaitList, memobj::IntoSlice2D};
@@ -115,6 +115,12 @@ impl<T: Copy + Unpin, C: Context> BufferRect2D<T, C> {
     pub fn read_into<'src, 'dst> (&'src self, offset_src: [usize; 2], dst: &'dst mut Rect2D<T>, offset_dst: [usize; 2], region: [usize; 2], wait: impl Into<WaitList>) -> Result<ReadIntoBufferRect2D<'src, 'dst>> {
         let (buffer_row_pitch, buffer_slice_pitch) = self.row_and_slice_pitch();
         unsafe { ReadIntoBufferRect2D::new(self, offset_src, dst, offset_dst, region, Some(buffer_row_pitch), Some(buffer_slice_pitch), self.inner.ctx.next_queue(), wait) }
+    }
+
+    #[inline(always)]
+    pub fn write<'dst, D: Deref<Target = Rect2D<T>>> (&'dst mut self, offset_dst: [usize; 2], src: D, offset_src: [usize; 2], region: [usize; 2], wait: impl Into<WaitList>) -> Result<WriteBufferRect2D<'dst, D>> {
+        let (buffer_row_pitch, buffer_slice_pitch) = self.row_and_slice_pitch();
+        unsafe { WriteBufferRect2D::new(src, offset_src, &mut self.inner.inner, offset_dst, region, Some(buffer_row_pitch), Some(buffer_slice_pitch), self.inner.ctx.next_queue(), wait) }
     }
 }
 

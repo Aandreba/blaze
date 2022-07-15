@@ -2,7 +2,7 @@ use super::*;
 use std::{mem::MaybeUninit, ptr::NonNull, ffi::c_void};
 use opencl_sys::*;
 use rscl_proc::docfg;
-use crate::{context::RawContext, prelude::RawEvent, event::WaitList};
+use crate::{context::RawContext};
 use std::ptr::addr_of_mut;
 
 #[repr(transparent)]
@@ -10,10 +10,10 @@ pub struct CommandQueue (NonNull<c_void>);
 
 impl CommandQueue {
     #[cfg(not(feature = "cl2"))]
-    pub fn new (props: CommandQueueProperties, ctx: &RawContext, device: &Device) -> Result<Self> {
+    pub fn new (ctx: &RawContext, props: CommandQueueProperties, device: &Device) -> Result<Self> {
         let props = props.to_bits();
-        
         let mut err = 0;
+
         let id = unsafe {
             opencl_sys::clCreateCommandQueue(ctx.id(), device.id(), props, addr_of_mut!(err))
         };
@@ -22,24 +22,37 @@ impl CommandQueue {
             return Err(Error::from(err));
         }
 
-
         Ok(NonNull::new(id).map(Self).unwrap())
     }
 
     #[cfg(feature = "cl2")]
-    pub fn new (props: impl Into<QueueProperties>, ctx: &RawContext, device: &Device) -> Result<Self> {
-        use elor::prelude::*;
-
-        let props = props.into().to_bits();
-        let props = match props {
-            Left(x) => x.as_ptr(),
-            Right(x) => x.as_ptr()
-        };
-        
+    pub fn new (ctx: &RawContext, props: impl Into<QueueProperties>, device: &Device) -> Result<Self> {
+        let props : QueueProperties = props.into();
         let mut err = 0;
-        let id = unsafe {
-            opencl_sys::clCreateCommandQueueWithProperties(ctx.id(), device.id(), props, addr_of_mut!(err))
-        };
+        let id;
+
+        cfg_if::cfg_if! {
+            if #[cfg(feature = "strict")] {
+                let props = match props.to_bits() {
+                    Left(x) => x.as_ptr(),
+                    Right(x) => x.as_ptr()
+                };
+                
+                id = unsafe { opencl_sys::clCreateCommandQueueWithProperties(ctx.id(), device.id(), props, addr_of_mut!(err)) };
+            } else {
+                #[allow(deprecated)]
+                if ctx.greatest_common_version()? < device::Version::CL2 {
+                    id = unsafe { opencl_sys::clCreateCommandQueue(ctx.id(), device.id(), props.props.to_bits(), addr_of_mut!(err)) }
+                } else {
+                    let props = match props.to_bits() {
+                        Left(x) => x.as_ptr(),
+                        Right(x) => x.as_ptr()
+                    };
+                    
+                    id = unsafe { opencl_sys::clCreateCommandQueueWithProperties(ctx.id(), device.id(), props, addr_of_mut!(err)) };
+                }
+            }
+        }
 
         if err != 0 {
             return Err(Error::from(err));
@@ -138,8 +151,8 @@ impl CommandQueue {
     /// queued before this command to the command queue, have completed.
     #[docfg(feature = "cl1_2")]
     #[inline(always)]
-    pub fn barrier (&self, wait: impl Into<WaitList>) -> Result<RawEvent> {
-        let wait : WaitList = wait.into();
+    pub fn barrier (&self, wait: impl Into<crate::event::WaitList>) -> Result<crate::prelude::RawEvent> {
+        let wait : crate::event::WaitList = wait.into();
         let (num_events_in_wait_list, event_wait_list) = wait.raw_parts();
 
 
@@ -148,14 +161,14 @@ impl CommandQueue {
             tri!(clEnqueueBarrierWithWaitList(self.id(), num_events_in_wait_list, event_wait_list, addr_of_mut!(evt)))
         }
 
-        Ok(RawEvent::from_id(evt).unwrap())
+        Ok(crate::prelude::RawEvent::from_id(evt).unwrap())
     }
 
     /// Enqueues a marker command which waits for either a list of events to complete, or all previously enqueued commands to complete.
     #[docfg(feature = "cl1_2")]
     #[inline(always)]
-    pub fn marker (&self, wait: impl Into<WaitList>) -> Result<RawEvent> {
-        let wait : WaitList = wait.into();
+    pub fn marker (&self, wait: impl Into<crate::event::WaitList>) -> Result<crate::prelude::RawEvent> {
+        let wait : crate::event::WaitList = wait.into();
         let (num_events_in_wait_list, event_wait_list) = wait.raw_parts();
 
 
@@ -164,7 +177,7 @@ impl CommandQueue {
             tri!(clEnqueueMarkerWithWaitList(self.id(), num_events_in_wait_list, event_wait_list, addr_of_mut!(evt)))
         }
 
-        Ok(RawEvent::from_id(evt).unwrap())
+        Ok(crate::prelude::RawEvent::from_id(evt).unwrap())
     }
 
     #[inline]
