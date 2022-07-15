@@ -76,7 +76,7 @@ impl Slice2D {
 
     #[inline]
     pub fn raw_parts_buffer<T> (&self) -> [[usize;3];2] {
-        let offset = [self.offset_x, self.offset_y, 0];
+        let offset = [self.offset_x * core::mem::size_of::<T>(), self.offset_y, 0];
         let region = [self.region_x.get() * core::mem::size_of::<T>(), self.region_y.get(), 1];
         [offset, region]
     }

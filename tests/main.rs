@@ -29,17 +29,17 @@ fn flag () {
             [7, 8, 9]
         ]
     */
-    let rect = Rect2D::<u16>::new_row_major(&[1, 2, 3, 4, 5, 6, 7, 8, 9], 3).unwrap(); // 3 x 3
-    println!("{rect:?}");
-
+    let rect = Rect2D::<u16>::new(&[1, 2, 3, 4, 5, 6, 7, 8, 9], 3).unwrap(); // 3 x 3
     let buf = BufferRect2D::new(&rect, MemAccess::default(), false).unwrap();
 
     /*
         [
-            [1, 2, 3],
-            [4, 5, 6]
+            [2, 3],
+            [5, 6],
+            [8, 9]
         ]
     */
-    let read = buf.read((..2, ..), WaitList::EMPTY).unwrap().wait_unwrap();
+    let read = buf.read((1.., ..), WaitList::EMPTY).unwrap().wait_unwrap();
     println!("{read:?}")
+    //println!("{:?}", read.as_slice().into_iter().map(|x| format!("{:016b}", x >> 8)).collect::<Vec<_>>())
 }

@@ -11,14 +11,14 @@ pub struct ReadBufferRect2D<'src, T> {
 impl<'src, T: Copy + Unpin> ReadBufferRect2D<'src, T> {
     #[inline]
     pub unsafe fn new (
-        src: &'src RawBuffer, max_rows: usize, max_cols: usize, slice: impl IntoSlice2D,
-        buffer_row_pitch: Option<usize>, queue: &CommandQueue, wait: impl Into<WaitList>
+        src: &'src RawBuffer, max_width: usize, max_height: usize, slice: impl IntoSlice2D,
+        buffer_row_pitch: Option<usize>, buffer_slice_pitch: Option<usize>, queue: &CommandQueue, wait: impl Into<WaitList>
     ) -> Result<Self> {
-        if let Some(slice) = slice.into_slice(max_rows, max_cols) {
-            let [offset, region] = slice.raw_parts_buffer::<T>();
-            
+
+        if let Some(slice) = slice.into_slice(max_width, max_height) {
+            let [buffer_origin, region] = slice.raw_parts_buffer::<T>();
             let mut dst = Rect2D::<T>::new_uninit(slice.width(), slice.height()).unwrap();
-            let event = src.read_rect_to_ptr(offset, [0, 0, 0], region, buffer_row_pitch, Some(0), Some(0), Some(0), dst.as_mut_ptr() as *mut T, queue, wait)?;
+            let event = src.read_rect_to_ptr(buffer_origin, [0; 3], region, buffer_row_pitch, buffer_slice_pitch, Some(0), Some(0), dst.as_mut_ptr() as *mut T, queue, wait)?;
             return Ok(Self { event, dst, src: PhantomData })
         }
 
