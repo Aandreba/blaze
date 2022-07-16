@@ -1,4 +1,4 @@
-use std::{collections::VecDeque, ops::{Deref, DerefMut}, mem::ManuallyDrop};
+use std::{collections::VecDeque, ops::{Deref, DerefMut}, mem::ManuallyDrop, ffi::c_void};
 use crate::{core::*, context::{Global, Context}, event::{WaitList, RawEvent}};
 use super::{Svm};
 use sealed::Sealed;
