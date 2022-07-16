@@ -31,6 +31,11 @@ impl MemObject {
         unsafe { core::mem::transmute(&self.0) }
     }
 
+    #[inline(always)]
+    pub fn id_ref_mut (&mut self) -> &mut cl_mem {
+        unsafe { core::mem::transmute(&mut self.0) }
+    }
+
     /// Returns the memory obejct's type
     #[inline(always)]
     pub fn ty (&self) -> Result<MemObjectType> {

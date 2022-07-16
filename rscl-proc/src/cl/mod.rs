@@ -59,11 +59,17 @@ pub fn rscl_c (ident: Ident, rscl: Rscl, content: Expr) -> TokenStream {
                     let name = kernel.name()?;
                     match name.as_str() {
                         #(#kernel_extern_names => #kernel_names = unsafe { Some(kernel.clone()) }),*,
-                        _ => return Err(::rscl::core::Error::InvalidKernel)
+                        __other => return Err(::rscl::core::Error::new(::rscl::core::ErrorType::InvalidKernel, format!("unknown kernel '{}'", __other)))
                     }
                 }
 
-                #(let #kernel_names = ::std::sync::Mutex::new(#kernel_names.ok_or(::rscl::core::Error::InvalidKernel)?));*;
+                #(
+                    let #kernel_names = match #kernel_names {
+                        Some(__x) => ::std::sync::Mutex::new(__x),
+                        None => return Err(::rscl::core::Error::new(::rscl::core::ErrorType::InvalidKernel, concat!("kernel '", stringify!(#kernel_names), "' not found")))
+                    };
+                )*
+
                 Ok(Self {
                     inner,
                     ctx,
@@ -87,7 +93,7 @@ pub fn rscl_c (ident: Ident, rscl: Rscl, content: Expr) -> TokenStream {
 
 fn create_kernel (parent_vis: &Visibility, parent: &Ident, kernel: &Kernel) -> TokenStream {
     let Kernel { vis, ident, args, .. } = kernel;
-    let mut generics : Generics = parse_quote! { <'a> };
+    let mut generics = Generics::default();
     let vis = match vis {
         Visibility::Inherited => parent_vis,
         other => other
@@ -96,56 +102,48 @@ fn create_kernel (parent_vis: &Visibility, parent: &Ident, kernel: &Kernel) -> T
     let big_name = format_ident!("{}", to_pascal_case(&ident.to_string()));
     let define = args.iter().filter_map(|x| define_arg(x, &mut generics)).collect::<Vec<_>>();
     let new = args.iter().map(new_arg);
-    let names = args.iter().filter_map(|x| if x.ty.is_pointer() { Some(&x.name) } else { None });
+    let names = args.iter().filter_map(|x| if x.ty.is_pointer() { Some(&x.name) } else { None }).collect::<Vec<_>>();
     let set = args.iter().enumerate().map(|(i, x)| set_arg(x, u32::try_from(i).unwrap()));
     let (r#impl, r#type, r#where) = generics.split_for_impl();
+    let type_list = generics.type_params().map(|x| &x.ident);
 
     let mut fn_generics : Generics = parse_quote! { #r#impl };
     fn_generics.params.push(parse_quote! { const N: usize });
     let (fn_impl, _, _) = fn_generics.split_for_impl();
-    let define_len = define.len();
 
     quote! {
-        #vis struct #big_name #r#type #r#where {
+        #vis struct #big_name #r#type {
             inner: ::rscl::event::RawEvent,
-            #[doc(hidden)]
-            phtm: ::core::marker::PhantomData<&'a ()>,
             #(#define),*
         }
 
         impl<C: ::rscl::context::Context> #parent<C> {
             pub unsafe fn #ident #fn_impl (&self, #(#new),*, global_work_dims: [usize; N], local_work_dims: impl Into<Option<[usize; N]>>, wait: impl Into<::rscl::event::WaitList>) -> ::rscl::core::Result<#big_name #r#type> #r#where {
                 let mut kernel = self.#ident.lock().unwrap();
-                let mut wait = wait.into();
-                let mut managers = ::std::vec::Vec::with_capacity(#define_len);
                 #(#set);*;
 
                 let inner = kernel.enqueue_with_context(&self.ctx, global_work_dims, local_work_dims, wait)?;
                 drop(kernel);
 
-                for (write, mut manager) in managers {
-                    if write {
-                        manager.write(inner.clone());
-                        continue
-                    }
-
-                    manager.read(inner.clone());
-                }
-
                 Ok(#big_name {
                     inner,
-                    phtm: ::core::marker::PhantomData,
                     #(#names),*
                 })
             }
         }
 
         impl #r#impl ::rscl::event::Event for #big_name #r#type #r#where {
-            type Output = ();
+            type Output = (#(#type_list),*);
 
             #[inline(always)]
-            fn consume (self) -> Self::Output {
-                // noop
+            fn as_raw (&self) -> &::rscl::event::RawEvent {
+                &self.inner
+            }
+
+            #[inline(always)]
+            fn consume (self, err: Option<::rscl::prelude::Error>) -> ::rscl::prelude::Result<Self::Output> {
+                if let Some(err) = err { return Err(err) }; 
+                Ok((#(self.#names),*))
             }
         }
 
@@ -183,11 +181,9 @@ fn new_arg (arg: &Argument) -> TokenStream {
 fn set_arg (arg: &Argument, idx: u32) -> TokenStream {
     let Argument { name, .. } = arg;
 
-    if let Type::Pointer(mutability, _) = &arg.ty {
+    if arg.ty.is_pointer() {
         return quote! {
-            if let Some(manager) = unsafe { #name.set_argument(&mut kernel, #idx, &mut wait)? } {
-                managers.push((#mutability, manager));
-            }
+            ::rscl::buffer::KernelPointer::set_arg(::core::ops::Deref::deref(&#name), &mut kernel, #idx)?
         }
     }
 

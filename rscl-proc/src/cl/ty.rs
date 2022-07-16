@@ -1,5 +1,6 @@
-use proc_macro2::Ident;
-use syn::{parse::Parse, LitInt, TypePath, token::{Mut, Star}, bracketed, parse_quote_spanned, spanned::Spanned, Token};
+use proc_macro2::{Ident, TokenStream};
+use quote::quote_spanned;
+use syn::{parse::Parse, LitInt, TypePath, token::{Mut, Star}, bracketed, parse_quote_spanned, spanned::Spanned, Token, Generics, GenericParam, WherePredicate};
 
 /*
     kernel void add (const ulong n, __global const float* rhs, __global const float* in, __global float* out) {
@@ -26,7 +27,7 @@ impl Type {
         }
     }
 
-    pub fn rustify (&self, name: &Ident) -> (Option<syn::Type>, syn::Type) {
+    pub fn rustify (&self, name: &Ident) -> (Option<(GenericParam, WherePredicate)>, syn::Type) {
         match self {
             Type::Array(ty, len) => {
                 let (gen, ty) = ty.rustify(name);
@@ -38,12 +39,13 @@ impl Type {
 
             Type::Pointer(mutability, ty) => {
                 let ty = ty.rustify_ptr();
-                let (generic, v) = match mutability {
-                    true => (parse_quote_spanned! { ty.span() => ::rscl::buffer::WriteablePointer<#ty> }, parse_quote_spanned! { ty.span() => &'a mut #name }),
-                    _ => (parse_quote_spanned! { ty.span() => ::rscl::buffer::ReadablePointer<#ty> }, parse_quote_spanned! { ty.span() => &'a #name })
+                let wher = parse_quote_spanned! { ty.span() => <#name as ::core::ops::Deref>::Target: ::rscl::buffer::KernelPointer<#ty> };
+                let param = match mutability {
+                    true => parse_quote_spanned! { ty.span() => #name: ::core::ops::DerefMut },
+                    false => parse_quote_spanned! { ty.span() => #name: ::core::ops::Deref }
                 };
 
-                (Some(generic), v)
+                (Some((param, wher)), parse_quote_spanned! { name.span() => #name })
             }
         }
     }

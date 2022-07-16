@@ -11,9 +11,9 @@ macro_rules! flat_mod {
 
 use cl::{Rscl, Link};
 use error::Error;
-use proc_macro2::{TokenStream, Ident, Group};
+use proc_macro2::{TokenStream, Ident};
 use quote::{ToTokens, quote, format_ident};
-use syn::{parse_macro_input, ItemStatic, Meta, LitStr, Lit};
+use syn::{parse_macro_input, ItemStatic, Meta};
 
 mod context;
 mod error;

@@ -25,10 +25,10 @@ impl Argument {
         let name = format_ident!("{}", self.name.to_string().to_uppercase());
         let (generify, ty) = self.ty.rustify(&name);
 
-        if let Some(gen_ty) = generify {
+        if let Some((imp, wher)) = generify {
             if let Some(generics) = generics {
-                let generic = parse_quote! { #name: #gen_ty };
-                generics.params.push(GenericParam::Type(generic));
+                generics.params.push(imp);
+                generics.make_where_clause().predicates.push(wher)
             }
         }
 

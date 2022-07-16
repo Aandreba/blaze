@@ -10,7 +10,7 @@ pub(super) mod sealed {
 const ALLOC : Svm = Svm::new();
 
 /// Object that wraps, in some way, a pointer to SVM memory
-pub unsafe trait SvmPointer<C: Context> {
+pub unsafe trait SvmPointer<C: Context = Global> {
     type Type: ?Sized;
 
     /// Returns a reference to the underlying [`Svm`] allocator

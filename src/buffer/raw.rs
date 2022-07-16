@@ -4,8 +4,9 @@ use rscl_proc::docfg;
 use crate::{core::*, context::RawContext, event::{WaitList, RawEvent}, buffer::BufferRange, memobj::{MemObject}, prelude::Global};
 use super::{flags::{MemFlags}, IntoRange};
 
-/// A raw OpenCL memory object
+/// A raw OpenCL buffer
 #[repr(transparent)]
+#[derive(Clone)]
 pub struct RawBuffer (MemObject);
 
 impl RawBuffer {

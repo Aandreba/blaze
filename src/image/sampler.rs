@@ -1,7 +1,7 @@
 use std::{ptr::{NonNull, addr_of_mut}, ffi::c_void, mem::MaybeUninit};
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 use opencl_sys::*;
-use crate::prelude::*;
+use crate::prelude::{*};
 
 #[repr(transparent)]
 pub struct Sampler (NonNull<c_void>);
@@ -12,17 +12,37 @@ impl Sampler {
         Self::new_in(&Global, props)
     }
 
+    #[cfg(not(featue = "cl2"))]
+    pub fn new_in (ctx: &RawContext, props: SamplerProperties) -> Result<Self> {
+        let mut err = 0;
+        let id;
+
+        #[allow(deprecated)]
+        unsafe {
+            id = clCreateSampler(ctx.id(), props.normalized_coords as cl_bool, props.addressing_mode as cl_addressing_mode, props.filter_mode as cl_filter_mode, addr_of_mut!(err));
+            if err != 0 { return Err(Error::from(err)) }
+            Ok(Self::from_id(id).unwrap())
+        }
+    }
+
+    #[cfg(featue = "cl2")]
     pub fn new_in (ctx: &RawContext, props: SamplerProperties) -> Result<Self> {
         let mut err = 0;
         let id;
 
         unsafe {
             cfg_if::cfg_if! {
-                if #[cfg(feature = "cl2")] {
+                if #[cfg(feature = "strict")] {
                     let props = props.to_bits();
                     id = clCreateSamplerWithProperties(ctx.id(), props.as_ptr(), addr_of_mut!(err))
                 } else {
-                    id = clCreateSampler(ctx.id(), props.normalized_coords as cl_bool, props.addressing_node as cl_addressing_mode, props.filter_mode as cl_filter_mode, addr_of_mut!(err))
+                    #[allow(deprecated)]
+                    if ctx.greatest_common_version()? >= Version::CL2 {
+                        let props = props.to_bits();
+                        id = clCreateSamplerWithProperties(ctx.id(), props.as_ptr(), addr_of_mut!(err));
+                    } else {
+                        id = clCreateSampler(ctx.id(), props.normalized_coords as cl_bool, props.addressing_mode as cl_addressing_mode, props.filter_mode as cl_filter_mode, addr_of_mut!(err))
+                    }
                 }
             }
 
