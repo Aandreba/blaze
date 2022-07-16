@@ -101,10 +101,13 @@ impl MemAccess {
     #[docfg(feature = "cl1_2")]
     #[inline]
     pub const fn from_bits_host (flags: cl_mem_flags) -> Self {
-        let read = (flags & CL_MEM_HOST_WRITE_ONLY) != 0;
-        let write = (flags & CL_MEM_HOST_READ_ONLY) != 0;
+        if flags & CL_MEM_HOST_NO_ACCESS != 0 {
+            return Self::NONE;
+        }
 
-        Self::new(!read, !write)
+        let read = (flags & CL_MEM_HOST_WRITE_ONLY) == 0;
+        let write = (flags & CL_MEM_HOST_READ_ONLY) == 0;
+        Self::new(read, write)
     }
 
     #[inline(always)]

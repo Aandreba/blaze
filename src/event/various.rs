@@ -8,14 +8,14 @@ use super::FlagEvent;
 /// Event for [`EventExt::map`]
 #[docfg(feature = "cl1_1")]
 #[derive(Clone)]
-pub struct Map<E, F> {
+pub struct Then<E, F> {
     pub(super) parent: E,
     pub(super) flag: FlagEvent,
     pub(super) f: F
 }
 
 #[cfg(feature = "cl1_1")]
-impl<T, E: Event, F: FnOnce(E::Output) -> T> Event for Map<E, F> {
+impl<T, E: Event, F: FnOnce(E::Output) -> T> Event for Then<E, F> {
     type Output = T;
 
     #[inline(always)]

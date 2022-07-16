@@ -2,18 +2,18 @@ use std::{ptr::addr_of_mut};
 use opencl_sys::{clSetUserEventStatus, CL_COMPLETE, clCreateUserEvent};
 
 use super::{RawEvent, Event};
-use crate::{core::*, context::{RawContext, Global, Context}};
+use crate::{core::*, context::{RawContext, Global}};
 
 /// Event that completes when the user specifies
 #[cfg_attr(docsrs, doc(cfg(feature = "cl1_1")))]
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 #[repr(transparent)]
 pub struct FlagEvent (RawEvent);
 
 impl FlagEvent {
     #[inline(always)]
     pub fn new () -> Result<Self> {
-        Self::new_in(Global.as_raw())
+        Self::new_in(&Global)
     }
 
     #[inline]

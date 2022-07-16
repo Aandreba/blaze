@@ -1,15 +1,18 @@
-use std::{mem::ManuallyDrop, time::SystemTime};
+use std::{mem::ManuallyDrop, time::{SystemTime, Duration}};
 use opencl_sys::{CL_COMMAND_NDRANGE_KERNEL, CL_COMMAND_TASK, CL_COMMAND_NATIVE_KERNEL, CL_COMMAND_READ_BUFFER, CL_COMMAND_WRITE_BUFFER, CL_COMMAND_COPY_BUFFER, CL_COMMAND_READ_IMAGE, CL_COMMAND_WRITE_IMAGE, CL_COMMAND_COPY_IMAGE, CL_COMMAND_COPY_IMAGE_TO_BUFFER, CL_COMMAND_COPY_BUFFER_TO_IMAGE, CL_COMMAND_MAP_BUFFER, CL_COMMAND_MAP_IMAGE, CL_COMMAND_UNMAP_MEM_OBJECT, CL_COMMAND_MARKER, CL_COMMAND_ACQUIRE_GL_OBJECTS, CL_COMMAND_RELEASE_GL_OBJECTS, CL_EVENT_COMMAND_TYPE, CL_EVENT_COMMAND_EXECUTION_STATUS, CL_EVENT_COMMAND_QUEUE, cl_event};
 use rscl_proc::docfg;
 use crate::{core::*};
 
 flat_mod!(status, raw, various, info);
 
-#[docfg(feature = "cl1_1")]
+#[cfg(feature = "cl1_1")]
 flat_mod!(flag);
 
-#[docfg(feature = "futures")]
+#[cfg(feature = "futures")]
 flat_mod!(wait);
+
+#[cfg(all(feature = "cl1_1", feature = "futures"))]
+flat_mod!(future);
 
 /// An complex OpenCL event, with a syntax simillar to Rust's [`Future`](std::future::Future).\
 /// [`Event`] is designed to be able to safely return a value after the underlying [`RawEvent`] has completed
@@ -55,6 +58,12 @@ pub trait Event {
         crate::event::EventWait::new(self)
     }
 
+    /// Blocks the current thread until the event has completed, without returning it's underlying data.
+    #[inline(always)]
+    fn wait_by_ref (&self) -> Result<()> {
+        self.parent_event().wait_by_ref()
+    }
+
     /// Returns the event's type
     #[inline(always)]
     fn ty (&self) -> Result<CommandType> {
@@ -93,6 +102,13 @@ pub trait Event {
         ProfilingInfo::<SystemTime>::new(self.as_raw())
     }
 
+    /// Returns the time elapsed between the evenn's start and end.
+    #[inline(always)]
+    fn duration (&self) -> Result<Duration> {
+        let nanos = self.profiling_nanos()?;
+        Ok(nanos.duration())
+    }
+
     /// Returns `true` if the status of the event is [`EventStatus::Complete`] or an error, `false` otherwise.
     #[inline(always)]
     fn has_completed (&self) -> bool {
@@ -101,14 +117,14 @@ pub trait Event {
 }
 
 pub trait EventExt: Sized + Event {
-    /// Maps the result of this event.
+    /// Executes the specified function after the parent event has completed. 
     #[docfg(feature = "cl1_1")]
     #[inline]
-    fn map<T, F: FnOnce(Self::Output) -> T> (self, f: F) -> Result<Map<Self, F>> {
+    fn then<T, F: FnOnce(Self::Output) -> T> (self, f: F) -> Result<Then<Self, F>> {
         let ctx = self.raw_context()?;
         let flag = FlagEvent::new_in(&ctx)?;
 
-        Ok(Map {
+        Ok(Then {
             parent: self,
             flag,
             f

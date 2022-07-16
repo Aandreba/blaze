@@ -26,16 +26,6 @@ impl RawEvent {
         self.0.as_ptr()
     }
 
-    /// Blocks the current thread until the event has completed, without consuming it.
-    #[inline(always)]
-    pub fn wait_by_ref (&self) -> Result<()> {
-        unsafe {
-            tri!(clWaitForEvents(1, self as *const _ as *const _))
-        }
-
-        Ok(())
-    }
-
     /// Blocks the current thread until all the events have completed, consuming them.
     #[inline(always)]
     pub fn wait_all (v: &[RawEvent]) -> Result<()> {
@@ -158,6 +148,15 @@ impl Event for RawEvent {
     fn wait (self) -> Result<()> {
         unsafe {
             tri!(clWaitForEvents(1, addr_of!(self).cast()))
+        }
+
+        Ok(())
+    }
+
+    #[inline(always)]
+    fn wait_by_ref (&self) -> Result<()> {
+        unsafe {
+            tri!(clWaitForEvents(1, self as *const _ as *const _))
         }
 
         Ok(())
