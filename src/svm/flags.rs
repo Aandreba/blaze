@@ -2,9 +2,10 @@ use opencl_sys::{cl_svm_mem_flags, CL_MEM_SVM_FINE_GRAIN_BUFFER, CL_MEM_SVM_ATOM
 use crate::buffer::flags::MemAccess;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[non_exhaustive]
 pub struct SvmFlags {
-    access: MemAccess,
-    utils: Option<SvmUtilsFlags>
+    pub access: MemAccess,
+    pub utils: Option<SvmUtilsFlags>
 }
 
 impl SvmFlags {

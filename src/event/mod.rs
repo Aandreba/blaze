@@ -46,14 +46,14 @@ pub trait Event {
     }
 
     #[inline(always)]
-    fn wait_with_profile_nanos (self) -> Result<(Self::Output, ProfilingInfo<u64>)> where Self: Sized {
+    fn wait_with_nanos (self) -> Result<(Self::Output, ProfilingInfo<u64>)> where Self: Sized {
         let err = self.wait_by_ref().err();
         let profile = self.profiling_nanos()?;
         self.consume(err).map(|x| (x, profile))
     }
 
     #[inline(always)]
-    fn wait_with_profile_time (self) -> Result<(Self::Output, ProfilingInfo<SystemTime>)> where Self: Sized {
+    fn wait_with_time (self) -> Result<(Self::Output, ProfilingInfo<SystemTime>)> where Self: Sized {
         let err = self.wait_by_ref().err();
         let profile = self.profiling_time()?;
         self.consume(err).map(|x| (x, profile))

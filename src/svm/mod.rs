@@ -61,8 +61,8 @@ unsafe impl<C: Context> Allocator for Svm<C> {
     }
 
     #[inline(always)]
-    unsafe fn deallocate(&self, ptr: std::ptr::NonNull<u8>, layout: Layout) {
-        self.dealloc(ptr.as_ptr(), layout)
+    unsafe fn deallocate(&self, ptr: std::ptr::NonNull<u8>, _layout: Layout) {
+        self.free(ptr.as_ptr().cast())
     }
 }
 
