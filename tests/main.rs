@@ -20,9 +20,8 @@ fn program () -> Result<()> {
 
 #[test]
 fn flag () -> Result<()> {
-    let buffer = Buffer::<f32>::new_zeroed(5, MemAccess::default(), false)?;
-    let buffer = unsafe { buffer.assume_init() };
-    println!("{buffer:?}");
-
+    let mut buffer = Buffer::<f32>::new_zeroed(5, MemAccess::default(), false)?;
+    let (map, duration) = buffer.map_all_mut(WaitList::EMPTY)?.wait_with_duration()?;
+    println!("{map:?}: {duration:?}");
     Ok(())
 }

@@ -41,8 +41,29 @@ pub trait Event {
     /// Blocks the current thread util the event has completed, returning `Ok(data)` if it completed correctly, and `Err(e)` otherwise.
     #[inline(always)]
     fn wait (self) -> Result<Self::Output> where Self: Sized {
-        let err = self.parent_event().wait_by_ref().err();
+        let err = self.wait_by_ref().err();
         self.consume(err)
+    }
+
+    #[inline(always)]
+    fn wait_with_profile_nanos (self) -> Result<(Self::Output, ProfilingInfo<u64>)> where Self: Sized {
+        let err = self.wait_by_ref().err();
+        let profile = self.profiling_nanos()?;
+        self.consume(err).map(|x| (x, profile))
+    }
+
+    #[inline(always)]
+    fn wait_with_profile_time (self) -> Result<(Self::Output, ProfilingInfo<SystemTime>)> where Self: Sized {
+        let err = self.wait_by_ref().err();
+        let profile = self.profiling_time()?;
+        self.consume(err).map(|x| (x, profile))
+    }
+
+    #[inline(always)]
+    fn wait_with_duration (self) -> Result<(Self::Output, Duration)> where Self: Sized {
+        let err = self.wait_by_ref().err();
+        let profile = self.duration()?;
+        self.consume(err).map(|x| (x, profile))
     }
 
     /// Blocks the current thread util the event has completed, returning `data` if it completed correctly, and panicking otherwise.
@@ -102,7 +123,7 @@ pub trait Event {
         ProfilingInfo::<SystemTime>::new(self.as_raw())
     }
 
-    /// Returns the time elapsed between the evenn's start and end.
+    /// Returns the time elapsed between the event's start and end.
     #[inline(always)]
     fn duration (&self) -> Result<Duration> {
         let nanos = self.profiling_nanos()?;

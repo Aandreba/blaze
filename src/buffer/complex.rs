@@ -132,6 +132,18 @@ impl<T: Copy + Unpin, C: Context> Buffer<T, C> {
 
     #[docfg(feature = "map")]
     #[inline(always)]
+    pub fn map_all<'a> (&'a self, wait: impl Into<WaitList>) -> Result<super::events::MapBuffer<T, &'a Self, C>> where T: 'static, C: 'static + Clone {
+        self.map(.., wait)
+    }
+
+    #[docfg(feature = "map")]
+    #[inline(always)]
+    pub fn map_all_mut<'a> (&'a mut self, wait: impl Into<WaitList>) -> Result<super::events::MapMutBuffer<T, &'a mut Self, C>> where T: 'static, C: 'static + Clone {
+        self.map_mut(.., wait)
+    }
+
+    #[docfg(feature = "map")]
+    #[inline(always)]
     pub fn map<'a> (&'a self, range: impl IntoRange, wait: impl Into<WaitList>) -> Result<super::events::MapBuffer<T, &'a Self, C>> where T: 'static, C: 'static + Clone {
         Self::map_by_deref(self, range, wait)
     }

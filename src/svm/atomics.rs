@@ -78,7 +78,7 @@ macro_rules! impl_atomic {
             }
 
             impl<C: Context> crate::svm::sealed::Sealed for $svm<C> {}
-            impl<C: Context> super::SvmPointer<C> for $svm<C> {
+            unsafe impl<C: Context> super::SvmPointer<C> for $svm<C> {
                 type Type = $ty;
 
                 #[inline(always)]
