@@ -87,13 +87,13 @@ impl<T: Copy + Unpin, C: Context> Buffer<T, C> {
     }
 
     #[inline(always)]
-    pub fn copy_from<'src, 'dst, W: Into<WaitList>> (&'dst mut self, offset_dst: usize, src: &'src Self, offset_src: usize, len: usize, wait: W) -> Result<CopyBuffer<'src, 'dst>> {
-        unsafe { CopyBuffer::new::<T, W>(&src.inner, offset_src, &mut self.inner, offset_dst, len, self.ctx.next_queue(), wait) }
+    pub fn copy_from<'dst, Src: Deref<Target = Self>> (&'dst mut self, offset_dst: usize, src: Src, offset_src: usize, len: usize, wait: impl Into<WaitList>) -> Result<CopyBuffer<Src, &'dst mut Self>> {
+        Self::copy_from_by_deref(self, offset_dst, src, offset_src, len, wait)
     }
 
     #[inline(always)]
-    pub fn copy_to<'src, 'dst, W: Into<WaitList>> (&'src self, offset_src: usize, dst: &'dst mut Self, offset_dst: usize, len: usize, wait: W) -> Result<CopyBuffer<'src, 'dst>> {
-        dst.copy_from(offset_dst, self, offset_src, len, wait)
+    pub fn copy_to<'src, Dst: DerefMut<Target = Self>> (&'src self, offset_src: usize, dst: Dst, offset_dst: usize, len: usize, wait: impl Into<WaitList>) -> Result<CopyBuffer<&'src Self, Dst>> {
+        Self::copy_to_by_deref(self, offset_src, dst, offset_dst, len, wait)
     }
 
     #[docfg(feature = "cl1_2")]
@@ -132,6 +132,17 @@ impl<T: Copy + Unpin, C: Context> Buffer<T, C> {
     pub fn write_by_deref<Dst: DerefMut<Target = Self>, Src: Deref<Target = [T]>> (this: Dst, offset: usize, src: Src, wait: impl Into<WaitList>) -> Result<WriteBuffer<Src, Dst>> {
         let queue = this.ctx.next_queue().clone();
         unsafe { WriteBuffer::new(src, offset, this, &queue, wait) }
+    }
+
+    #[inline(always)]
+    pub fn copy_from_by_deref<Dst: DerefMut<Target = Self>, Src: Deref<Target = Self>> (this: Dst, offset_dst: usize, src: Src, offset_src: usize, len: usize, wait: impl Into<WaitList>) -> Result<CopyBuffer<Src, Dst>> {
+        let queue = this.ctx.next_queue().clone();
+        unsafe { CopyBuffer::new(src, offset_src, this, offset_dst, len, &queue, wait) }
+    }
+
+    #[inline(always)]
+    pub fn copy_to_by_deref<Src: Deref<Target = Self>, Dst: DerefMut<Target = Self>> (this: Src, offset_src: usize, dst: Dst, offset_dst: usize, len: usize, wait: impl Into<WaitList>) -> Result<CopyBuffer<Src, Dst>> {
+        Self::copy_from_by_deref(dst, offset_dst, this, offset_src, len, wait)
     }
 
     #[docfg(feature = "map")]

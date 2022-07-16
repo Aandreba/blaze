@@ -1,27 +1,26 @@
-use std::marker::PhantomData;
-use crate::{prelude::*, buffer::RawBuffer, event::WaitList};
+use std::{ops::{Deref, DerefMut}};
+use crate::{prelude::*, buffer::{Buffer, RawBuffer}, event::WaitList};
 
-#[repr(transparent)]
-pub struct CopyBuffer<'src, 'dst> {
+pub struct CopyBuffer<Src, Dst> {
     event: RawEvent,
-    src: PhantomData<&'src RawBuffer>,
-    dst: PhantomData<&'dst mut RawBuffer>
+    src: Src,
+    dst: Dst
 }
 
-impl<'src, 'dst> CopyBuffer<'src, 'dst> {
+impl<T: Copy + Unpin, Src: Deref<Target = Buffer<T, C>>, Dst: DerefMut<Target = Buffer<T, C>>, C: Context> CopyBuffer<Src, Dst> {
     #[inline]
-    pub unsafe fn new<T: Copy, W: Into<WaitList>> (src: &RawBuffer, offset_src: usize, dst: &mut RawBuffer, offset_dst: usize, len: usize, queue: &CommandQueue, wait: W) -> Result<Self> {
+    pub unsafe fn new (src: Src, offset_src: usize, mut dst: Dst, offset_dst: usize, len: usize, queue: &CommandQueue, wait: impl Into<WaitList>) -> Result<Self> {
         let dst_offset = offset_dst.checked_mul(core::mem::size_of::<T>()).unwrap();
         let src_offset = offset_src.checked_mul(core::mem::size_of::<T>()).unwrap();
         let size = len.checked_mul(core::mem::size_of::<T>()).unwrap();
 
-        let event = dst.copy_from(dst_offset, src, src_offset, size, &queue, wait)?;
-        Ok(Self { event, src: PhantomData, dst: PhantomData })
+        let event = (&mut dst as &mut RawBuffer).copy_from(dst_offset, &src, src_offset, size, &queue, wait)?;
+        Ok(Self { event, src, dst })
     }   
 }
 
-impl<'src, 'dst> Event for CopyBuffer<'src, 'dst> {
-    type Output = ();
+impl<T: Copy + Unpin, Src: Deref<Target = Buffer<T, C>>, Dst: DerefMut<Target = Buffer<T, C>>, C: Context> Event for CopyBuffer<Src, Dst> {
+    type Output = (Src, Dst);
 
     #[inline(always)]
     fn as_raw (&self) -> &RawEvent {
@@ -31,6 +30,6 @@ impl<'src, 'dst> Event for CopyBuffer<'src, 'dst> {
     #[inline(always)]
     fn consume (self, err: Option<Error>) -> Result<Self::Output> {
         if let Some(err) = err { return Err(err) };
-        Ok(())
+        Ok((self.src, self.dst))
     }
 }
