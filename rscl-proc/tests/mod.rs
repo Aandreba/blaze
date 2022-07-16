@@ -3,7 +3,7 @@
 use core::f32;
 use std::{f32::consts::{PI, E, TAU}, mem::MaybeUninit};
 
-use rscl::{context::SimpleContext, prelude::{Result, Event, Global, Device}, event::WaitList, buffer::{Buffer, flags::MemAccess}, svm::{SvmVecExt, SvmVec, Svm, SvmBox}};
+use rscl::{context::SimpleContext, prelude::{Result, Event}, event::WaitList, buffer::{Buffer, flags::MemAccess}, svm::{SvmVecExt, SvmVec, Svm, SvmBox}};
 use rscl_proc::{global_context, rscl};
 
 #[rscl(Arith)]

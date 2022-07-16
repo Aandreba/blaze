@@ -1,4 +1,4 @@
-use std::{collections::VecDeque, ops::{Deref, DerefMut}, mem::ManuallyDrop, ffi::c_void};
+use std::{collections::VecDeque, ops::{Deref, DerefMut}, mem::ManuallyDrop};
 use crate::{core::*, context::{Global, Context}, event::{WaitList, RawEvent}};
 use super::{Svm};
 use sealed::Sealed;
@@ -21,22 +21,6 @@ pub unsafe trait SvmPointer<C: Context = Global> {
     fn as_mut_ptr (&mut self) -> *mut Self::Type; 
     /// Returns the number of elements owned by the pointer
     fn len (&self) -> usize;
-
-    /// Drops the pointer after the events in the [`WaitList`] have completed
-    #[inline]
-    unsafe fn drop_after (self, wait: impl Into<WaitList>) -> Result<RawEvent> where Self: Sized {
-        let mut this = ManuallyDrop::new(self);
-        let ptr = this.as_mut_ptr();
-        let alloc = this.allocator();
-        
-        match alloc.enqueue_free(&[ptr.cast()], wait) {
-            Ok(x) => Ok(x),
-            Err(e) => {
-                ManuallyDrop::drop(&mut this);
-                Err(e)
-            }
-        }
-    } 
 }
 
 /// A [`Box`] with an [`Svm`] allocator

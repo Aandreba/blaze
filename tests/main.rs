@@ -24,13 +24,6 @@ impl Arith {
     }
 }
 
-pub struct Add<Rhs, Inn, Out> {
-    inner: RawEvent,
-    rhs: Rhs,
-    inn: Inn,
-    out: Out
-}
-
 #[test]
 fn program () -> Result<()> {
     let version = Global.next_queue().size()?;
