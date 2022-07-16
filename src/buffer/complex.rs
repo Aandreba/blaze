@@ -91,6 +91,12 @@ impl<T: Copy, C: Context> Buffer<MaybeUninit<T>, C> {
         let src = unsafe { core::slice::from_raw_parts(src.as_ptr().cast(), src.len()) };
         Self::write_by_deref(self, offset, src, wait)
     }
+
+    #[docfg(feature = "cl1_2")]
+    #[inline(always)]
+    pub fn fill_init<'dst> (&'dst mut self, v: T, range: impl IntoRange, wait: impl Into<WaitList>) -> Result<super::events::FillBuffer<&'dst mut Self>> where T: Unpin {
+        self.fill(MaybeUninit::new(v), range, wait)
+    }
 }
 
 impl<T: Copy + Unpin, C: Context> Buffer<T, C> {

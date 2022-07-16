@@ -1,5 +1,4 @@
-use std::sync::Mutex;
-use rscl::{core::*, context::{SimpleContext}, buffer::{flags::MemAccess, BufferRect2D, rect::Rect2D, Buffer}, event::{WaitList}, prelude::{Event, Global, Context}};
+use rscl::{core::*, context::{SimpleContext}, buffer::{flags::MemAccess, Buffer}, event::{WaitList}, prelude::{Event, Global, Context}};
 use rscl_proc::global_context;
 
 #[global_context]
@@ -20,8 +19,10 @@ fn program () -> Result<()> {
 
 #[test]
 fn flag () -> Result<()> {
-    let mut buffer = Buffer::<f32>::new_zeroed(5, MemAccess::default(), false)?;
-    let (map, duration) = buffer.map_all_mut(WaitList::EMPTY)?.wait_with_duration()?;
-    println!("{map:?}: {duration:?}");
+    let mut buffer = Buffer::<f32>::new_uninit(5, MemAccess::default(), false)?;
+    let (_, fill) = buffer.fill_init(0., .., WaitList::EMPTY)?.wait_with_duration()?;
+
+    let (_, duration) = buffer.map_all_mut(WaitList::EMPTY)?.wait_with_duration()?;
+    println!("{fill:?} v. {duration:?}");
     Ok(())
 }
