@@ -112,15 +112,27 @@ impl<T: Copy + Unpin, C: Context> BufferRect2D<T, C> {
     }
 
     #[inline(always)]
-    pub fn read_into<'src, 'dst> (&'src self, offset_src: [usize; 2], dst: &'dst mut Rect2D<T>, offset_dst: [usize; 2], region: [usize; 2], wait: impl Into<WaitList>) -> Result<ReadIntoBufferRect2D<'src, 'dst>> {
-        let (buffer_row_pitch, buffer_slice_pitch) = self.row_and_slice_pitch();
-        unsafe { ReadIntoBufferRect2D::new(self, offset_src, dst, offset_dst, region, Some(buffer_row_pitch), Some(buffer_slice_pitch), self.inner.ctx.next_queue(), wait) }
+    pub fn read_into<'src, Dst: DerefMut<Target = Rect2D<T>>> (&'src self, offset_src: [usize; 2], dst: Dst, offset_dst: [usize; 2], region: [usize; 2], wait: impl Into<WaitList>) -> Result<ReadIntoBufferRect2D<&'src Self, Dst>> {
+        Self::read_into_by_deref(self, offset_src, dst, offset_dst, region, wait)
     }
 
     #[inline(always)]
-    pub fn write<'dst, D: Deref<Target = Rect2D<T>>> (&'dst mut self, offset_dst: [usize; 2], src: D, offset_src: [usize; 2], region: [usize; 2], wait: impl Into<WaitList>) -> Result<WriteBufferRect2D<'dst, D>> {
-        let (buffer_row_pitch, buffer_slice_pitch) = self.row_and_slice_pitch();
-        unsafe { WriteBufferRect2D::new(src, offset_src, &mut self.inner.inner, offset_dst, region, Some(buffer_row_pitch), Some(buffer_slice_pitch), self.inner.ctx.next_queue(), wait) }
+    pub fn write<'dst, Src: Deref<Target = Rect2D<T>>> (&'dst mut self, offset_dst: [usize; 2], src: Src, offset_src: [usize; 2], region: [usize; 2], wait: impl Into<WaitList>) -> Result<WriteBufferRect2D<Src, &'dst mut Self>> {
+        Self::write_by_deref(self, offset_dst, src, offset_src, region, wait)
+    }
+
+    #[inline(always)]
+    pub fn read_into_by_deref<Src: Deref<Target = Self>, Dst: DerefMut<Target = Rect2D<T>>> (this: Src, offset_src: [usize; 2], dst: Dst, offset_dst: [usize; 2], region: [usize; 2], wait: impl Into<WaitList>) -> Result<ReadIntoBufferRect2D<Src, Dst>> {
+        let (buffer_row_pitch, buffer_slice_pitch) = this.row_and_slice_pitch();
+        let queue = this.inner.ctx.next_queue().clone();
+        unsafe { ReadIntoBufferRect2D::<Src, Dst>::new(this, offset_src, dst, offset_dst, region, Some(buffer_row_pitch), Some(buffer_slice_pitch), &queue, wait) }
+    }
+
+    #[inline(always)]
+    pub fn write_by_deref<Dst: DerefMut<Target = Self>, Src: Deref<Target = Rect2D<T>>> (this: Dst, offset_dst: [usize; 2], src: Src, offset_src: [usize; 2], region: [usize; 2], wait: impl Into<WaitList>) -> Result<WriteBufferRect2D<Src, Dst>> {
+        let (buffer_row_pitch, buffer_slice_pitch) = this.row_and_slice_pitch();
+        let queue = this.inner.ctx.next_queue().clone();
+        unsafe { WriteBufferRect2D::new(src, offset_src, this, offset_dst, region, Some(buffer_row_pitch), Some(buffer_slice_pitch), &queue, wait) }
     }
 }
 

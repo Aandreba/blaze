@@ -1,5 +1,5 @@
 use std::{marker::PhantomData, mem::MaybeUninit, ops::{DerefMut, Deref}};
-use crate::{buffer::RawBuffer, prelude::*, event::WaitList, memobj::{IntoSlice2D}};
+use crate::{buffer::{RawBuffer}, prelude::*, event::WaitList, memobj::{IntoSlice2D}};
 use super::{Rect2D, BufferRect2D};
 
 pub struct ReadBufferRect2D<'src, T> {
@@ -41,16 +41,16 @@ impl<'src, T: Copy + Unpin> Event for ReadBufferRect2D<'src, T> {
     }
 }
 
-pub struct ReadIntoBufferRect2D<T, Src, Dst> {
+pub struct ReadIntoBufferRect2D<Src, Dst> {
     event: RawEvent,
     dst: Dst,
     src: Src
 }
 
-impl<T, Src: Deref<Target = Buffer>, Dst: DerefMut<Target = Rect2D<>>> ReadIntoBufferRect2D<'src, 'dst> {
+impl<T: Copy + Unpin, Src: Deref<Target = BufferRect2D<T, C>>, Dst: DerefMut<Target = Rect2D<T>>, C: Context> ReadIntoBufferRect2D<Src, Dst> {
     #[inline]
-    pub unsafe fn new<T: Copy + Unpin> (
-        src: &'src RawBuffer, offset_src: [usize; 2], dst: &'dst mut Rect2D<T>, offset_dst: [usize; 2], region: [usize; 2],
+    pub unsafe fn new  (
+        src: Src, offset_src: [usize; 2], mut dst: Dst, offset_dst: [usize; 2], region: [usize; 2],
         buffer_row_pitch: Option<usize>, buffer_slice_pitch: Option<usize>, queue: &CommandQueue, wait: impl Into<WaitList>
     ) -> Result<Self> {
 
@@ -60,12 +60,12 @@ impl<T, Src: Deref<Target = Buffer>, Dst: DerefMut<Target = Rect2D<>>> ReadIntoB
         let region = [region[0] * core::mem::size_of::<T>(), region[1], 1];
 
         let event = src.read_rect_to_ptr(buffer_origin, host_origin, region, buffer_row_pitch, buffer_slice_pitch, Some(host_row_pitch), Some(0), dst.as_mut_ptr(), queue, wait)?;
-        return Ok(Self { event, dst: PhantomData, src: PhantomData })
+        return Ok(Self { event, dst, src })
     }
 }
 
-impl<'src, 'dst> Event for ReadIntoBufferRect2D<'src, 'dst> {
-    type Output = ();
+impl<T: Copy + Unpin, Src: Deref<Target = BufferRect2D<T, C>>, Dst: DerefMut<Target = Rect2D<T>>, C: Context> Event for ReadIntoBufferRect2D<Src, Dst> {
+    type Output = (Src, Dst);
 
     #[inline(always)]
     fn as_raw (&self) -> &RawEvent {
@@ -75,6 +75,6 @@ impl<'src, 'dst> Event for ReadIntoBufferRect2D<'src, 'dst> {
     #[inline(always)]
     fn consume (self, err: Option<Error>) -> Result<Self::Output> {
         if let Some(err) = err { return Err(err); }
-        Ok(())
+        Ok((self.src, self.dst))
     }
 }

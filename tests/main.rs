@@ -1,4 +1,6 @@
-use rscl::{core::*, context::{SimpleContext}, buffer::{Buffer, flags::MemAccess, BufferRect2D, rect::Rect2D}, event::{WaitList, FlagEvent}, prelude::{Event, Global, Context}, image::{Image2D, Sampler, SamplerProperties, AddressingMode}};
+use std::sync::Mutex;
+
+use rscl::{core::*, context::{SimpleContext}, buffer::{flags::MemAccess, BufferRect2D, rect::Rect2D}, event::{WaitList}, prelude::{Event, Global, Context}};
 use rscl_proc::global_context;
 
 #[global_context]
@@ -26,9 +28,12 @@ fn flag () {
             [7, 8, 9]
         ]
     */
-    let mut rect = Rect2D::<f32>::new(&[1.0, 2., 3., 4., 5., 6., 7., 8., 9.], 3).unwrap(); // 3 x 3
+    let mut rect = Mutex::new(Rect2D::<f32>::new(&[1., 2., 3., 4., 5., 6., 7., 8., 9.], 3).unwrap()); // 3 x 3
+    let rect = rect.lock().unwrap();
+
     let buf = BufferRect2D::new(&rect, MemAccess::default(), false).unwrap();
-    buf.read_into([1, 0], &mut rect, [0, 0], [2, 2], WaitList::EMPTY).unwrap().wait_unwrap();
+    let (buf, rect) = buf.read_into([1, 0], rect, [0, 0], [2, 2], WaitList::EMPTY).unwrap().wait_unwrap();
+    
     // TODO FIX
 
     /*

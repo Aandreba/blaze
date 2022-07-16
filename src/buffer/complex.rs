@@ -1,4 +1,4 @@
-use std::{marker::PhantomData, ptr::{NonNull}, ops::{Deref, DerefMut}, fmt::Debug, mem::ManuallyDrop};
+use std::{marker::PhantomData, ptr::{NonNull}, ops::{Deref, DerefMut}, fmt::Debug};
 use rscl_proc::docfg;
 
 use crate::{context::{Context, Global}, event::{WaitList}, prelude::Event};
@@ -67,18 +67,18 @@ impl<T: Copy, C: Context> Buffer<T, C> {
 
 impl<T: Copy + Unpin, C: Context> Buffer<T, C> {
     #[inline(always)]
-    pub fn read_all (&self, wait: impl Into<WaitList>) -> Result<ReadBuffer<T>> {
+    pub fn read_all (&self, wait: impl Into<WaitList>) -> Result<ReadBuffer<T, &'_ Self>> {
         self.read(.., wait)
     }
 
     #[inline(always)]
-    pub fn read<'src> (&'src self, range: impl IntoRange, wait: impl Into<WaitList>) -> Result<ReadBuffer<'src, T>> {
-        unsafe { ReadBuffer::new(&self.inner, range, self.ctx.next_queue(), wait) }
+    pub fn read<'src> (&'src self, range: impl IntoRange, wait: impl Into<WaitList>) -> Result<ReadBuffer<T, &'src Self>> {
+        Self::read_by_deref(self, range, wait)
     }
 
     #[inline(always)]
-    pub fn read_into<'src, 'dst> (&'src self, offset: usize, dst: &'dst mut [T], wait: impl Into<WaitList>) -> Result<ReadBufferInto<'src, 'dst>> {
-        unsafe { ReadBufferInto::new(&self.inner, offset, dst, self.ctx.next_queue(), wait) }
+    pub fn read_into<'src, Dst: DerefMut<Target = [T]>> (&'src self, offset: usize, dst: Dst, wait: impl Into<WaitList>) -> Result<ReadBufferInto<&'src Self, Dst>> {
+        Self::read_into_by_deref(self, offset, dst, wait)
     }
 
     #[inline(always)]
@@ -114,10 +114,16 @@ impl<T: Copy + Unpin, C: Context> Buffer<T, C> {
         Self::map_by_deref_mut(self, range, wait)
     }
 
-    #[docfg(feature = "map")]
     #[inline(always)]
-    pub fn map_owned<'a> (self: std::sync::Arc<Self>, range: impl IntoRange, wait: impl Into<WaitList>) -> Result<super::events::MapBuffer<T, std::sync::Arc<Self>, C>> where T: 'static, C: 'static + Clone {
-        Self::map_by_deref(self, range, wait)
+    pub fn read_by_deref<Src: Deref<Target = Self>> (this: Src, range: impl IntoRange, wait: impl Into<WaitList>) -> Result<ReadBuffer<T, Src>> {
+        let queue = this.ctx.next_queue().clone();
+        unsafe { ReadBuffer::new(this, range, &queue, wait) }
+    }
+
+    #[inline(always)]
+    pub fn read_into_by_deref<Src: Deref<Target = Self>, Dst: DerefMut<Target = [T]>> (this: Src, offset: usize, dst: Dst, wait: impl Into<WaitList>) -> Result<ReadBufferInto<Src, Dst>> {
+        let queue = this.ctx.next_queue().clone();
+        unsafe { ReadBufferInto::new(this, offset, dst, &queue, wait) }
     }
 
     #[docfg(feature = "map")]

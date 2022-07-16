@@ -1,14 +1,13 @@
-use std::{marker::PhantomData};
+use std::{marker::PhantomData, ops::Deref};
 use crate::{core::*, event::{RawEvent, Event, WaitList}, buffer::{RawBuffer, IntoRange, BufferRange}};
 
-#[repr(transparent)]
-pub struct WriteBuffer<'src, 'dst> {
+pub struct WriteBuffer<Src, Dst> {
     event: RawEvent,
-    src: PhantomData<&'src [()]>,
-    dst: PhantomData<&'dst mut RawBuffer>
+    src: Src,
+    dst: Dst
 }
 
-impl<'src, 'dst> WriteBuffer<'src, 'dst> {
+impl<T: Copy + Unpin, Src: Deref<Target = [T]>, Dst;> WriteBuffer<Src, Dst> {
     #[inline(always)]
     pub unsafe fn new<T: Copy + Unpin> (src: &'src [T], offset: usize, dst: &'dst mut RawBuffer, queue: &CommandQueue, wait: impl Into<WaitList>) -> Result<Self> {
         let range = BufferRange::from_parts::<T>(offset, dst.size()?).unwrap();
