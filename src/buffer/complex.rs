@@ -82,8 +82,8 @@ impl<T: Copy + Unpin, C: Context> Buffer<T, C> {
     }
 
     #[inline(always)]
-    pub fn write<'src, 'dst> (&'dst mut self, offset: usize, src: &'src [T], wait: impl Into<WaitList>) -> Result<WriteBuffer<'src, 'dst>> {
-        unsafe { WriteBuffer::new(src, offset, &mut self.inner, self.ctx.next_queue(), wait) }
+    pub fn write<'dst, Src: Deref<Target = [T]>> (&'dst mut self, offset: usize, src: Src, wait: impl Into<WaitList>) -> Result<WriteBuffer<Src, &'dst mut Self>> {
+        Self::write_by_deref(self, offset, src, wait)
     }
 
     #[inline(always)]
@@ -114,6 +114,8 @@ impl<T: Copy + Unpin, C: Context> Buffer<T, C> {
         Self::map_by_deref_mut(self, range, wait)
     }
 
+    /* BY DEREF */
+
     #[inline(always)]
     pub fn read_by_deref<Src: Deref<Target = Self>> (this: Src, range: impl IntoRange, wait: impl Into<WaitList>) -> Result<ReadBuffer<T, Src>> {
         let queue = this.ctx.next_queue().clone();
@@ -124,6 +126,12 @@ impl<T: Copy + Unpin, C: Context> Buffer<T, C> {
     pub fn read_into_by_deref<Src: Deref<Target = Self>, Dst: DerefMut<Target = [T]>> (this: Src, offset: usize, dst: Dst, wait: impl Into<WaitList>) -> Result<ReadBufferInto<Src, Dst>> {
         let queue = this.ctx.next_queue().clone();
         unsafe { ReadBufferInto::new(this, offset, dst, &queue, wait) }
+    }
+
+    #[inline(always)]
+    pub fn write_by_deref<Dst: DerefMut<Target = Self>, Src: Deref<Target = [T]>> (this: Dst, offset: usize, src: Src, wait: impl Into<WaitList>) -> Result<WriteBuffer<Src, Dst>> {
+        let queue = this.ctx.next_queue().clone();
+        unsafe { WriteBuffer::new(src, offset, this, &queue, wait) }
     }
 
     #[docfg(feature = "map")]
