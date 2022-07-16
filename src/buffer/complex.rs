@@ -98,8 +98,8 @@ impl<T: Copy + Unpin, C: Context> Buffer<T, C> {
 
     #[docfg(feature = "cl1_2")]
     #[inline(always)]
-    pub fn fill<'dst> (&'dst mut self, v: T, range: impl IntoRange, wait: impl Into<WaitList>) -> Result<super::events::FillBuffer<'dst>> {
-        unsafe { super::events::FillBuffer::new(v, &mut self.inner, range, self.ctx.next_queue(), wait) }
+    pub fn fill<'dst> (&'dst mut self, v: T, range: impl IntoRange, wait: impl Into<WaitList>) -> Result<super::events::FillBuffer<&'dst mut Self>> {
+        Self::fill_by_deref(self, v, range, wait)
     }
 
     #[docfg(feature = "map")]
@@ -143,6 +143,13 @@ impl<T: Copy + Unpin, C: Context> Buffer<T, C> {
     #[inline(always)]
     pub fn copy_to_by_deref<Src: Deref<Target = Self>, Dst: DerefMut<Target = Self>> (this: Src, offset_src: usize, dst: Dst, offset_dst: usize, len: usize, wait: impl Into<WaitList>) -> Result<CopyBuffer<Src, Dst>> {
         Self::copy_from_by_deref(dst, offset_dst, this, offset_src, len, wait)
+    }
+
+    #[docfg(feature = "cl1_2")]
+    #[inline(always)]
+    pub fn fill_by_deref<Dst: DerefMut<Target = Self>> (this: Dst, v: T, range: impl IntoRange, wait: impl Into<WaitList>) -> Result<super::events::FillBuffer<Dst>> {
+        let queue = this.ctx.next_queue().clone();
+        unsafe { super::events::FillBuffer::new(v, this, range, &queue, wait) }
     }
 
     #[docfg(feature = "map")]

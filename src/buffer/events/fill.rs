@@ -1,23 +1,22 @@
-use std::marker::PhantomData;
-use crate::{buffer::{RawBuffer, IntoRange}, prelude::*, event::WaitList};
+use std::{ops::DerefMut};
+use crate::{buffer::{RawBuffer, IntoRange, Buffer}, prelude::*, event::WaitList};
 
 #[cfg_attr(docsrs, doc(cfg(feature = "cl1_2")))]
-#[repr(transparent)]
-pub struct FillBuffer<'dst> {
+pub struct FillBuffer<Dst> {
     event: RawEvent,
-    dst: PhantomData<&'dst mut RawBuffer>
+    dst: Dst
 }
 
-impl<'dst> FillBuffer<'dst> {
+impl<T: Copy + Unpin, Dst: DerefMut<Target = Buffer<T, C>>, C: Context> FillBuffer<Dst> {
     #[inline(always)]
-    pub unsafe fn new<T: Copy> (src: T, dst: &'dst mut RawBuffer, range: impl IntoRange, queue: &CommandQueue, wait: impl Into<WaitList>) -> Result<Self> {
-        let event = dst.fill(src, range, queue, wait)?;
-        Ok(Self { event, dst: PhantomData })
+    pub unsafe fn new (src: T, mut dst: Dst, range: impl IntoRange, queue: &CommandQueue, wait: impl Into<WaitList>) -> Result<Self> {
+        let event = (&mut dst as &mut RawBuffer).fill(src, range, queue, wait)?;
+        Ok(Self { event, dst })
     }
 }
 
-impl<'dst> Event for FillBuffer<'dst> {
-    type Output = ();
+impl<T: Copy + Unpin, Dst: DerefMut<Target = Buffer<T, C>>, C: Context> Event for FillBuffer<Dst> {
+    type Output = Dst;
 
     #[inline(always)]
     fn as_raw (&self) -> &RawEvent {
@@ -27,6 +26,6 @@ impl<'dst> Event for FillBuffer<'dst> {
     #[inline(always)]
     fn consume (self, err: Option<Error>) -> Result<Self::Output> {
         if let Some(err) = err { return Err(err) }
-        Ok(())
+        Ok(self.dst)
     }
 }
