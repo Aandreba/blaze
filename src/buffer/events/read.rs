@@ -18,7 +18,7 @@ impl<T: Copy + Unpin, Src: Deref<Target = Buffer<T, C>>, C: Context> ReadBuffer<
 }
 
 impl<T: Copy + Unpin, Src: Deref<Target = Buffer<T, C>>, C: Context> Event for ReadBuffer<T, Src> {
-    type Output = (Vec<T>, Src);
+    type Output = Vec<T>;
 
     #[inline(always)]
     fn as_raw(&self) -> &RawEvent {
@@ -30,7 +30,7 @@ impl<T: Copy + Unpin, Src: Deref<Target = Buffer<T, C>>, C: Context> Event for R
         if let Some(err) = err { return Err(err); }
         let mut result = Pin::into_inner(self.dst);
         unsafe { result.set_len(result.capacity()) }
-        Ok((result, self.src))
+        Ok(result)
     }
 }
 

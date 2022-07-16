@@ -20,9 +20,9 @@ fn program () -> Result<()> {
 
 #[test]
 fn flag () -> Result<()> {
-    let buffer = Buffer::new(&[1., 2., 3., 4., 5.], MemAccess::default(), false)?;
-    let (read, _) = buffer.read_all(WaitList::EMPTY)?.wait()?;
-    println!("{read:?}");
+    let buffer = Buffer::<f32>::new_zeroed(5, MemAccess::default(), false)?;
+    let buffer = unsafe { buffer.assume_init() };
+    println!("{buffer:?}");
 
     Ok(())
 }

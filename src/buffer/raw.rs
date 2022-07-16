@@ -124,7 +124,7 @@ impl RawBuffer {
     }
 
     #[docfg(feature = "cl1_2")]
-    pub unsafe fn fill<T: Copy> (&mut self, v: T, range: impl IntoRange, queue: &CommandQueue, wait: impl Into<WaitList>) -> Result<RawEvent> {
+    pub unsafe fn fill_raw<T: Copy> (&mut self, v: T, range: impl IntoRange, queue: &CommandQueue, wait: impl Into<WaitList>) -> Result<RawEvent> {
         let BufferRange { offset, cb } = range.into_range::<T>(self)?;
         let wait : WaitList = wait.into();
         let (num_events_in_wait_list, event_wait_list) = wait.raw_parts();

@@ -1,24 +1,32 @@
-use std::{ops::Deref};
-use crate::{buffer::Buffer, prelude::Context};
+use std::ops::{Deref, DerefMut};
 
-/// Represents types that directly or indirectly dereference `T`
-pub trait AsDeref<T> {
-    fn from_deref (&self) -> &T;
-}
- 
-impl<T, A: Deref<Target = T>> AsDeref<T> for A {
-    fn from_deref (&self) -> &T {
-        todo!()
+#[repr(transparent)]
+pub struct DerefWrapper<T> (T);
+
+impl<T> DerefWrapper<T> {
+    #[inline(always)]
+    pub const fn new (v: T) -> Self {
+        Self (v)
+    }
+
+    #[inline(always)]
+    pub fn into_inner (self) -> T {
+        self.0
     }
 }
 
-impl<T, A: Deref<Target = impl 'static + AsDeref<T>>> AsDeref<T> for A {
-    fn from_deref (&self) -> &T {
-        todo!()
+impl<T> Deref for DerefWrapper<T> {
+    type Target = T;
+
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
 }
 
-#[test]
-fn test () {
-    let test : &dyn AsDeref<f32> = &std::sync::Arc::new(1.);
+impl<T> DerefMut for DerefWrapper<T> {
+    #[inline(always)]
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
 }

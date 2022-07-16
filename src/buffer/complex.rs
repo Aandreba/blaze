@@ -1,7 +1,7 @@
-use std::{marker::PhantomData, ptr::{NonNull}, ops::{Deref, DerefMut}, fmt::Debug};
+use std::{marker::PhantomData, ptr::{NonNull}, ops::{Deref, DerefMut}, fmt::Debug, mem::MaybeUninit};
 use rscl_proc::docfg;
 
-use crate::{context::{Context, Global}, event::{WaitList}, prelude::Event};
+use crate::{context::{Context, Global}, event::{WaitList}, prelude::{Event, EventExt}};
 use crate::core::*;
 use crate::buffer::{flags::{MemFlags, HostPtr, MemAccess}, events::{ReadBuffer, WriteBuffer, ReadBufferInto}, RawBuffer};
 
@@ -23,8 +23,14 @@ impl<T: Copy> Buffer<T> {
     }
 
     #[inline(always)]
-    pub unsafe fn uninit (len: usize, access: MemAccess, alloc: bool) -> Result<Self> {
-        Self::uninit_in(Global, len, access, alloc)
+    pub fn new_uninit (len: usize, access: MemAccess, alloc: bool) -> Result<Buffer<MaybeUninit<T>>> {
+        Self::new_uninit_in(Global, len, access, alloc)
+    }
+
+    #[docfg(feature = "cl1_2")]
+    #[inline(always)]
+    pub fn new_zeroed (len: usize, access: MemAccess, alloc: bool) -> Result<Buffer<MaybeUninit<T>>> where T: Unpin {
+        Self::new_zeroed_in(Global, len, access, alloc)
     }
 
     #[inline(always)]
@@ -41,9 +47,17 @@ impl<T: Copy, C: Context> Buffer<T, C> {
     }
 
     #[inline(always)]
-    pub unsafe fn uninit_in (ctx: C, len: usize, access: MemAccess, alloc: bool) -> Result<Self> {
+    pub fn new_uninit_in (ctx: C, len: usize, access: MemAccess, alloc: bool) -> Result<Buffer<MaybeUninit<T>, C>> {
         let host = MemFlags::new(access, HostPtr::new(alloc, false));
-        Self::create_in(ctx, len, host, None)
+        unsafe { Buffer::create_in(ctx, len, host, None) }
+    }
+
+    #[docfg(feature = "cl1_2")]
+    #[inline(always)]
+    pub fn new_zeroed_in (ctx: C, len: usize, access: MemAccess, alloc: bool) -> Result<Buffer<MaybeUninit<T>, C>> where T: Unpin {
+        let mut buffer = Self::new_uninit_in(ctx, len, access, alloc)?;
+        buffer.fill(MaybeUninit::zeroed(), .., WaitList::EMPTY)?.wait()?;
+        Ok(buffer)
     }
 
     #[inline]
@@ -62,6 +76,20 @@ impl<T: Copy, C: Context> Buffer<T, C> {
     pub unsafe fn transmute<U: Copy> (self) -> Buffer<U, C> {
         assert_eq!(core::mem::size_of::<T>(), core::mem::size_of::<U>());
         Buffer { inner: self.inner, ctx: self.ctx, phtm: PhantomData }
+    }
+}
+
+impl<T: Copy, C: Context> Buffer<MaybeUninit<T>, C> {
+    #[inline(always)]
+    pub unsafe fn assume_init (self) -> Buffer<T, C> {
+        self.transmute()
+    }
+
+    #[inline(always)]
+    pub fn write_init<'src, 'dst> (&'dst mut self, offset: usize, src: &'src [T], wait: impl Into<WaitList>) -> Result<WriteBuffer<&'src [MaybeUninit<T>], &'dst mut Self>> where T: Unpin {
+        assert_eq!(core::mem::size_of::<T>(), core::mem::size_of::<MaybeUninit<T>>());
+        let src = unsafe { core::slice::from_raw_parts(src.as_ptr().cast(), src.len()) };
+        Self::write_by_deref(self, offset, src, wait)
     }
 }
 

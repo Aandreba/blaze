@@ -6,6 +6,28 @@ use super::{Event};
 use super::FlagEvent;
 
 /// Event for [`EventExt::map`]
+#[derive(Clone)]
+pub struct Map<E, F> {
+    pub(super) parent: E,
+    pub(super) f: F
+}
+
+impl<T, E: Event, F: FnOnce(E::Output) -> T> Event for Map<E, F> {
+    type Output = T;
+
+    #[inline(always)]
+    fn as_raw (&self) -> &RawEvent {
+        self.parent.as_raw()
+    }
+
+    #[inline(always)]
+    fn consume (self, err: Option<Error>) -> Result<Self::Output> {
+        let v = self.parent.consume(err)?;
+        Ok((self.f)(v))
+    }
+}
+
+/// Event for [`EventExt::then`]
 #[docfg(feature = "cl1_1")]
 #[derive(Clone)]
 pub struct Then<E, F> {

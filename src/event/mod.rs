@@ -118,6 +118,15 @@ pub trait Event {
 
 pub trait EventExt: Sized + Event {
     /// Executes the specified function after the parent event has completed. 
+    #[inline]
+    fn map<T, F: FnOnce(Self::Output) -> T> (self, f: F) -> Result<Map<Self, F>> {
+        Ok(Map {
+            parent: self,
+            f
+        })
+    }
+
+    /// Executes the specified function after the parent event has completed. 
     #[docfg(feature = "cl1_1")]
     #[inline]
     fn then<T, F: FnOnce(Self::Output) -> T> (self, f: F) -> Result<Then<Self, F>> {
