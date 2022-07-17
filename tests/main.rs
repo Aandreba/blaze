@@ -18,26 +18,26 @@ static PROGRAM : &str = "void kernel add (const ulong n, __global const float* r
 
 #[test]
 fn program () -> Result<()> {
+    println!("{:?}", Device::first().unwrap().queue_on_host_properties());
     Ok(())
 }
 
 #[test]
 fn flag () -> Result<()> {
-    let ctx = SimpleContext::with_loger(Device::first().unwrap(), ContextProperties::default(), CommandQueueProperties::new(true, true), log);
-    drop(ctx);
+    let ctx = SimpleContext::with_loger(Device::first().unwrap(), ContextProperties::default(), CommandQueueProperties::new(true, true), log)?;
 
-    let buffer = Arc::new(Buffer::new(&[1, 2, 3, 4, 5, 6], MemAccess::default(), false)?);
-    let flag = FlagEvent::new()?;
+    let buffer = Arc::new(Buffer::new_in(ctx.clone(), &[1, 2, 3, 4, 5, 6], MemAccess::default(), false)?);
+    let flag = FlagEvent::new_in(&ctx)?;
 
     let one = buffer.clone().read_owned(..3, [flag.to_raw()])?;
     let two = buffer.read_owned(3.., WaitList::EMPTY)?;
 
     thread::spawn(move || {
-        thread::sleep(Duration::from_secs(1));
+        thread::sleep(Duration::from_secs(2));
         flag.set_complete(None).unwrap()
     });
 
-    let join = ReadBuffer::join([one, two])?;
+    let join = ReadBuffer::join_in(&ctx, [one, two])?;
     let result = join.wait()?;
     println!("{result:?}");
 

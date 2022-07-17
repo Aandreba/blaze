@@ -1,6 +1,6 @@
 use core::{mem::MaybeUninit, num::NonZeroUsize};
 use std::{borrow::Cow, ptr::NonNull, ffi::c_void};
-use opencl_sys::{clReleaseProgram, clCreateProgramWithSource, clRetainProgram, clBuildProgram, cl_program_info, clGetProgramInfo, CL_PROGRAM_REFERENCE_COUNT, CL_PROGRAM_CONTEXT, CL_PROGRAM_NUM_DEVICES, CL_PROGRAM_DEVICES, CL_PROGRAM_SOURCE, cl_context, cl_kernel, clCreateKernelsInProgram};
+use opencl_sys::*;
 use crate::{context::{Context, Global}, core::kernel::Kernel};
 use super::*;
 
@@ -113,8 +113,7 @@ impl Program {
         todo!()
     }
 
-    #[inline(always)]
-    fn build<C: Context> (&self, options: Option<&str>, _ctx: &C) -> Result<()> {
+    fn build<C: Context> (&self, options: Option<&str>, ctx: &C) -> Result<()> {
         let options : Option<Cow<'static, str>> = match options {
             Some(x) => {
                 let mut x = x.to_string();
@@ -148,32 +147,28 @@ impl Program {
             return Ok(());
         }
 
-        let build_result = Error::from(build_result);
+        let build_result = ErrorType::from(build_result);
 
-        /*  
-        for device in devices {
+        for device in ctx.queues().into_iter().map(CommandQueue::device) {
+            let device = device?;
+            
             let mut len = 0;
-            let err = unsafe {
-                clGetProgramBuildInfo(self.0, device.0, CL_PROGRAM_BUILD_LOG, 0, core::ptr::null_mut(), &mut len)
+            unsafe {
+                tri!(clGetProgramBuildInfo(self.id(), device.id(), CL_PROGRAM_BUILD_LOG, 0, core::ptr::null_mut(), &mut len))
             };
 
-            self.parse_error(err, CL_PROGRAM_BUILD_LOG, 0)?;
             if len == 0 { continue }
 
-            let mut result = Vec::<u8>::with_capacity(len);
-            let err = unsafe {
-                clGetProgramBuildInfo(self.0, device.0, CL_PROGRAM_BUILD_LOG, len, result.as_mut_ptr().cast(), core::ptr::null_mut())
+            let mut result = Box::<[u8]>::new_uninit_slice(len);
+            unsafe {
+                tri!(clGetProgramBuildInfo(self.id(), device.id(), CL_PROGRAM_BUILD_LOG, len, result.as_mut_ptr().cast(), core::ptr::null_mut()))
             };
 
-            self.parse_error(err, CL_PROGRAM_BUILD_LOG, len)?;
-            unsafe { result.set_len(len) }
+            let result = unsafe { result.assume_init() };
+            return Err(Error::new(build_result, String::from_utf8_lossy(&result)));
+        }
 
-            if let Ok(result) = String::from_utf8(result) {
-                build_result = build_result.attach_printable(result);
-            }
-        }*/
-
-        Err(build_result)
+        Err(build_result.into())
     }
 
     #[inline]
