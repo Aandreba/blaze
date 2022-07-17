@@ -2,7 +2,7 @@ use std::ops::Deref;
 use rscl_proc::docfg;
 
 use crate::{core::*};
-use super::{Context, RawContext, ContextProperties};
+use super::{Context, RawContext, ContextProperties, Notify};
 
 /// A simple RSCL context with a single command queue
 #[derive(Clone)]
@@ -46,8 +46,8 @@ impl Context for SimpleContext {
     }
 
     #[inline(always)]
-    fn next_queue (&self) -> &CommandQueue {
-        &self.queue
+    fn next_queue (&self) -> (&CommandQueue, Option<Notify>) {
+        (&self.queue, None)
     }
 }
 

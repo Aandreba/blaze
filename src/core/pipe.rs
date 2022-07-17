@@ -3,7 +3,7 @@ use opencl_sys::*;
 use crate::{memobj::MemObject, prelude::*, buffer::flags::{MemFlags, HostPtr, MemAccess}};
 
 #[cfg_attr(docsrs, doc(cfg(feature = "cl2")))]
-#[derive(Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[repr(transparent)]
 pub struct Pipe (MemObject);
 

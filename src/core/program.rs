@@ -5,7 +5,7 @@ use crate::{context::{Context, Global}, core::kernel::Kernel};
 use super::*;
 
 /// OpenCL program
-#[derive(PartialEq, Eq, Hash)]
+#[derive(Debug, PartialEq, Eq, Hash)]
 #[repr(transparent)]
 pub struct Program (NonNull<c_void>);
 

@@ -3,6 +3,7 @@ use opencl_sys::{cl_kernel, cl_kernel_info, clRetainProgram, CL_KERNEL_PROGRAM, 
 use rscl_proc::docfg;
 use crate::{core::*, context::{RawContext, Context, Global}, event::{RawEvent, WaitList}};
 
+#[derive(Debug, PartialEq, Eq, Hash)]
 #[repr(transparent)]
 pub struct Kernel (NonNull<c_void>);
 
@@ -51,13 +52,17 @@ impl Kernel {
     }
 
     #[inline(always)]
-    pub fn enqueue<const N: usize> (&mut self, global_work_dims: [usize; N], local_work_dims: impl Into<Option<[usize; N]>>, wait: impl Into<WaitList>) -> Result<RawEvent> {
-        self.enqueue_with_queue(Global.next_queue(), global_work_dims, local_work_dims, wait)
+    pub unsafe fn enqueue<const N: usize> (&mut self, global_work_dims: [usize; N], local_work_dims: impl Into<Option<[usize; N]>>, wait: impl Into<WaitList>) -> Result<RawEvent> {
+        Self::enqueue_in(&mut self, &Global, global_work_dims, local_work_dims, wait)
     }
 
     #[inline(always)]
-    pub fn enqueue_with_context<C: Context, const N: usize> (&mut self, ctx: &C, global_work_dims: [usize; N], local_work_dims: impl Into<Option<[usize; N]>>, wait: impl Into<WaitList>) -> Result<RawEvent> {
-        self.enqueue_with_queue(ctx.next_queue(), global_work_dims, local_work_dims, wait)
+    pub unsafe fn enqueue_in<C: Context, const N: usize> (&mut self, ctx: &C, global_work_dims: [usize; N], local_work_dims: impl Into<Option<[usize; N]>>, wait: impl Into<WaitList>) -> Result<RawEvent> {
+        let (queue, notify) = Global.next_queue();
+        let evt = self.enqueue_with_queue(queue, global_work_dims, local_work_dims, wait);
+        
+        if let Some(notify) = notify { return notify.bind_result(evt) }
+        evt
     }
 
     pub fn enqueue_with_queue<const N: usize> (&mut self, queue: &CommandQueue, global_work_dims: [usize; N], local_work_dims: impl Into<Option<[usize; N]>>, wait: impl Into<WaitList>) -> Result<RawEvent> {

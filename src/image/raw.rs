@@ -4,7 +4,7 @@ use std::{ptr::{NonNull, addr_of_mut}, ffi::c_void, ops::{Deref, DerefMut}, mem:
 use crate::{core::*, context::RawContext, buffer::{flags::MemFlags}, event::WaitList, prelude::RawEvent, memobj::MemObject};
 use super::{ImageFormat, ImageDesc};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[repr(transparent)]
 pub struct RawImage (MemObject);
 
