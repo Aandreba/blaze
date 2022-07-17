@@ -1,4 +1,4 @@
-use std::{mem::ManuallyDrop, time::{SystemTime, Duration}};
+use std::{mem::ManuallyDrop, time::{SystemTime, Duration}, ops::Deref, ptr::{DynMetadata, addr_of, Pointee}, alloc::Allocator, any::TypeId, pin::Pin, panic::AssertUnwindSafe};
 use opencl_sys::{CL_COMMAND_NDRANGE_KERNEL, CL_COMMAND_TASK, CL_COMMAND_NATIVE_KERNEL, CL_COMMAND_READ_BUFFER, CL_COMMAND_WRITE_BUFFER, CL_COMMAND_COPY_BUFFER, CL_COMMAND_READ_IMAGE, CL_COMMAND_WRITE_IMAGE, CL_COMMAND_COPY_IMAGE, CL_COMMAND_COPY_IMAGE_TO_BUFFER, CL_COMMAND_COPY_BUFFER_TO_IMAGE, CL_COMMAND_MAP_BUFFER, CL_COMMAND_MAP_IMAGE, CL_COMMAND_UNMAP_MEM_OBJECT, CL_COMMAND_MARKER, CL_COMMAND_ACQUIRE_GL_OBJECTS, CL_COMMAND_RELEASE_GL_OBJECTS, CL_EVENT_COMMAND_TYPE, CL_EVENT_COMMAND_EXECUTION_STATUS, CL_EVENT_COMMAND_QUEUE, cl_event};
 use rscl_proc::docfg;
 use crate::{core::*, prelude::RawContext};
@@ -137,6 +137,34 @@ pub trait Event {
     }
 }
 
+impl<T: Event, A: Allocator> Event for Box<T, A> {
+    type Output = T::Output;
+
+    #[inline(always)]
+    fn as_raw (&self) -> &RawEvent {
+        self.deref().as_raw()
+    }
+
+    #[inline(always)]
+    fn consume (self, err: Option<Error>) -> Result<Self::Output> {
+        Box::into_inner(self).consume(err)
+    }
+}
+
+impl<T: Event> Event for AssertUnwindSafe<T> {
+    type Output = T::Output;
+
+    #[inline(always)]
+    fn as_raw (&self) -> &RawEvent {
+        self.deref().as_raw()
+    }
+
+    #[inline(always)]
+    fn consume (self, err: Option<Error>) -> Result<Self::Output> {
+        self.0.consume(err)
+    }
+}
+
 pub trait EventExt: Sized + Event {
     /// Executes the specified function after the parent event has completed. 
     #[inline]
@@ -182,16 +210,10 @@ pub trait EventExt: Sized + Event {
         EventJoin::new_in(ctx, iter)
     }
 
-    /// Wrap the event in a [`Box`].
+    #[docfg(feature = "cl1_1")]
     #[inline(always)]
-    fn boxed<'a> (self) -> Box<dyn Event<Output = Self::Output> + Send + 'a> where Self: 'a + Send {
-        Box::new(self)
-    }
-
-    /// Wrap the event in a [`Box`]. Similar to [`EventExt::boxed`], but without the [`Send`] requirement.
-    #[inline(always)]
-    fn boxed_local<'a> (self) -> Box<dyn Event<Output = Self::Output> + 'a> where Self: 'a {
-        Box::new(self)
+    fn join_ordered_in<I: IntoIterator<Item = Self>> (ctx: &RawContext, iter: I) -> Result<EventJoinOrdered<Self>> where Self: 'static + Send, Self::Output: Unpin + Send + Sync, I::IntoIter: ExactSizeIterator {
+        EventJoinOrdered::new_in(ctx, iter)
     }
 }
 

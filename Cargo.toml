@@ -37,6 +37,7 @@ num-traits = "0.2.15"
 num_enum = "0.5.7"
 bitflags = "1"
 cfg-if = "1"
+bitvec = "1"
 elor = "1"
 
 [dev-dependencies]
