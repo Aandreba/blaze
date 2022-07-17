@@ -1,9 +1,10 @@
 flat_mod!(raw, complex, range);
 
+use opencl_sys::{CL_MAP_READ, CL_MAP_WRITE};
 #[cfg(feature = "cl1_1")]
 pub use rect::BufferRect2D;
 use rscl_proc::docfg;
-use crate::{prelude::{Context, Kernel, Result}};
+use crate::{prelude::{Context, Kernel, Result, RawEvent}, svm::SvmPointer, event::WaitList};
 
 #[cfg_attr(docsrs, doc(cfg(feature = "cl1_1")))]
 #[cfg(feature = "cl1_1")]
@@ -12,36 +13,107 @@ pub mod flags;
 pub mod events;
 
 pub unsafe trait KernelPointer<T> {
-    unsafe fn set_arg (&self, kernel: &mut Kernel, idx: u32) -> Result<()>;
+    unsafe fn set_arg (&self, kernel: &mut Kernel, wait: &mut WaitList, idx: u32) -> Result<()>;
+    fn complete (&self, event: &RawEvent) -> Result<()>;
 }
 
 unsafe impl<T: Copy + Send, C: Context> KernelPointer<T> for Buffer<T, C> {
     #[inline(always)]
-    unsafe fn set_arg (&self, kernel: &mut Kernel, idx: u32) -> Result<()> {
+    unsafe fn set_arg (&self, kernel: &mut Kernel, _wait: &mut WaitList, idx: u32) -> Result<()> {
         kernel.set_argument(idx, self.id_ref())
     }
-}
 
-#[docfg(feature = "svm")]
-unsafe impl<T: Send, C: Context> KernelPointer<T> for crate::svm::SvmBox<T, C> {
     #[inline(always)]
-    unsafe fn set_arg (&self, kernel: &mut Kernel, idx: u32) -> Result<()> {
-        kernel.set_svm_argument(idx, self)
+    fn complete (&self, _event: &RawEvent) -> Result<()> {
+        Ok(())
     }
 }
 
 #[docfg(feature = "svm")]
-unsafe impl<T: Send, C: Context> KernelPointer<T> for crate::svm::SvmBox<[T], C> {
+unsafe impl<T: Send, C: Context> KernelPointer<T> for crate::svm::SvmBox<T, C> where C: 'static + Send + Clone {
     #[inline(always)]
-    unsafe fn set_arg (&self, kernel: &mut Kernel, idx: u32) -> Result<()> {
-        kernel.set_svm_argument(idx, self)
+    unsafe fn set_arg (&self, kernel: &mut Kernel, wait: &mut WaitList, idx: u32) -> Result<()> {
+        kernel.set_svm_argument(idx, self)?;
+
+        if self.allocator().is_coarse() {
+            let evt = self.allocator().unmap(self.as_ptr() as *mut _, WaitList::EMPTY)?;
+            wait.push(evt)
+        }
+
+        Ok(())
+    }
+
+    #[inline(always)]
+    fn complete (&self, event: &RawEvent) -> Result<()> {
+        if self.allocator().is_coarse() {
+            let alloc = self.allocator().clone();
+            let ptr = self.as_ptr() as usize;
+            
+            event.on_complete(move |_, _| unsafe {
+                alloc.map::<{CL_MAP_READ | CL_MAP_WRITE}>(ptr as *mut _, core::mem::size_of::<T>()).unwrap();
+            })?;
+        }
+
+        Ok(())
     }
 }
 
 #[docfg(feature = "svm")]
-unsafe impl<T: Send, C: Context> KernelPointer<T> for crate::svm::SvmVec<T, C> {
+unsafe impl<T: Send, C: Context> KernelPointer<T> for crate::svm::SvmBox<[T], C> where C: 'static + Send + Clone {
     #[inline(always)]
-    unsafe fn set_arg (&self, kernel: &mut Kernel, idx: u32) -> Result<()> {
-        kernel.set_svm_argument(idx, self)
+    unsafe fn set_arg (&self, kernel: &mut Kernel, wait: &mut WaitList, idx: u32) -> Result<()> {
+        kernel.set_svm_argument(idx, self)?;
+
+        if self.allocator().is_coarse() {
+            let evt = self.allocator().unmap(self.as_ptr() as *mut _, WaitList::EMPTY)?;
+            wait.push(evt)
+        }
+
+        Ok(())
+    }
+
+    #[inline(always)]
+    fn complete (&self, event: &RawEvent) -> Result<()> {
+        if self.allocator().is_coarse() {
+            let alloc = self.allocator().clone();
+            let size = core::mem::size_of::<T>() * self.len();
+            let ptr = self.as_ptr() as *const T as usize;
+            
+            event.on_complete(move |_, _| unsafe {
+                alloc.map::<{CL_MAP_READ | CL_MAP_WRITE}>(ptr as *mut _, size).unwrap();
+            })?;
+        }
+
+        Ok(())
+    }
+}
+
+#[docfg(feature = "svm")]
+unsafe impl<T: Send, C: Context> KernelPointer<T> for crate::svm::SvmVec<T, C> where C: 'static + Send + Clone {
+    #[inline(always)]
+    unsafe fn set_arg (&self, kernel: &mut Kernel, wait: &mut WaitList, idx: u32) -> Result<()> {
+        kernel.set_svm_argument(idx, self)?;
+
+        if self.allocator().is_coarse() {
+            let evt = self.allocator().unmap(self.as_ptr() as *mut _, WaitList::EMPTY)?;
+            wait.push(evt)
+        }
+
+        Ok(())
+    }
+
+    #[inline(always)]
+    fn complete (&self, event: &RawEvent) -> Result<()> {
+        if self.allocator().is_coarse() {
+            let alloc = self.allocator().clone();
+            let size = core::mem::size_of::<T>() * self.len();
+            let ptr = self.as_ptr() as *const T as usize;
+            
+            event.on_complete(move |_, _| unsafe {
+                alloc.map::<{CL_MAP_READ | CL_MAP_WRITE}>(ptr as *mut _, size).unwrap();
+            })?;
+        }
+
+        Ok(())
     }
 }

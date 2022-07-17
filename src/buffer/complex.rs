@@ -1,7 +1,7 @@
 use std::{marker::PhantomData, ptr::{NonNull}, ops::{Deref, DerefMut}, fmt::Debug, mem::MaybeUninit};
 use rscl_proc::docfg;
 
-use crate::{context::{Context, Global}, event::{WaitList}, prelude::{Event, EventExt}};
+use crate::{context::{Context, Global}, event::{WaitList}, prelude::{Event}};
 use crate::core::*;
 use crate::buffer::{flags::{MemFlags, HostPtr, MemAccess}, events::{ReadBuffer, WriteBuffer, ReadBufferInto}, RawBuffer};
 

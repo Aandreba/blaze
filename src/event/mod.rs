@@ -6,7 +6,7 @@ use crate::{core::*};
 flat_mod!(status, raw, various, info);
 
 #[cfg(feature = "cl1_1")]
-flat_mod!(flag);
+flat_mod!(flag, join);
 
 #[cfg(feature = "futures")]
 flat_mod!(wait);
@@ -257,6 +257,14 @@ impl WaitList {
 
                 None => self.0 = Some(y)
             }
+        }
+    }
+
+    #[inline(always)]
+    pub fn wait_all (&self) -> Result<()> {
+        match self.0 {
+            Some(x) => RawEvent::wait_all(&x),
+            None => Ok(())
         }
     }
 }

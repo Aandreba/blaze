@@ -21,12 +21,12 @@ macro_rules! impl_atomic {
 
             impl<C: Context> $svm<C> {
                 pub fn new_in (v: &[$ty], ctx: C) -> Self {
-                    let alloc = Svm::new_in(ctx);
+                    let alloc = Svm::new_in(ctx, false);
                     let layout = Layout::array::<$ty>(v.len()).unwrap();
                     let boxed;
 
                     unsafe {
-                        let ptr = alloc.alloc_with_flags(SvmFlags::new(MemAccess::default(), SvmUtilsFlags::Atomics), layout);
+                        let ptr = alloc.alloc_with_flags(SvmFlags::new(MemAccess::default(), SvmUtilsFlags::Atomics), layout).unwrap();
                         let ptr : *mut [$ty] = core::ptr::from_raw_parts_mut(ptr.cast(), v.len());
 
                         assert!(!ptr.is_null());

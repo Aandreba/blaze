@@ -125,6 +125,10 @@ fn create_kernel (parent_vis: &Visibility, parent: &Ident, kernel: &Kernel) -> T
                 let inner = kernel.enqueue_with_context(&self.ctx, global_work_dims, local_work_dims, wait)?;
                 drop(kernel);
 
+                #(
+                    ::rscl::buffer::KernelPointer::complete(::core::ops::Deref::deref(&#names), &inner)?;
+                )*
+
                 Ok(#big_name {
                     inner,
                     #(#names),*

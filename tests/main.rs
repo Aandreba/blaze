@@ -1,6 +1,4 @@
-use std::ops::Deref;
-
-use rscl::{core::*, context::{SimpleContext}, buffer::{flags::MemAccess, Buffer, KernelPointer}, event::{WaitList}, prelude::{Event, Global, Context, RawEvent}};
+use rscl::{core::*, context::{SimpleContext}, buffer::{flags::MemAccess, Buffer, KernelPointer}, event::{WaitList}, prelude::{Event, Global, Context}};
 use rscl_proc::{global_context, rscl};
 
 #[global_context]
@@ -11,18 +9,6 @@ static PROGRAM : &str = "void kernel add (const ulong n, __global const float* r
         out[id] = in[id] + rhs[id];
     }
 }";
-
-#[rscl(Arith)]
-#[link(PROGRAM)]
-extern "C" {
-    //fn add (n: u64, rhs: *const f32, inn: *const f32, out: *mut f32);
-}
-
-impl Arith {
-    pub unsafe fn add<Rhs: Deref> (n: u64, rhs: Rhs) where Rhs::Target: KernelPointer<f32> {
-        todo!()
-    }
-}
 
 #[test]
 fn program () -> Result<()> {

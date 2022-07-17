@@ -26,7 +26,7 @@ impl RawEvent {
         self.0.as_ptr()
     }
 
-    /// Blocks the current thread until all the events have completed, consuming them.
+    /// Blocks the current thread until all the events have completed
     #[inline(always)]
     pub fn wait_all (v: &[RawEvent]) -> Result<()> {
         let len = u32::try_from(v.len()).unwrap();

@@ -3,7 +3,7 @@
 use core::f32;
 use std::{f32::consts::{PI, E, TAU}, mem::MaybeUninit};
 
-use rscl::{context::SimpleContext, prelude::{Result, Event}, event::WaitList, buffer::{Buffer, flags::MemAccess}, svm::{SvmVecExt, SvmVec, Svm, SvmBox}};
+use rscl::{context::SimpleContext, prelude::{Result, Event}, event::WaitList, buffer::{Buffer, flags::MemAccess}, svm::{Svm, SvmBox}};
 use rscl_proc::{global_context, rscl};
 
 #[rscl(Arith)]
@@ -19,9 +19,12 @@ static CONTEXT : SimpleContext = SimpleContext::default();
 #[test]
 fn test () -> Result<()> {
     let arith = Arith::new(None)?;
+    let svm = Svm::try_default()?;
+
     let lhs = Buffer::new(&[1., 2., 3., 4., 5.], MemAccess::default(), false)?;
     let rhs = Buffer::new(&[PI, E, TAU, 2., -1.], MemAccess::default(), false)?;
-    let mut out = SvmBox::new_uninit_slice_in(5, Svm::new());
+    let mut out = SvmBox::new_uninit_slice_in(5, svm);
+
     out[0].write(2.);
     println!("{out:?}");
 

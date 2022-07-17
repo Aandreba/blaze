@@ -14,11 +14,16 @@ pub struct Error {
 impl Error {
     #[inline(always)]
     pub fn new (ty: ErrorType, desc: impl ToString) -> Self {
+        Self::from_parts(ty, Some(desc.to_string()), Arc::new(Backtrace::capture()))
+    }
+
+    #[inline(always)]
+    pub fn from_parts (ty: ErrorType, desc: Option<String>, #[cfg(debug_assertions)] backtrace: Arc<Backtrace>) -> Self {
         Self { 
             ty,
-            desc: Some(desc.to_string()),
+            desc: desc,
             #[cfg(debug_assertions)]
-            backtrace: Arc::new(Backtrace::capture())
+            backtrace
         }
     }
 
