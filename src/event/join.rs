@@ -4,7 +4,7 @@ use once_cell::sync::OnceCell;
 use crate::{prelude::{RawContext, Result, Global, Error}};
 use super::{RawEvent, Event, FlagEvent};
 
-pub struct EventJoinUnordered<E: Event> where E::Output: Unpin  {
+pub struct EventJoin<E: Event> where E::Output: Unpin  {
     data: Pin<Arc<JoinEventInner<E>>>
 }
 
@@ -25,7 +25,7 @@ struct JoinError {
     backtrace: Arc<Backtrace>
 }
 
-impl<E: Event> EventJoinUnordered<E> where E: 'static + Send, E::Output: 'static + Send + Sync + Unpin {
+impl<E: Event> EventJoin<E> where E: 'static + Send, E::Output: Send + Sync + Unpin {
     #[inline(always)]
     pub fn new<I: IntoIterator<Item = E>> (events: I) -> Result<Self> where I::IntoIter: ExactSizeIterator {
         Self::new_in(&Global, events)
@@ -52,7 +52,7 @@ impl<E: Event> EventJoinUnordered<E> where E: 'static + Send, E::Output: 'static
             raw.on_complete(move |_, status| {
                 match event.consume(status.err()) {
                     Ok(v) => if data.results.push(v) {
-                        data.flag.set_complete(None);
+                        data.flag.set_complete(None).unwrap();
                     },
 
                     Err(err) => {
@@ -63,7 +63,7 @@ impl<E: Event> EventJoinUnordered<E> where E: 'static + Send, E::Output: 'static
                         });
 
                         if set.is_ok() {
-                            data.flag.set_complete(Some(err.ty));
+                            data.flag.set_complete(Some(err.ty)).unwrap();
                         }
                     }
                 }
@@ -74,7 +74,7 @@ impl<E: Event> EventJoinUnordered<E> where E: 'static + Send, E::Output: 'static
     }
 }
 
-impl<E: Event> Event for EventJoinUnordered<E> where E::Output: Unpin {
+impl<E: Event> Event for EventJoin<E> where E::Output: Unpin {
     type Output = Vec<E::Output>;
 
     #[inline(always)]

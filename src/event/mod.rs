@@ -1,7 +1,7 @@
 use std::{mem::ManuallyDrop, time::{SystemTime, Duration}};
 use opencl_sys::{CL_COMMAND_NDRANGE_KERNEL, CL_COMMAND_TASK, CL_COMMAND_NATIVE_KERNEL, CL_COMMAND_READ_BUFFER, CL_COMMAND_WRITE_BUFFER, CL_COMMAND_COPY_BUFFER, CL_COMMAND_READ_IMAGE, CL_COMMAND_WRITE_IMAGE, CL_COMMAND_COPY_IMAGE, CL_COMMAND_COPY_IMAGE_TO_BUFFER, CL_COMMAND_COPY_BUFFER_TO_IMAGE, CL_COMMAND_MAP_BUFFER, CL_COMMAND_MAP_IMAGE, CL_COMMAND_UNMAP_MEM_OBJECT, CL_COMMAND_MARKER, CL_COMMAND_ACQUIRE_GL_OBJECTS, CL_COMMAND_RELEASE_GL_OBJECTS, CL_EVENT_COMMAND_TYPE, CL_EVENT_COMMAND_EXECUTION_STATUS, CL_EVENT_COMMAND_QUEUE, cl_event};
 use rscl_proc::docfg;
-use crate::{core::*};
+use crate::{core::*, prelude::RawContext};
 
 flat_mod!(status, raw, various, info);
 
@@ -169,6 +169,12 @@ pub trait EventExt: Sized + Event {
         }
     }
 
+    #[docfg(feature = "cl1_1")]
+    #[inline(always)]
+    fn join_in<I: IntoIterator<Item = Self>> (ctx: &RawContext, iter: I) -> Result<EventJoin<Self>> where Self: 'static + Send, Self::Output: Unpin + Send + Sync, I::IntoIter: ExactSizeIterator {
+        EventJoin::new_in(ctx, iter)
+    }
+
     /// Wrap the event in a [`Box`].
     #[inline(always)]
     fn boxed<'a> (self) -> Box<dyn Event<Output = Self::Output> + Send + 'a> where Self: 'a + Send {
@@ -263,7 +269,7 @@ impl WaitList {
     #[inline(always)]
     pub fn wait_all (&self) -> Result<()> {
         match self.0 {
-            Some(x) => RawEvent::wait_all(&x),
+            Some(ref x) => RawEvent::wait_all(&x),
             None => Ok(())
         }
     }
