@@ -1,4 +1,4 @@
-use std::{mem::ManuallyDrop, time::{SystemTime, Duration}, ops::Deref, ptr::{DynMetadata, addr_of, Pointee}, alloc::Allocator, any::TypeId, pin::Pin, panic::AssertUnwindSafe};
+use std::{mem::ManuallyDrop, time::{SystemTime, Duration}, ops::Deref, alloc::Allocator, panic::AssertUnwindSafe};
 use opencl_sys::{CL_COMMAND_NDRANGE_KERNEL, CL_COMMAND_TASK, CL_COMMAND_NATIVE_KERNEL, CL_COMMAND_READ_BUFFER, CL_COMMAND_WRITE_BUFFER, CL_COMMAND_COPY_BUFFER, CL_COMMAND_READ_IMAGE, CL_COMMAND_WRITE_IMAGE, CL_COMMAND_COPY_IMAGE, CL_COMMAND_COPY_IMAGE_TO_BUFFER, CL_COMMAND_COPY_BUFFER_TO_IMAGE, CL_COMMAND_MAP_BUFFER, CL_COMMAND_MAP_IMAGE, CL_COMMAND_UNMAP_MEM_OBJECT, CL_COMMAND_MARKER, CL_COMMAND_ACQUIRE_GL_OBJECTS, CL_COMMAND_RELEASE_GL_OBJECTS, CL_EVENT_COMMAND_TYPE, CL_EVENT_COMMAND_EXECUTION_STATUS, CL_EVENT_COMMAND_QUEUE, cl_event};
 use rscl_proc::docfg;
 use crate::{core::*, prelude::RawContext};
@@ -6,7 +6,7 @@ use crate::{core::*, prelude::RawContext};
 flat_mod!(status, raw, various, info);
 
 #[cfg(feature = "cl1_1")]
-flat_mod!(flag, join);
+flat_mod!(flag, join, abort);
 
 #[cfg(feature = "futures")]
 flat_mod!(wait);
@@ -166,6 +166,12 @@ impl<T: Event> Event for AssertUnwindSafe<T> {
 }
 
 pub trait EventExt: Sized + Event {
+    #[docfg(feature = "cl1_1")]
+    #[inline(always)]
+    fn abortable (self) -> Result<(Abortable<Self>, AbortHandle)> {
+        Abortable::new(self)
+    }
+
     /// Executes the specified function after the parent event has completed. 
     #[inline]
     fn map<T, F: FnOnce(Self::Output) -> T> (self, f: F) -> Result<Map<Self, F>> {
@@ -202,6 +208,14 @@ pub trait EventExt: Sized + Event {
     #[inline(always)]
     fn join<I: IntoIterator<Item = Self>> (iter: I) -> Result<EventJoin<Self>> where Self: 'static + Send, Self::Output: Unpin + Send + Sync, I::IntoIter: ExactSizeIterator {
         EventJoin::new(iter)
+    }
+
+    /// Returns an event that completes when all the events inside `iter` have completed, ensuring that the order of the outputs is the same as the inputs 
+    /// (first output is the result of the first event in the iterator, second output is from second event, etc.)
+    #[docfg(feature = "cl1_1")]
+    #[inline(always)]
+    fn join_ordered<I: IntoIterator<Item = Self>> (iter: I) -> Result<EventJoinOrdered<Self>> where Self: 'static + Send, Self::Output: Unpin + Send + Sync, I::IntoIter: ExactSizeIterator {
+        EventJoinOrdered::new(iter)
     }
 
     #[docfg(feature = "cl1_1")]

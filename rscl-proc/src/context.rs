@@ -8,7 +8,7 @@ pub fn global_context (input: ItemStatic) -> TokenStream {
 
     quote! {
         #(#attrs)*
-        #vis #static_token #mutability #ident #colon_token ::rscl::once_cell::sync::Lazy<#ty> #eq_token ::rscl::once_cell::sync::Lazy::new(|| #expr) #semi_token
+        #vis #static_token #mutability #ident #colon_token ::rscl::once_cell::sync::Lazy<#ty> #eq_token ::rscl::once_cell::sync::Lazy::new(|| #expr.unwrap()) #semi_token
 
         #[doc(hidden)]
         #[no_mangle]

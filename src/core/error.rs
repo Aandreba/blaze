@@ -160,6 +160,8 @@ error! {
         const CL_MAX_SIZE_RESTRICTION_EXCEEDED,
         // #endif
 
+        #[doc(hidden)]
+        Aborted = 1,
         NvidiaIllegalBufferAction = -9999
     }
 }

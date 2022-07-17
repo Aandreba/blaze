@@ -1,5 +1,5 @@
-use std::{sync::{atomic::{AtomicUsize}, Arc}, pin::Pin, mem::{MaybeUninit, ManuallyDrop}, backtrace::Backtrace, ptr::addr_of, ops::Deref};
-use bitvec::{prelude::BitBox, bits, bitbox, ptr::BitRef};
+use std::{sync::{atomic::{AtomicUsize}, Arc}, pin::Pin, mem::{MaybeUninit, ManuallyDrop}, backtrace::Backtrace, ptr::{addr_of, addr_of_mut}};
+use bitvec::{prelude::BitBox, bitbox};
 use once_cell::sync::OnceCell;
 
 use crate::{prelude::{RawContext, Result, Global, Error}};
@@ -225,6 +225,56 @@ impl<E: Event> EventJoinOrdered<E> where E: 'static + Send, E::Output: Send + Sy
     }
 }
 
+impl<E: Event> Event for EventJoinOrdered<E> where E::Output: Unpin {
+    type Output = Vec<E::Output>;
+
+    #[inline(always)]
+    fn as_raw (&self) -> &RawEvent {
+        self.data.flag.as_raw()
+    }
+
+    fn consume (self, err: Option<crate::prelude::Error>) -> crate::prelude::Result<Self::Output> {
+        let mut unpined = Pin::into_inner(self.data);
+        let data;
+
+        loop {
+            match Arc::try_unwrap(unpined) {
+                Ok(x) => {
+                    data = x;
+                    break
+                },
+
+                Err(x) => {
+                    unpined = x;
+                    core::hint::spin_loop()
+                }
+            }
+        }
+
+        if let Some(err) = err {
+            let data = data.error.into_inner().unwrap();
+            return Err(Error::from_parts(err.ty, data.desc, #[cfg(debug_assertions)] data.backtrace));
+        }
+
+        unsafe { Ok(data.results.assume_init()) }
+    }
+
+    #[inline(always)]
+    fn profiling_nanos (&self) -> Result<super::ProfilingInfo<u64>> {
+        self.data.flag.profiling_nanos()
+    }
+
+    #[inline(always)]
+    fn profiling_time (&self) -> Result<super::ProfilingInfo<std::time::SystemTime>> {
+        self.data.flag.profiling_time()
+    }
+
+    #[inline(always)]
+    fn duration (&self) -> Result<std::time::Duration> {
+        self.data.flag.duration()
+    }
+}
+
 impl<E: Event> JoinOrderedList<E> where E::Output: Unpin {
     #[inline]
     fn set (&self, idx: usize, v: E::Output) -> bool {
@@ -239,15 +289,21 @@ impl<E: Event> JoinOrderedList<E> where E::Output: Unpin {
 
         self.has_init.iter().all(|x| *x)
     }
+
+    unsafe fn assume_init (self) -> Vec<E::Output> {
+        let mut this = ManuallyDrop::new(self);
+        let inner = core::ptr::read(addr_of!(this.inner));
+        core::ptr::drop_in_place(addr_of_mut!(this.has_init));
+        Pin::into_inner(inner).assume_init().into_vec()
+    }
 }
 
 impl<E: Event> Drop for JoinOrderedList<E> where E::Output: Unpin {
     #[inline]
     fn drop(&mut self) {
-        let inner = Pin::into_inner(self.inner);
-        for (init, inner) in self.has_init.into_iter().zip(inner.iter_mut()) {
-            if init {
-                unsafe { inner.assume_init_drop(); }
+        unsafe {
+            for (init, inner) in self.has_init.iter().zip(self.inner.iter_mut()) {
+                if *init { inner.assume_init_drop(); }
             }
         }
     }

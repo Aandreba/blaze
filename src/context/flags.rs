@@ -4,7 +4,9 @@ use crate::core::Platform;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub struct ContextProperties {
+    /// Specifies the platform to use.
     pub platform: Option<Platform>,
+    /// Specifies whether the user is responsible for synchronization between OpenCL and other APIs. Please refer to the specific sections in the OpenCL Extension Specification that describe sharing with other APIs for restrictions on using this flag. If not specified, a default of `false` is assumed.
     #[cfg_attr(docsrs, doc(cfg(feature = "cl1_2")))]
     #[cfg(feature = "cl1_2")]
     pub interop_user_sync: bool

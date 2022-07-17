@@ -1,4 +1,6 @@
 use std::ops::Deref;
+use rscl_proc::docfg;
+
 use crate::{core::*};
 use super::{Context, RawContext, ContextProperties};
 
@@ -15,12 +17,32 @@ impl SimpleContext {
         let queue = CommandQueue::new(&ctx, props.into(), device)?;
         Ok(Self { ctx, queue })
     }
+
+    #[docfg(feature = "cl3")]
+    pub fn with_loger (device: &Device, ctx_props: ContextProperties, props: impl Into<QueueProperties>, loger: impl 'static + Fn(&str) + Send) -> Result<Self> {
+        let ctx = RawContext::with_loger(ctx_props, core::slice::from_ref(device), loger)?;
+        let queue = CommandQueue::new(&ctx, props.into(), device)?;
+        Ok(Self { ctx, queue })
+    }
+
+    #[inline(always)]
+    pub fn default() -> Result<Self> {
+        let device = Device::first().ok_or(ErrorType::InvalidDevice)?;
+
+        cfg_if::cfg_if! {
+            if #[cfg(all(debug_assertions, feature = "cl3"))] {
+                Self::with_loger(device, ContextProperties::default(), QueueProperties::default(), |x| println!("{x}"))
+            } else {
+                Self::new(device, ContextProperties::default(), QueueProperties::default())
+            }
+        }
+    }
 }
 
 impl Context for SimpleContext {
     #[inline(always)]
     fn queues (&self) -> &[CommandQueue] {
-        core::slice::from_ref(&&self.queue)
+        core::slice::from_ref(&self.queue)
     }
 
     #[inline(always)]
@@ -35,12 +57,5 @@ impl Deref for SimpleContext {
     #[inline(always)]
     fn deref(&self) -> &Self::Target {
         &self.ctx
-    }
-}
-
-impl Default for SimpleContext {
-    #[inline(always)]
-    fn default() -> Self {
-        Self::new(Device::first().unwrap(), ContextProperties::default(), QueueProperties::default()).unwrap()
     }
 }

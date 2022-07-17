@@ -1,9 +1,8 @@
 use core::{mem::MaybeUninit, num::{NonZeroUsize, NonZeroU32, NonZeroU64, IntErrorKind}, fmt::{Debug, Display}, str::FromStr};
-use std::{ptr::{NonNull, addr_of_mut}, ffi::c_void, time::{Instant, Duration, SystemTime}};
+use std::{ptr::{NonNull}, ffi::c_void};
 use opencl_sys::*;
 use rscl_proc::docfg;
 use crate::buffer::flags::MemAccess;
-
 use super::*;
 
 lazy_static! {
@@ -862,7 +861,7 @@ impl Device {
         let mut host = 0;
 
         unsafe {
-            tri!(clGetDeviceAndHostTimer(self.id(), addr_of_mut!(device), addr_of_mut!(host)))
+            tri!(clGetDeviceAndHostTimer(self.id(), std::ptr::addr_of_mut!(device), std::ptr::addr_of_mut!(host)))
         }
 
         Ok([device, host])
@@ -871,10 +870,10 @@ impl Device {
     /// Query synchronized host and device timestamps.
     #[docfg(feature = "cl2_1")]
     #[inline(always)]
-    pub fn device_and_host_timer (&self) -> Result<(SystemTime, SystemTime)> {
+    pub fn device_and_host_timer (&self) -> Result<(std::time::SystemTime, std::time::SystemTime)> {
         let [device, host] = self.device_and_host_timer_nanos()?;
-        let device = std::time::UNIX_EPOCH.checked_add(Duration::from_nanos(device)).unwrap();
-        let host = std::time::UNIX_EPOCH.checked_add(Duration::from_nanos(host)).unwrap();
+        let device = std::time::UNIX_EPOCH.checked_add(std::time::Duration::from_nanos(device)).unwrap();
+        let host = std::time::UNIX_EPOCH.checked_add(std::time::Duration::from_nanos(host)).unwrap();
         Ok((device, host))
     }
 
@@ -884,7 +883,7 @@ impl Device {
     pub fn host_clock_nanos (&self) -> Result<u64> {
         let mut host = 0;
         unsafe {
-            tri!(clGetHostTimer(self.id(), addr_of_mut!(host)))
+            tri!(clGetHostTimer(self.id(), std::ptr::addr_of_mut!(host)))
         }
 
         Ok(host)
@@ -893,9 +892,9 @@ impl Device {
     /// Query the host clock.
     #[docfg(feature = "cl2_1")]
     #[inline(always)]
-    pub fn host_clock (&self) -> Result<SystemTime> {
+    pub fn host_clock (&self) -> Result<std::time::SystemTime> {
         let host = self.host_clock_nanos()?;
-        Ok(std::time::UNIX_EPOCH + Duration::from_nanos(host))
+        Ok(std::time::UNIX_EPOCH + std::time::Duration::from_nanos(host))
     }
 
     #[inline(always)]

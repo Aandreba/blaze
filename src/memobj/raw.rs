@@ -159,7 +159,7 @@ unsafe impl Send for MemObject {}
 unsafe impl Sync for MemObject {}
 
 #[cfg(feature = "cl1_1")]
-unsafe extern "C" fn destructor_callback (memobj: cl_mem, user_data: *mut c_void) {
+unsafe extern "C" fn destructor_callback (_memobj: cl_mem, user_data: *mut c_void) {
     let f = *Box::from_raw(user_data as *mut Box<dyn FnOnce() + Send>);
     f()
 }

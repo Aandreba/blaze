@@ -2,7 +2,7 @@ use super::*;
 use std::{mem::MaybeUninit, ptr::NonNull, ffi::c_void};
 use opencl_sys::*;
 use rscl_proc::docfg;
-use crate::{context::RawContext};
+use crate::{context::RawContext, prelude::RawEvent, memobj::MemObject, event::WaitList};
 use std::ptr::addr_of_mut;
 
 #[repr(transparent)]
@@ -432,7 +432,7 @@ impl OutOfOrderExec {
 impl From<bool> for OutOfOrderExec {
     #[inline(always)]
     fn from(v: bool) -> Self {
-        if v.into() {
+        if v {
             return Self::Enabled
         }
 

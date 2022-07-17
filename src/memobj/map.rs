@@ -3,7 +3,7 @@ use opencl_sys::clEnqueueUnmapMemObject;
 use crate::{prelude::*, event::WaitList};
 use super::{AsMem, AsMutMem};
 
-pub type MapMutBox<T, D: AsMutMem, C = Global> = Box<[T], MapMut<D, C>>;
+pub type MapMutBox<T, D, C = Global> = Box<[T], MapMut<D, C>>;
 
 pub struct Map<D: AsMem, C: Context = Global> (D, C);
 

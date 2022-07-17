@@ -1,3 +1,4 @@
+use std::{ops::Deref};
 use std::{ptr::{addr_of_mut, NonNull}, ffi::c_void, mem::MaybeUninit};
 use opencl_sys::*;
 use rscl_proc::docfg;
@@ -8,7 +9,18 @@ use super::ContextProperties;
 pub struct RawContext (NonNull<c_void>);
 
 impl RawContext {
+    #[inline(always)]
     pub fn new (props: ContextProperties, devices: &[Device]) -> Result<Self> {
+        Self::inner_new::<fn(&str)>(props, devices, #[cfg(feature = "cl3")] None)
+    }
+
+    #[docfg(feature = "cl3")]
+    #[inline(always)]
+    pub fn with_loger<F: 'static + Fn(&str) + Send> (props: ContextProperties, devices: &[Device], loger: F) -> Result<Self> {
+        Self::inner_new(props, devices, Some(loger))
+    }
+
+    fn inner_new<F: 'static + Fn(&str) + Send> (props: ContextProperties, devices: &[Device], #[cfg(feature = "cl3")] loger: Option<F>) -> Result<Self> {
         let num_devices = u32::try_from(devices.len()).unwrap();
         let props = props.to_bits();
         let props = match props {
@@ -16,16 +28,44 @@ impl RawContext {
             None => core::ptr::null()
         };
 
+        cfg_if::cfg_if! {
+            if #[cfg(feature = "cl3")] {
+                let (pfn_notify, user_data) : (Option<unsafe extern "C" fn(*const i8, *const c_void, usize, *mut c_void)>, Option<Box<Box<dyn Fn(&str) + Send>>>) = match loger {
+                    Some(x) => {
+                        let f = Box::new(x) as Box<dyn Fn(&str) + Send>;
+                        (Some(context_error), Some(Box::new(f)))
+                    },
+        
+                    None => (None, None)
+                };
+            } else {
+                let (pfn_notify, user_data) : (Option<unsafe extern "C" fn(*const i8, *const c_void, usize, *mut c_void)>, Option<Box<Box<dyn Fn(&str) + Send>>>) = (None, None);
+            }
+        }
+
+        let user_data_ptr = match user_data {
+            Some(ref x) => x.deref() as *const _ as *mut c_void,
+            None => core::ptr::null_mut()
+        };
+
         let mut err = 0;
         let id = unsafe {
-            clCreateContext(props, num_devices, devices.as_ptr().cast(), None, core::ptr::null_mut(), addr_of_mut!(err))
+            clCreateContext(props, num_devices, devices.as_ptr().cast(), pfn_notify, user_data_ptr, addr_of_mut!(err))
         };
 
         if err != 0 {
             return Err(Error::from(err));
         }
 
-        Ok(Self::from_id(id).unwrap())
+        let this = Self::from_id(id).unwrap();
+
+        #[cfg(feature = "cl3")]
+        this.on_destruct(move || {
+            println!("dropping logger");
+            drop(user_data)
+        })?;
+
+        Ok(this)
     }
 
     pub fn from_type (props: ContextProperties, ty: DeviceType) -> Result<Self> {
@@ -230,4 +270,11 @@ unsafe impl Sync for RawContext {}
 unsafe extern "C" fn destructor_callback (_context: cl_context, user_data: *mut c_void) {
     let f = *Box::from_raw(user_data as *mut Box<dyn FnOnce() + Send>);
     f()
+}
+
+#[cfg(feature = "cl3")]
+unsafe extern "C" fn context_error (errinfo: *const i8, private_info: *const c_void, cb: usize, user_data: *mut c_void) {
+    let str = std::ffi::CStr::from_ptr(errinfo).to_str().unwrap();
+    let user_data = &mut *(user_data as *mut Box<dyn Fn(&str) + Send>);
+    user_data(str)
 }
