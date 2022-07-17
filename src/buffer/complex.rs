@@ -1,4 +1,4 @@
-use std::{marker::PhantomData, ptr::{NonNull}, ops::{Deref, DerefMut}, fmt::Debug, mem::MaybeUninit};
+use std::{marker::PhantomData, ptr::{NonNull}, ops::{Deref, DerefMut}, fmt::Debug, mem::MaybeUninit, sync::Arc};
 use rscl_proc::docfg;
 
 use crate::{context::{Context, Global}, event::{WaitList}, prelude::{Event}};
@@ -158,6 +158,28 @@ impl<T: Copy + Unpin, C: Context> Buffer<T, C> {
     #[inline(always)]
     pub fn map_mut<'a> (&'a mut self, range: impl IntoRange, wait: impl Into<WaitList>) -> Result<super::events::MapMutBuffer<T, &'a mut Self, C>> where T: 'static, C: 'static + Clone {
         Self::map_by_deref_mut(self, range, wait)
+    }
+
+    /* ARC */
+
+    #[inline(always)]
+    pub fn read_all_owned (self: Arc<Self>, wait: impl Into<WaitList>) -> Result<ReadBuffer<T, Arc<Self>>> {
+        self.read_owned(.., wait)
+    }
+
+    #[inline(always)]
+    pub fn read_owned (self: Arc<Self>, range: impl IntoRange, wait: impl Into<WaitList>) -> Result<ReadBuffer<T, Arc<Self>>> {
+        Self::read_by_deref(self, range, wait)
+    }
+
+    #[inline(always)]
+    pub fn read_into_owned<Dst: DerefMut<Target = [T]>> (self: Arc<Self>, offset: usize, dst: Dst, wait: impl Into<WaitList>) -> Result<ReadBufferInto<Arc<Self>, Dst>> {
+        Self::read_into_by_deref(self, offset, dst, wait)
+    }
+    
+    #[inline(always)]
+    pub fn copy_to_owned<Dst: DerefMut<Target = Self>> (self: Arc<Self>, offset_src: usize, dst: Dst, offset_dst: usize, len: usize, wait: impl Into<WaitList>) -> Result<CopyBuffer<Arc<Self>, Dst>> {
+        Self::copy_to_by_deref(self, offset_src, dst, offset_dst, len, wait)
     }
 
     /* BY DEREF */

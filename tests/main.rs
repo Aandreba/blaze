@@ -1,5 +1,7 @@
-use rscl::{core::*, context::{SimpleContext}, buffer::{flags::MemAccess, Buffer, KernelPointer}, event::{WaitList}, prelude::{Event, Global, Context}};
-use rscl_proc::{global_context, rscl};
+use std::sync::Arc;
+
+use rscl::{core::*, context::{SimpleContext}, buffer::{flags::MemAccess, Buffer, events::ReadBuffer}, event::{WaitList}, prelude::{Global, Context, EventExt, Event}};
+use rscl_proc::{global_context};
 
 #[global_context]
 static CONTEXT : SimpleContext = SimpleContext::default();
@@ -19,10 +21,13 @@ fn program () -> Result<()> {
 
 #[test]
 fn flag () -> Result<()> {
-    let mut buffer = Buffer::<f32>::new_uninit(5, MemAccess::default(), false)?;
-    let (_, fill) = buffer.fill_init(0., .., WaitList::EMPTY)?.wait_with_duration()?;
+    let buffer = Arc::new(Buffer::new(&[1, 2, 3, 4, 5], MemAccess::default(), false)?);
+    let one = buffer.clone().read_owned(..2, WaitList::EMPTY)?;
+    let two = buffer.read_owned(2.., WaitList::EMPTY)?;
 
-    let (_, duration) = buffer.map_all_mut(WaitList::EMPTY)?.wait_with_duration()?;
-    println!("{fill:?} v. {duration:?}");
+    let join = ReadBuffer::join([one, two])?;
+    let out = join.wait_with_time()?;
+
+    println!("{out:?}");
     Ok(())
 }

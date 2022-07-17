@@ -107,6 +107,21 @@ impl<E: Event> Event for EventJoin<E> where E::Output: Unpin {
 
         unsafe { Ok(data.results.assume_init()) }
     }
+
+    #[inline(always)]
+    fn profiling_nanos (&self) -> Result<super::ProfilingInfo<u64>> {
+        self.data.flag.profiling_nanos()
+    }
+
+    #[inline(always)]
+    fn profiling_time (&self) -> Result<super::ProfilingInfo<std::time::SystemTime>> {
+        self.data.flag.profiling_time()
+    }
+
+    #[inline(always)]
+    fn duration (&self) -> Result<std::time::Duration> {
+        self.data.flag.duration()
+    }
 }
 
 impl<E: Event> JoinList<E> where E::Output: Unpin {

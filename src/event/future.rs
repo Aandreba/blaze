@@ -1,4 +1,4 @@
-use std::{task::Poll};
+use std::{task::Poll, time::SystemTime};
 use futures::{Future, FutureExt, future::{FusedFuture}};
 use crate::prelude::{Result, RawContext, Global};
 use super::{FlagEvent, RawEvent, Event};
@@ -57,5 +57,20 @@ impl<F: Future + Unpin> Event for FutureEvent<F> {
     fn consume (self, err: Option<crate::prelude::Error>) -> Result<Self::Output> {
         if let Some(err) = err { return Err(err) }
         Ok(())
+    }
+
+    #[inline(always)]
+    fn profiling_nanos (&self) -> Result<super::ProfilingInfo<u64>> {
+        self.flag.profiling_nanos()
+    }
+
+    #[inline(always)]
+    fn profiling_time (&self) -> Result<super::ProfilingInfo<SystemTime>> {
+        self.flag.profiling_time()
+    }
+
+    #[inline(always)]
+    fn duration (&self) -> Result<std::time::Duration> {
+        self.flag.duration()
     }
 }

@@ -169,6 +169,13 @@ pub trait EventExt: Sized + Event {
         }
     }
 
+    /// Returns an event that completes when all the events inside `iter` have completed.
+    #[docfg(feature = "cl1_1")]
+    #[inline(always)]
+    fn join<I: IntoIterator<Item = Self>> (iter: I) -> Result<EventJoin<Self>> where Self: 'static + Send, Self::Output: Unpin + Send + Sync, I::IntoIter: ExactSizeIterator {
+        EventJoin::new(iter)
+    }
+
     #[docfg(feature = "cl1_1")]
     #[inline(always)]
     fn join_in<I: IntoIterator<Item = Self>> (ctx: &RawContext, iter: I) -> Result<EventJoin<Self>> where Self: 'static + Send, Self::Output: Unpin + Send + Sync, I::IntoIter: ExactSizeIterator {
