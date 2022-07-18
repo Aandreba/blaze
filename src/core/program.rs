@@ -149,7 +149,7 @@ impl Program {
 
         let build_result = ErrorType::from(build_result);
 
-        for device in ctx.queues().into_iter().map(CommandQueue::device) {
+        for device in ctx.queues().into_iter().map(RawCommandQueue::device) {
             let device = device?;
             
             let mut len = 0;

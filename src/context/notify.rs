@@ -1,5 +1,5 @@
 use std::sync::{Arc, atomic::AtomicUsize};
-use crate::prelude::{RawEvent, Result};
+use crate::prelude::{RawEvent, Result, Event};
 
 /// Notifier
 #[derive(Debug)]
@@ -26,10 +26,10 @@ impl Notify {
     }
 
     #[inline(always)]
-    pub fn bind_result (self, evt: Result<RawEvent>) -> Result<RawEvent> {
+    pub fn bind_result<T: Event> (self, evt: Result<T>) -> Result<T> {
         match evt {
             Ok(evt) => {
-                self.bind(&evt);
+                self.bind(evt.as_raw());
                 Ok(evt)
             },
 
@@ -39,4 +39,13 @@ impl Notify {
             }
         }
     }
+}
+
+#[inline(always)]
+pub fn bind_result<T: Event> (notify: Option<Notify>, evt: Result<T>) -> Result<T> {
+    if let Some(notify) = notify {
+        return notify.bind_result(evt)
+    }
+
+    evt
 }

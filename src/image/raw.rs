@@ -157,7 +157,7 @@ impl RawImage {
 
 impl RawImage {
     #[inline]
-    pub unsafe fn read_to_ptr (&self, origin: [usize; 3], region: [usize; 3], row_pitch: Option<usize>, slice_pitch: Option<usize>, dst: *mut c_void, queue: &CommandQueue, wait: impl Into<WaitList>) -> Result<RawEvent> {
+    pub unsafe fn read_to_ptr (&self, origin: [usize; 3], region: [usize; 3], row_pitch: Option<usize>, slice_pitch: Option<usize>, dst: *mut c_void, queue: &RawCommandQueue, wait: impl Into<WaitList>) -> Result<RawEvent> {
         let row_pitch = row_pitch.unwrap_or_default();
         let slice_pitch = slice_pitch.unwrap_or_default();
 
@@ -170,7 +170,7 @@ impl RawImage {
     }
 
     #[inline]
-    pub unsafe fn write_from_ptr (&mut self, origin: [usize; 3], region: [usize; 3], row_pitch: Option<usize>, slice_pitch: Option<usize>, src: *const c_void, queue: &CommandQueue, wait: impl Into<WaitList>) -> Result<RawEvent> {
+    pub unsafe fn write_from_ptr (&mut self, origin: [usize; 3], region: [usize; 3], row_pitch: Option<usize>, slice_pitch: Option<usize>, src: *const c_void, queue: &RawCommandQueue, wait: impl Into<WaitList>) -> Result<RawEvent> {
         let row_pitch = row_pitch.unwrap_or_default();
         let slice_pitch = slice_pitch.unwrap_or_default();
 
@@ -183,7 +183,7 @@ impl RawImage {
     }
 
     #[inline]
-    pub unsafe fn copy_from (&mut self, offset_dst: [usize; 3], src: &RawImage, offset_src: [usize; 3], region: [usize; 3], queue: &CommandQueue, wait: impl Into<WaitList>) -> Result<RawEvent> {
+    pub unsafe fn copy_from (&mut self, offset_dst: [usize; 3], src: &RawImage, offset_src: [usize; 3], region: [usize; 3], queue: &RawCommandQueue, wait: impl Into<WaitList>) -> Result<RawEvent> {
         let wait : WaitList = wait.into();
         let (num_events_in_wait_list, event_wait_list) = wait.raw_parts();
         
@@ -193,13 +193,13 @@ impl RawImage {
     }
 
     #[inline(always)]
-    pub unsafe fn copy_to (&self, offset_src: [usize; 3], dst: &mut RawImage, offset_dst: [usize; 3], region: [usize; 3], queue: &CommandQueue, wait: impl Into<WaitList>) -> Result<RawEvent> {
+    pub unsafe fn copy_to (&self, offset_src: [usize; 3], dst: &mut RawImage, offset_dst: [usize; 3], region: [usize; 3], queue: &RawCommandQueue, wait: impl Into<WaitList>) -> Result<RawEvent> {
         Self::copy_from(dst, offset_dst, self, offset_src, region, queue, wait)
     }
 
     #[docfg(feature = "cl1_2")]
     #[inline]
-    pub unsafe fn fill (&mut self, color: *const c_void, origin: [usize; 3], region: [usize; 3], queue: &CommandQueue, wait: impl Into<WaitList>) -> Result<RawEvent> {
+    pub unsafe fn fill (&mut self, color: *const c_void, origin: [usize; 3], region: [usize; 3], queue: &RawCommandQueue, wait: impl Into<WaitList>) -> Result<RawEvent> {
         let wait : WaitList = wait.into();
         let (num_events_in_wait_list, event_wait_list) = wait.raw_parts();
         
@@ -209,22 +209,22 @@ impl RawImage {
     }
 
     #[inline(always)]
-    pub unsafe fn map_read<T, W: Into<WaitList>> (&self, origin: [usize; 3], region: [usize; 3], queue: &CommandQueue, wait: W) -> Result<(*const T, usize, usize, RawEvent)> {
+    pub unsafe fn map_read<T, W: Into<WaitList>> (&self, origin: [usize; 3], region: [usize; 3], queue: &RawCommandQueue, wait: W) -> Result<(*const T, usize, usize, RawEvent)> {
         let (ptr, image_row_pitch, image_slice_pitch, evt) = self.__map_inner::<T, W, CL_MAP_READ>(origin, region, queue, wait)?;
         Ok((ptr as *const _, image_row_pitch, image_slice_pitch, evt))
     }
 
     #[inline(always)]
-    pub unsafe fn map_write<T, W: Into<WaitList>> (&self, origin: [usize; 3], region: [usize; 3], queue: &CommandQueue, wait: W) -> Result<(*mut T, usize, usize, RawEvent)> {
+    pub unsafe fn map_write<T, W: Into<WaitList>> (&self, origin: [usize; 3], region: [usize; 3], queue: &RawCommandQueue, wait: W) -> Result<(*mut T, usize, usize, RawEvent)> {
         self.__map_inner::<T, W, CL_MAP_WRITE>(origin, region, queue, wait)
     }
 
     #[inline(always)]
-    pub unsafe fn map_read_write<T, W: Into<WaitList>> (&self, origin: [usize; 3], region: [usize; 3], queue: &CommandQueue, wait: W) -> Result<(*mut T, usize, usize, RawEvent)> {
+    pub unsafe fn map_read_write<T, W: Into<WaitList>> (&self, origin: [usize; 3], region: [usize; 3], queue: &RawCommandQueue, wait: W) -> Result<(*mut T, usize, usize, RawEvent)> {
         self.__map_inner::<T, W, {CL_MAP_READ | CL_MAP_WRITE}>(origin, region, queue, wait)
     }
 
-    unsafe fn __map_inner<T, W: Into<WaitList>, const FLAGS : cl_mem_flags> (&self, origin: [usize; 3], region: [usize; 3], queue: &CommandQueue, wait: W) -> Result<(*mut T, usize, usize, RawEvent)> {
+    unsafe fn __map_inner<T, W: Into<WaitList>, const FLAGS : cl_mem_flags> (&self, origin: [usize; 3], region: [usize; 3], queue: &RawCommandQueue, wait: W) -> Result<(*mut T, usize, usize, RawEvent)> {
         let wait : WaitList = wait.into();
         let (num_events_in_wait_list, event_wait_list) = wait.raw_parts();
         
