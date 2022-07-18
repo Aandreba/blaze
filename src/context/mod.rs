@@ -8,8 +8,8 @@ use crate::core::*;
 /// their various command queues. This allows RSCL contexts to manage the load between the various devices in an
 /// OpenCL context. 
 pub trait Context: Deref<Target = RawContext> {
-    fn queues (&self) -> &[RawCommandQueue];
-    fn next_queue (&self) -> (&RawCommandQueue, Option<Notify>);
+    fn queues (&self) -> &[CommandQueue];
+    fn next_queue (&self) -> &CommandQueue;
 
     #[inline(always)]
     fn as_raw (&self) -> &RawContext {

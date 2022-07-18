@@ -1,93 +1,120 @@
-use std::{sync::{Arc, atomic::AtomicUsize}, cell::UnsafeCell};
-use once_cell::sync::OnceCell;
-use crate::{prelude::{RawCommandQueue, RawEvent, Result}, event::WaitList};
+use std::{sync::{Arc, atomic::{AtomicUsize}}, time::SystemTime};
+use crate::{prelude::{RawCommandQueue, RawEvent, Result, Error, Event}, event::{WaitList, EventJoin, ProfilingInfo}};
+
+pub type DynEventual = Eventual<Box<dyn FnOnce(&RawCommandQueue) -> Result<RawEvent>>>;
 
 /// A smart command queue. Events pushed to this queue will not be pushed to it's OpenCL counterpart until all
 /// their dependants (a.k.a the events in the wait list) have completed.
 #[derive(Debug, Clone)]
 pub struct CommandQueue {
     inner: RawCommandQueue,
+    #[cfg(feature = "cl1_1")]
     size: Arc<AtomicUsize>
 }
 
 impl CommandQueue {
     #[inline(always)]
-    pub const fn new (inner: RawCommandQueue) -> Self {
+    pub fn new (inner: RawCommandQueue) -> Self {
         todo!()
         //Self { inner, buffer }
     }
 
     #[inline(always)]
     pub fn size (&self) -> usize {
-        self.size.load(std::sync::atomic::Ordering::Relaxed)
+        #[cfg(feature = "cl1_1")]
+        return self.size.load(std::sync::atomic::Ordering::Relaxed);
+        #[cfg(not(feature = "cl1_1"))]
+        0
     }
 
     #[cfg(feature = "cl1_1")]
-    pub fn enqueue<F: FnOnce(&RawCommandQueue) -> Result<RawEvent>> (&self, f: F, wait: impl Into<WaitList>) -> Eventual {
+    #[inline]
+    pub fn enqueue<F: FnOnce(&RawCommandQueue, WaitList) -> Result<RawEvent>> (&self, f: F, wait: impl Into<WaitList>) -> Result<Eventual<F>> {
+        self.size.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        
         let wait : WaitList = wait.into();
-        let wait = wait.into_vec();
+        let ctx = self.inner.context()?;
 
-        if wait.len() == 0 {
-            let evt = f(&self.inner);
-            return Eventual::with_event(evt);
-        }
+        let join = <RawEvent as crate::prelude::EventExt>::join_in(&ctx, wait.iter().cloned())?;
+        Ok(Eventual::new(join, self.clone(), f))
+    }
 
-        let remaining = Arc::new(AtomicUsize::new(wait.len()));
-        let f = Box::into_raw(Box::new(f)) as usize;
-        let result = Arc::new(OnceCell::new());
+    #[cfg(not(feature = "cl1_1"))]
+    #[inline(always)]
+    pub fn enqueue<F: FnOnce(&RawCommandQueue, WaitList) -> Result<RawEvent>> (&self, f: F, wait: impl Into<WaitList>) -> Result<Eventual<F>> {
+        Ok(Eventual::new(&self.inner, f, ))
+    }
+}
 
-        for evt in wait {
-            let remaining = remaining.clone();
-            let inner = self.inner.clone();
-            let size = self.size.clone();
+#[cfg(feature = "cl1_1")]
+pub struct Eventual<F> {
+    join: EventJoin<RawEvent>,
+    parent: CommandQueue,
+    wait: WaitList,
+    f: F
+}
 
-            evt.on_complete(move |_, _| {
-                if remaining.fetch_sub(1, std::sync::atomic::Ordering::Release) == 1 {
-                    let f = unsafe { Box::from_raw(f as *mut F) };
-                    let evt = f(&inner);
+#[cfg(not(feature = "cl1_1"))]
+pub struct Eventual<F> {
+    inner: Result<RawEvent>,
+    phtm: std::marker::PhantomData<F>
+}
+
+impl<F: FnOnce(&RawCommandQueue, WaitList) -> Result<RawEvent>> Eventual<F> {
+    #[inline(always)]
+    #[cfg(feature = "cl1_1")]
+    fn new (join: EventJoin<RawEvent>, parent: CommandQueue, f: F) -> Self {
+        Self { join, parent, f }
+    }
+
+    #[inline(always)]
+    #[cfg(not(feature = "cl1_1"))]
+    fn new (queue: &CommandQueue, f: F, wait: impl Into<WaitList>) -> Self {
+        let inner = f(queue, wait.into());
+        Self { inner, phtm: std::marker::PhantomData }
+    }
+}
+
+impl<F: FnOnce(&RawCommandQueue, WaitList) -> Result<RawEvent>> Event for Eventual<F> {
+    type Output = RawEvent;
+
+    #[inline(always)]
+    fn as_raw (&self) -> &RawEvent {
+        self.join.as_raw()
+    }
+
+    #[inline]
+    fn consume (self, err: Option<Error>) -> Result<Self::Output> {
+        if let Some(err) = err { return Err(err); }
+
+        match (self.f)(&self.parent.inner) {
+            Ok(evt) => {
+                if evt.on_complete(move |_, _| { self.parent.size.fetch_sub(1, std::sync::atomic::Ordering::Relaxed); }).is_err() {
+                    self.parent.size.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
                 }
-            });
-        }
 
-        todo!()
-    }
-}
+                Ok(evt)
+            },
 
-pub struct Eventual {
-    evt: Arc<UnsafeCell<T>>,
-    #[cfg(feature = "futures")]
-    waker: futures::task::AtomicWaker
-}
-
-impl Eventual {
-    #[inline(always)]
-    pub const fn new () -> Self {
-        Self { 
-            evt: Arc::new(OnceCell::new()),
-            #[cfg(feature = "futures")]
-            waker: futures::task::AtomicWaker::new()
+            Err(e) => {
+                self.parent.size.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+                Err(e)
+            }
         }
     }
 
     #[inline(always)]
-    pub const fn with_event (evt: Result<RawEvent>) -> Self {
-        Self { 
-            evt: Arc::new(OnceCell::with_value(evt)),
-            #[cfg(feature = "futures")]
-            waker: futures::task::AtomicWaker::new()
-        }
+    fn profiling_nanos (&self) -> Result<ProfilingInfo<u64>> {
+        self.join.profiling_nanos()
     }
 
     #[inline(always)]
-    pub const fn from_cell (evt: Arc<OnceCell<Result<RawEvent>>>) -> Self {
-        Self { 
-            evt,
-            #[cfg(feature = "futures")]
-            waker: futures::task::AtomicWaker::new()
-        }
+    fn profiling_time (&self) -> Result<ProfilingInfo<SystemTime>> {
+        self.join.profiling_time()
     }
 
-    pub fn wait (self) -> Result<RawEvent> {
-        self.evt.wait()
+    #[inline(always)]
+    fn duration (&self) -> Result<std::time::Duration> {
+        self.join.duration()
     }
 }
