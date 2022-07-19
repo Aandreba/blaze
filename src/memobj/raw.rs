@@ -6,7 +6,7 @@ use crate::{core::*, context::RawContext, buffer::flags::MemFlags};
 use super::MemObjectType;
 
 /// A raw OpenCL memory object
-#[derive(Debug, PartialEq, Eq, Hash)]
+#[derive(Debug)]
 #[repr(transparent)]
 pub struct MemObject (NonNull<c_void>);
 

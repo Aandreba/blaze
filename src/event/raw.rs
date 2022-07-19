@@ -6,7 +6,7 @@ use rscl_proc::docfg;
 use super::{Event};
 
 /// A raw OpenCL event
-#[derive(Debug, PartialEq, Eq, Hash)]
+#[derive(Debug)]
 #[repr(transparent)]
 pub struct RawEvent (NonNull<c_void>);
 

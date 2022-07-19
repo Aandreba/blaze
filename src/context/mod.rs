@@ -1,4 +1,4 @@
-flat_mod!(raw,flags, global, single, notify, balanced);
+flat_mod!(raw,flags, global, single, cyclic);
 
 use std::ops::Deref;
 use crate::core::*;
@@ -9,7 +9,7 @@ use crate::core::*;
 /// OpenCL context. 
 pub trait Context: Deref<Target = RawContext> {
     fn queues (&self) -> &[CommandQueue];
-    fn next_queue (&self) -> (&CommandQueue, Option<Notify>);
+    fn next_queue (&self) -> &CommandQueue;
 
     #[inline(always)]
     fn as_raw (&self) -> &RawContext {

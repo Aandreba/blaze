@@ -2,10 +2,9 @@ use super::*;
 use std::{mem::MaybeUninit, ptr::NonNull, ffi::c_void};
 use opencl_sys::*;
 use rscl_proc::docfg;
-use crate::{context::RawContext};
+use crate::{context::RawContext, prelude::RawEvent, memobj::MemObject, event::WaitList};
 use std::ptr::addr_of_mut;
 
-#[derive(Debug, PartialEq, Eq, Hash)]
 #[repr(transparent)]
 pub struct CommandQueue (NonNull<c_void>);
 

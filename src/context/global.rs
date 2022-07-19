@@ -1,11 +1,11 @@
 use std::ops::Deref;
 use crate::core::CommandQueue;
-use super::{Context, RawContext, Notify};
+use super::{Context, RawContext};
 
 extern "Rust" {
     fn __rscl__global__as_raw () -> &'static RawContext;
     fn __rscl__global__queues () -> &'static [CommandQueue];
-    fn __rscl__global__next_queue () -> (&'static CommandQueue, Option<Notify>);
+    fn __rscl__global__next_queue () -> &'static CommandQueue;
 }
 
 /// RSCL's global context
@@ -14,7 +14,7 @@ pub struct Global;
 
 impl Context for Global {
     #[inline(always)]
-    fn next_queue (&self) -> (&CommandQueue, Option<Notify>) {
+    fn next_queue (&self) -> &CommandQueue {
         unsafe { __rscl__global__next_queue() } 
     }
 
