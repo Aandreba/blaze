@@ -4,7 +4,10 @@ use opencl_sys::{CL_MAP_READ, CL_MAP_WRITE};
 #[cfg(feature = "cl1_1")]
 pub use rect::BufferRect2D;
 use rscl_proc::docfg;
-use crate::{prelude::{Context, Kernel, Result, RawEvent}, svm::SvmPointer, event::WaitList};
+use crate::{prelude::{Context, Kernel, Result, RawEvent}, event::WaitList};
+
+#[cfg(feature = "svm")]
+use crate::svm::SvmPointer;
 
 #[cfg_attr(docsrs, doc(cfg(feature = "cl1_1")))]
 #[cfg(feature = "cl1_1")]

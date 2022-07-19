@@ -1,4 +1,4 @@
-flat_mod!(raw,flags, global, single, cyclic);
+flat_mod!(raw,flags, global, single);
 
 use std::ops::Deref;
 use crate::core::*;

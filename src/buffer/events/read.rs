@@ -4,6 +4,7 @@ use crate::{core::*, event::{RawEvent, Event, WaitList}, buffer::{IntoRange, Buf
 pub struct ReadBuffer<T: Copy, Src> {
     event: RawEvent,
     dst: Pin<Vec<T>>,
+    #[allow(dead_code)]
     src: Src
 }
 
