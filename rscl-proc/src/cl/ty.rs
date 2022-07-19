@@ -1,6 +1,7 @@
-use proc_macro2::{Ident, TokenStream};
-use quote::quote_spanned;
-use syn::{parse::Parse, LitInt, TypePath, token::{Mut, Star}, bracketed, parse_quote_spanned, spanned::Spanned, Token, Generics, GenericParam, WherePredicate};
+use proc_macro2::{Ident};
+use syn::{parse::Parse, LitInt, TypePath, token::{Mut, Star}, bracketed, parse_quote_spanned, spanned::Spanned, Token, GenericParam, WherePredicate, custom_keyword, parse_quote};
+
+custom_keyword!(image2d);
 
 /*
     kernel void add (const ulong n, __global const float* rhs, __global const float* in, __global float* out) {
@@ -11,11 +12,12 @@ use syn::{parse::Parse, LitInt, TypePath, token::{Mut, Star}, bracketed, parse_q
     }
 */
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum Type {
     Array (Box<Type>, LitInt),
     Path (TypePath),
-    Pointer (bool, Box<Type>)
+    Pointer (bool, Box<Type>),
+    Image2d
 }
 
 impl Type {
@@ -27,10 +29,18 @@ impl Type {
         }
     }
 
-    pub fn rustify (&self, name: &Ident) -> (Option<(GenericParam, WherePredicate)>, syn::Type) {
+    #[inline(always)]
+    pub fn is_define (&self) -> ::std::primitive::bool {
+        match self {
+            Self::Pointer { .. } | Self::Image2d => true,
+            _ => false
+        }
+    }
+
+    pub fn rustify (&self, mutability: bool, name: &Ident) -> (Option<(GenericParam, WherePredicate)>, syn::Type) {
         match self {
             Type::Array(ty, len) => {
-                let (gen, ty) = ty.rustify(name);
+                let (gen, ty) = ty.rustify(mutability, name);
                 let v = parse_quote_spanned! { ty.span() => [#ty; #len] };
                 (gen, v)
             },
@@ -46,7 +56,17 @@ impl Type {
                 };
 
                 (Some((param, wher)), parse_quote_spanned! { name.span() => #name })
-            }
+            },
+
+            Type::Image2d => {
+                let wher = parse_quote! { <#name as ::core::ops::Deref>::Target: ::rscl::image::DynImage2D };
+                let param = match mutability {
+                    true => parse_quote! { #name: ::core::ops::DerefMut },
+                    false => parse_quote! { #name: ::core::ops::Deref }
+                };
+
+                (Some((param, wher)), parse_quote_spanned! { name.span() => #name })
+            },
         }
     }
 
@@ -54,6 +74,7 @@ impl Type {
         match self {
             Self::Array(ty, _) => ty.rustify_ptr(),
             Self::Path(x) => syn::Type::Path(x.clone()),
+            Self::Image2d => todo!(),
             Self::Pointer(_, ty) => todo!(),
         }
     }
@@ -75,6 +96,10 @@ impl Parse for Type {
             let _ = input.parse::<Token![;]>()?;
             let len = content.parse()?;
             return Ok(Self::Array(ty, len))
+        }
+
+        if peek_and_parse!(image2d in input) {
+            return Ok(Self::Image2d)
         }
 
         input.parse().map(Self::Path)

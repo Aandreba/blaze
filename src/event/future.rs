@@ -1,4 +1,4 @@
-use std::{task::Poll, time::SystemTime};
+use std::{task::{Poll}, time::SystemTime};
 use futures::{Future, FutureExt, future::{FusedFuture}};
 use crate::prelude::{Result, RawContext, Global};
 use super::{FlagEvent, RawEvent, Event};

@@ -1,14 +1,9 @@
-use std::{sync::Arc, thread, time::Duration, io::Write};
-use rscl::{core::*, context::{SimpleContext, ContextProperties}, buffer::{flags::MemAccess, Buffer, events::ReadBuffer}, event::{WaitList, FlagEvent}, prelude::{EventExt, Event}};
+use std::{sync::Arc, thread, time::Duration};
+use rscl::{core::*, context::{SimpleContext}, buffer::{flags::MemAccess, Buffer, events::ReadBuffer}, event::{WaitList, FlagEvent}, prelude::{EventExt, Event}};
 use rscl_proc::{global_context};
 
-fn log (s: &str) {
-    let mut stdout = std::io::stdout().lock();
-    stdout.write_fmt(format_args!("{s}\n")).unwrap()
-}
-
 #[global_context]
-static CONTEXT : SimpleContext = SimpleContext::with_loger(Device::first().unwrap(), ContextProperties::default(), CommandQueueProperties::new(true, true), log);
+static CONTEXT : SimpleContext = SimpleContext::default();
 
 static PROGRAM : &str = "void kernel add (const ulong n, __global const float* rhs, __global const float* in, __global float* out) {
     for (ulong id = get_global_id(0); id<n; id += get_global_size(0)) {
@@ -24,10 +19,8 @@ fn program () -> Result<()> {
 
 #[test]
 fn flag () -> Result<()> {
-    let ctx = SimpleContext::with_loger(Device::first().unwrap(), ContextProperties::default(), CommandQueueProperties::new(true, true), log)?;
-
-    let buffer = Arc::new(Buffer::new_in(ctx.clone(), &[1, 2, 3, 4, 5, 6], MemAccess::default(), false)?);
-    let flag = FlagEvent::new_in(&ctx)?;
+    let buffer = Arc::new(Buffer::new(&[1, 2, 3, 4, 5, 6], MemAccess::default(), false)?);
+    let flag = FlagEvent::new()?;
 
     let one = buffer.clone().read_owned(..3, [flag.to_raw()])?;
     let two = buffer.read_owned(3.., WaitList::EMPTY)?;
@@ -37,9 +30,29 @@ fn flag () -> Result<()> {
         flag.set_complete(None).unwrap()
     });
 
-    let join = ReadBuffer::join_in(&ctx, [one, two])?;
+    let join = ReadBuffer::join([one, two])?;
     let result = join.wait()?;
     println!("{result:?}");
 
+    Ok(())
+}
+
+#[tokio::test]
+async fn async_flag () -> Result<()> {
+    let buffer = Arc::new(Buffer::new(&[1, 2, 3, 4, 5, 6], MemAccess::default(), false)?);
+    let flag = FlagEvent::new()?;
+
+    let one = buffer.clone().read_owned(..3, [flag.to_raw()])?;
+    let two = buffer.read_owned(3.., WaitList::EMPTY)?;
+
+    tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        flag.set_complete(None).unwrap()
+    });
+
+    let join = ReadBuffer::join([one, two])?;
+    let result = join.wait_async()?.await?;
+    
+    println!("{result:?}");
     Ok(())
 }

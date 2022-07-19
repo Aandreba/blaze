@@ -60,6 +60,14 @@ impl<T, A: Allocator> Rect2D<T, A> {
     }
 
     #[inline(always)]
+    pub fn rows_iter_mut (&mut self) -> RowsMut<'_, T, A> {
+        RowsMut {
+            inner: self,
+            idx: 0,
+        }
+    }
+
+    #[inline(always)]
     pub fn cols_iter (&self) -> Cols<'_, T, A> {
         Cols {
             inner: self,
@@ -405,6 +413,43 @@ impl<'a, T, A: Allocator> Iterator for Rows<'a, T, A> {
 }
 
 impl<'a, T, A: Allocator> ExactSizeIterator for Rows<'a, T, A> {
+    #[inline(always)]
+    fn len(&self) -> usize {
+        self.inner.height() - self.idx
+    }
+}
+
+pub struct RowsMut<'a, T, A: Allocator = Global> {
+    pub(super) inner: &'a mut Rect2D<T, A>,
+    pub(super) idx: usize
+}
+
+impl<'a, T, A: Allocator> Iterator for RowsMut<'a, T, A> {
+    type Item = &'a mut [T];
+
+    #[inline(always)]
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.idx < self.inner.height() {
+            unsafe {
+                let ptr = self.inner.ptr.as_ptr().add(self.idx * self.inner.width());
+                let v = core::slice::from_raw_parts_mut(ptr, self.inner.width());
+
+                self.idx += 1;
+                return Some(v)
+            }
+        }
+
+        None
+    }
+
+    #[inline(always)]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let len = self.len();
+        (len, Some(len))
+    }
+}
+
+impl<'a, T, A: Allocator> ExactSizeIterator for RowsMut<'a, T, A> {
     #[inline(always)]
     fn len(&self) -> usize {
         self.inner.height() - self.idx

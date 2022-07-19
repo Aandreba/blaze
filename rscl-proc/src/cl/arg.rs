@@ -1,7 +1,7 @@
 use derive_syn_parse::Parse;
 use proc_macro2::{Ident};
 use quote::{format_ident};
-use syn::{parse_quote, Generics, GenericParam, Token, parse_quote_spanned, spanned::Spanned};
+use syn::{Generics, Token};
 use super::{Type};
 
 /*
@@ -15,6 +15,7 @@ use super::{Type};
 
 #[derive(Debug, Parse)]
 pub struct Argument {
+    pub mutability : Option<Token![mut]>,
     pub name: Ident,
     pub semi_token: Token![:],
     pub ty: Type,
@@ -23,7 +24,7 @@ pub struct Argument {
 impl Argument {
     pub fn ty (&self, generics: Option<&mut Generics>) -> syn::Type {
         let name = format_ident!("{}", self.name.to_string().to_uppercase());
-        let (generify, ty) = self.ty.rustify(&name);
+        let (generify, ty) = self.ty.rustify(self.mutability.is_some(), &name);
 
         if let Some((imp, wher)) = generify {
             if let Some(generics) = generics {

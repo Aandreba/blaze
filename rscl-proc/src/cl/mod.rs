@@ -102,7 +102,8 @@ fn create_kernel (parent_vis: &Visibility, parent: &Ident, kernel: &Kernel) -> T
     let big_name = format_ident!("{}", to_pascal_case(&ident.to_string()));
     let define = args.iter().filter_map(|x| define_arg(x, &mut generics)).collect::<Vec<_>>();
     let new = args.iter().map(new_arg);
-    let names = args.iter().filter_map(|x| if x.ty.is_pointer() { Some(&x.name) } else { None }).collect::<Vec<_>>();
+    let names = args.iter().filter_map(|x| if x.ty.is_define() { Some(&x.name) } else { None }).collect::<Vec<_>>();
+    let pointer_names = args.iter().filter_map(|x| if x.ty.is_pointer() { Some(&x.name) } else { None });
     let set = args.iter().enumerate().map(|(i, x)| set_arg(x, u32::try_from(i).unwrap()));
     let (r#impl, r#type, r#where) = generics.split_for_impl();
     let type_list = generics.type_params().map(|x| &x.ident);
@@ -118,7 +119,8 @@ fn create_kernel (parent_vis: &Visibility, parent: &Ident, kernel: &Kernel) -> T
         }
 
         impl<C: ::rscl::context::Context> #parent<C> {
-            pub unsafe fn #ident #fn_impl (&self, #(#new),*, global_work_dims: [usize; N], local_work_dims: impl Into<Option<[usize; N]>>, wait: impl Into<::rscl::event::WaitList>) -> ::rscl::core::Result<#big_name #r#type> #r#where {
+            pub unsafe fn #ident #fn_impl (&self, #(#new,)* global_work_dims: [usize; N], local_work_dims: impl Into<Option<[usize; N]>>, wait: impl Into<::rscl::event::WaitList>) -> ::rscl::core::Result<#big_name #r#type> #r#where {
+                let mut wait = wait.into();
                 let mut kernel = self.#ident.lock().unwrap();
                 #(#set);*;
 
@@ -126,7 +128,7 @@ fn create_kernel (parent_vis: &Visibility, parent: &Ident, kernel: &Kernel) -> T
                 drop(kernel);
 
                 #(
-                    ::rscl::buffer::KernelPointer::complete(::core::ops::Deref::deref(&#names), &inner)?;
+                    ::rscl::buffer::KernelPointer::complete(::core::ops::Deref::deref(&#pointer_names), &inner)?;
                 )*
 
                 Ok(#big_name {
@@ -161,7 +163,7 @@ fn create_kernel (parent_vis: &Visibility, parent: &Ident, kernel: &Kernel) -> T
 }
 
 fn define_arg (arg: &Argument, generics: &mut Generics) -> Option<TokenStream> {
-    if arg.ty.is_pointer() {
+    if arg.ty.is_define() {
         let Argument { name, .. } = arg;
         let ty = arg.ty(Some(generics));
 
@@ -185,13 +187,14 @@ fn new_arg (arg: &Argument) -> TokenStream {
 fn set_arg (arg: &Argument, idx: u32) -> TokenStream {
     let Argument { name, .. } = arg;
 
-    if arg.ty.is_pointer() {
-        return quote! {
-            ::rscl::buffer::KernelPointer::set_arg(::core::ops::Deref::deref(&#name), &mut kernel, #idx)?
-        }
-    }
+    match arg.ty {
+        Type::Pointer(_, _) => quote! {
+            ::rscl::buffer::KernelPointer::set_arg(::core::ops::Deref::deref(&#name), &mut kernel, &mut wait, #idx)?
+        },
 
-    quote! { kernel.set_argument(#idx, &#name)? }
+        Type::Image2d => quote! { kernel.set_argument(#idx, ::rscl::image::DynImage2D::id_ref(::core::ops::Deref::deref(&#name)))? },
+        _ => quote! { kernel.set_argument(#idx, &#name)? }
+    }
 }
 
 #[derive(Parse)]

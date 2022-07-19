@@ -1,6 +1,7 @@
 use std::{ptr::NonNull, os::raw::c_void, marker::PhantomData, ops::{Deref, DerefMut}, path::Path, io::{Seek, BufRead}, borrow::Borrow};
 use image::{ImageBuffer, io::Reader};
-use crate::{core::*, context::{Context, Global}, buffer::{flags::{HostPtr, MemFlags, MemAccess}}, event::WaitList, memobj::{MemObjectType, IntoSlice2D}};
+use opencl_sys::cl_mem;
+use crate::{core::*, context::{Context, Global}, buffer::{flags::{HostPtr, MemFlags, MemAccess}}, event::WaitList, memobj::{MemObjectType, IntoSlice2D, MemObject}};
 use super::{RawImage, ImageDesc, channel::{RawPixel, FromDynamic, FromPrimitive}, events::{ReadImage2D, WriteImage2D, CopyImage, FillImage}};
 
 #[derive(Debug)]
@@ -205,3 +206,22 @@ impl<P: RawPixel, C: Context> DerefMut for Image2D<P, C> {
         &mut self.inner
     }
 }
+
+use sealed::Sealed;
+
+mod sealed {
+    pub trait Sealed {}
+}
+
+pub trait DynImage2D: Sealed {
+    fn id_ref (&self) -> &cl_mem; 
+}
+
+impl<P: RawPixel, C: Context> DynImage2D for Image2D<P, C> {
+    #[inline(always)]
+    fn id_ref (&self) -> &cl_mem {
+        MemObject::id_ref(self)
+    }
+}
+
+impl<P: RawPixel, C: Context> Sealed for Image2D<P, C> {}
