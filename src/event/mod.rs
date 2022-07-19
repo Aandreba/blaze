@@ -1,6 +1,4 @@
 use std::{mem::ManuallyDrop, time::{SystemTime, Duration}, ops::Deref, alloc::Allocator, panic::AssertUnwindSafe};
-use Either::{Right, Left};
-use elor::Either;
 use opencl_sys::{CL_COMMAND_NDRANGE_KERNEL, CL_COMMAND_TASK, CL_COMMAND_NATIVE_KERNEL, CL_COMMAND_READ_BUFFER, CL_COMMAND_WRITE_BUFFER, CL_COMMAND_COPY_BUFFER, CL_COMMAND_READ_IMAGE, CL_COMMAND_WRITE_IMAGE, CL_COMMAND_COPY_IMAGE, CL_COMMAND_COPY_IMAGE_TO_BUFFER, CL_COMMAND_COPY_BUFFER_TO_IMAGE, CL_COMMAND_MAP_BUFFER, CL_COMMAND_MAP_IMAGE, CL_COMMAND_UNMAP_MEM_OBJECT, CL_COMMAND_MARKER, CL_COMMAND_ACQUIRE_GL_OBJECTS, CL_COMMAND_RELEASE_GL_OBJECTS, CL_EVENT_COMMAND_TYPE, CL_EVENT_COMMAND_EXECUTION_STATUS, CL_EVENT_COMMAND_QUEUE, cl_event};
 use rscl_proc::docfg;
 use crate::{core::*, prelude::RawContext};
@@ -175,21 +173,12 @@ pub trait EventExt: Sized + Event {
     }
 
     /// Executes the specified function after the parent event has completed. 
-    #[inline(always)]
-    fn map<T, F: FnOnce(Self::Output) -> T> (self, f: F) -> Map<Self, F> {
-        Map {
+    #[inline]
+    fn map<T, F: FnOnce(Self::Output) -> T> (self, f: F) -> Result<Map<Self, F>> {
+        Ok(Map {
             parent: self,
             f
-        }
-    }
-
-    /// Executes the specified function after the parent event has completed. 
-    #[inline(always)]
-    fn try_map<T, F: FnOnce(Self::Output) -> Result<T>> (self, f: F) -> TryMap<Self, F> {
-        TryMap {
-            parent: self,
-            f
-        }
+        })
     }
 
     /// Executes the specified function after the parent event has completed. 
@@ -335,14 +324,6 @@ impl WaitList {
             None => Vec::new()
         }
     }
-
-    #[inline(always)]
-    pub fn iter (&self) -> WaitListIter<'_> {
-        match self.0 {
-            Some(ref x) => Right(x.iter()),
-            None => Left(std::iter::empty())
-        }
-    }
 }
 
 impl Extend<RawEvent> for WaitList {
@@ -381,8 +362,6 @@ impl<const N: usize> From<[RawEvent; N]> for WaitList {
         Self::from_array(x)
     }
 }
-
-pub type WaitListIter<'a> = Either<std::iter::Empty<RawEvent>, std::slice::Iter<'a, RawEvent>>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u32)]

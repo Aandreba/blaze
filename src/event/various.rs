@@ -27,28 +27,6 @@ impl<T, E: Event, F: FnOnce(E::Output) -> T> Event for Map<E, F> {
     }
 }
 
-/// Event for [`EventExt::try_map`]
-#[derive(Clone)]
-pub struct TryMap<E, F> {
-    pub(super) parent: E,
-    pub(super) f: F
-}
-
-impl<T, E: Event, F: FnOnce(E::Output) -> Result<T>> Event for TryMap<E, F> {
-    type Output = T;
-
-    #[inline(always)]
-    fn as_raw (&self) -> &RawEvent {
-        self.parent.as_raw()
-    }
-
-    #[inline(always)]
-    fn consume (self, err: Option<Error>) -> Result<Self::Output> {
-        let v = self.parent.consume(err)?;
-        (self.f)(v)
-    }
-}
-
 /// Event for [`EventExt::then`]
 #[docfg(feature = "cl1_1")]
 #[derive(Clone)]

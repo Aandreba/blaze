@@ -1,5 +1,5 @@
 use std::{ptr::NonNull, ops::{Deref, DerefMut}};
-use crate::{prelude::*, buffer::{IntoRange, Buffer}, event::WaitList, memobj::{MapBox, MapMutBox, MapMut}};
+use crate::{prelude::*, buffer::{IntoRange, Buffer}, event::WaitList, memobj::{MapBox, MapMutBox, MapMut}, context::bind_result};
 
 pub struct MapBuffer<T, D, C: Context> {
     event: RawEvent,
