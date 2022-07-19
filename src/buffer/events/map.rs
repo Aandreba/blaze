@@ -1,5 +1,5 @@
 use std::{ptr::NonNull, ops::{Deref, DerefMut}};
-use crate::{prelude::*, buffer::{IntoRange, Buffer}, event::WaitList, memobj::{MapBox, MapMutBox, MapMut}, context::bind_result};
+use crate::{prelude::*, buffer::{IntoRange, Buffer}, event::WaitList, memobj::{MapBox, MapMutBox, MapMut}};
 
 pub struct MapBuffer<T, D, C: Context> {
     event: RawEvent,
@@ -13,26 +13,7 @@ impl<T: 'static + Copy, D: Deref<Target = Buffer<T, C>>, C: 'static + Context> M
     #[inline(always)]
     pub unsafe fn new (ctx: C, src: D, range: impl IntoRange, wait: impl Into<WaitList>) -> Result<Self> {
         let range = range.into_range::<T>(&src)?;
-        let (queue, notify) = ctx.next_queue();
-
-        let (ptr, event) : (*const T, RawEvent) = match src.map_read(range, queue, wait) {
-            Ok((ptr, evt)) => {
-                if let Some(notify) = notify {
-                    notify.bind(&evt)
-                }
-
-                (ptr, evt)
-            },
-
-            Err(e) => {
-                if let Some(notify) = notify {
-                    notify.notify()
-                }
-
-                return Err(e)
-            }
-        };
-        
+        let (ptr, event) : (*const T, _) = src.map_read(range, ctx.next_queue(), wait)?;
         let ptr = NonNull::new(ptr as *mut _).unwrap();
 
         Ok(Self { 
@@ -73,7 +54,6 @@ impl<T: 'static + Copy, D: DerefMut<Target = Buffer<T, C>>, C: 'static + Context
     #[inline(always)]
     pub unsafe fn new (ctx: C, src: D, range: impl IntoRange, wait: impl Into<WaitList>) -> Result<Self> {
         let range = range.into_range::<T>(&src)?;
-    
         let (ptr, event) = src.map_read_write(range, ctx.next_queue(), wait)?;
         let ptr : NonNull<T> = NonNull::new(ptr).unwrap();
 

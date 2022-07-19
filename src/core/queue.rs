@@ -7,9 +7,9 @@ use std::ptr::addr_of_mut;
 
 #[derive(Debug, PartialEq, Eq, Hash)]
 #[repr(transparent)]
-pub struct RawCommandQueue (NonNull<c_void>);
+pub struct CommandQueue (NonNull<c_void>);
 
-impl RawCommandQueue {
+impl CommandQueue {
     #[cfg(not(feature = "cl2"))]
     pub fn new (ctx: &RawContext, props: CommandQueueProperties, device: &Device) -> Result<Self> {
         let props = props.to_bits();
@@ -120,7 +120,7 @@ impl RawCommandQueue {
     /// Return the current default command queue for the underlying device.
     #[docfg(feature = "cl2_1")]
     #[inline(always)]
-    pub fn device_default (&self) -> Result<RawCommandQueue> {
+    pub fn device_default (&self) -> Result<CommandQueue> {
         self.get_info(opencl_sys::CL_QUEUE_DEVICE_DEFAULT)
     }
 
@@ -206,7 +206,7 @@ impl RawCommandQueue {
     }
 }
 
-impl Clone for RawCommandQueue {
+impl Clone for CommandQueue {
     #[inline(always)]
     fn clone(&self) -> Self {
         unsafe {
@@ -217,7 +217,7 @@ impl Clone for RawCommandQueue {
     }
 }
 
-impl Drop for RawCommandQueue {
+impl Drop for CommandQueue {
     #[inline(always)]
     fn drop(&mut self) {
         unsafe {
@@ -226,8 +226,8 @@ impl Drop for RawCommandQueue {
     }
 }
 
-unsafe impl Send for RawCommandQueue {}
-unsafe impl Sync for RawCommandQueue {}
+unsafe impl Send for CommandQueue {}
+unsafe impl Sync for CommandQueue {}
 
 cfg_if::cfg_if! {
     if #[cfg(feature = "cl2")] {

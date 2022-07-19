@@ -8,7 +8,7 @@ pub struct ReadBuffer<T: Copy, Src> {
 }
 
 impl<T: Copy + Unpin, Src: Deref<Target = Buffer<T, C>>, C: Context> ReadBuffer<T, Src> {
-    pub unsafe fn new (src: Src, range: impl IntoRange, queue: &RawCommandQueue, wait: impl Into<WaitList>) -> Result<Self> {
+    pub unsafe fn new (src: Src, range: impl IntoRange, queue: &CommandQueue, wait: impl Into<WaitList>) -> Result<Self> {
         let range = range.into_range::<T>(&src)?;
         let mut result = Pin::new(Vec::with_capacity(range.cb / core::mem::size_of::<T>()));
 
@@ -41,7 +41,7 @@ pub struct ReadBufferInto<Src, Dst> {
 }
 
 impl<T: Copy + Unpin, Src: Deref<Target = Buffer<T, C>>, Dst: DerefMut<Target = [T]>, C: Context> ReadBufferInto<Src, Dst> {
-    pub unsafe fn new (src: Src, offset: usize, dst: Dst, queue: &RawCommandQueue, wait: impl Into<WaitList>) -> Result<Self> {
+    pub unsafe fn new (src: Src, offset: usize, dst: Dst, queue: &CommandQueue, wait: impl Into<WaitList>) -> Result<Self> {
         let mut dst = Pin::new(dst);
         let range = BufferRange::from_parts::<T>(offset, dst.len()).unwrap();
 

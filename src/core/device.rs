@@ -845,7 +845,7 @@ impl Device {
     /// Replaces the default command queue on the device.
     #[docfg(feature = "cl2_1")]
     #[inline(always)]
-    pub fn set_default_command_queue (&self, ctx: crate::context::RawContext, queue: RawCommandQueue) -> Result<()> {
+    pub fn set_default_command_queue (&self, ctx: crate::context::RawContext, queue: CommandQueue) -> Result<()> {
         unsafe {
             tri!(opencl_sys::clSetDefaultDeviceCommandQueue(ctx.id(), self.id(), queue.id()));
         }

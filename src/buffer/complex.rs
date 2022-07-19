@@ -1,7 +1,7 @@
 use std::{marker::PhantomData, ptr::{NonNull}, ops::{Deref, DerefMut}, fmt::Debug, mem::MaybeUninit, sync::Arc};
 use rscl_proc::docfg;
 
-use crate::{context::{Context, Global, bind_result}, event::{WaitList}, prelude::{Event}};
+use crate::{context::{Context, Global}, event::{WaitList}, prelude::{Event}};
 use crate::core::*;
 use crate::buffer::{flags::{MemFlags, HostPtr, MemAccess}, events::{ReadBuffer, WriteBuffer, ReadBufferInto}, RawBuffer};
 
@@ -186,30 +186,26 @@ impl<T: Copy + Unpin, C: Context> Buffer<T, C> {
 
     #[inline(always)]
     pub fn read_by_deref<Src: Deref<Target = Self>> (this: Src, range: impl IntoRange, wait: impl Into<WaitList>) -> Result<ReadBuffer<T, Src>> {
-        let (queue, notify) = this.ctx.next_queue();
-        let evt = unsafe { ReadBuffer::new(this, range, &queue, wait) };
-        bind_result(notify, evt)
+        let queue = this.ctx.next_queue().clone();
+        unsafe { ReadBuffer::new(this, range, &queue, wait) }
     }
 
     #[inline(always)]
     pub fn read_into_by_deref<Src: Deref<Target = Self>, Dst: DerefMut<Target = [T]>> (this: Src, offset: usize, dst: Dst, wait: impl Into<WaitList>) -> Result<ReadBufferInto<Src, Dst>> {
-        let (queue, notify) = this.ctx.next_queue();
-        let evt = unsafe { ReadBufferInto::new(this, offset, dst, &queue, wait) };
-        bind_result(notify, evt)
+        let queue = this.ctx.next_queue().clone();
+        unsafe { ReadBufferInto::new(this, offset, dst, &queue, wait) }
     }
 
     #[inline(always)]
     pub fn write_by_deref<Dst: DerefMut<Target = Self>, Src: Deref<Target = [T]>> (this: Dst, offset: usize, src: Src, wait: impl Into<WaitList>) -> Result<WriteBuffer<Src, Dst>> {
-        let (queue, notify) = this.ctx.next_queue();
-        let evt = unsafe { WriteBuffer::new(src, offset, this, &queue, wait) };
-        bind_result(notify, evt)
+        let queue = this.ctx.next_queue().clone();
+        unsafe { WriteBuffer::new(src, offset, this, &queue, wait) }
     }
 
     #[inline(always)]
     pub fn copy_from_by_deref<Dst: DerefMut<Target = Self>, Src: Deref<Target = Self>> (this: Dst, offset_dst: usize, src: Src, offset_src: usize, len: usize, wait: impl Into<WaitList>) -> Result<CopyBuffer<Src, Dst>> {
-        let (queue, notify) = this.ctx.next_queue();
-        let evt = unsafe { CopyBuffer::new(src, offset_src, this, offset_dst, len, &queue, wait) };
-        bind_result(notify, evt)
+        let queue = this.ctx.next_queue().clone();
+        unsafe { CopyBuffer::new(src, offset_src, this, offset_dst, len, &queue, wait) }
     }
 
     #[inline(always)]
@@ -220,9 +216,8 @@ impl<T: Copy + Unpin, C: Context> Buffer<T, C> {
     #[docfg(feature = "cl1_2")]
     #[inline(always)]
     pub fn fill_by_deref<Dst: DerefMut<Target = Self>> (this: Dst, v: T, range: impl IntoRange, wait: impl Into<WaitList>) -> Result<super::events::FillBuffer<Dst>> {
-        let (queue, notify) = this.ctx.next_queue();
-        let evt = unsafe { super::events::FillBuffer::new(v, this, range, &queue, wait) };
-        bind_result(notify, evt)
+        let queue = this.ctx.next_queue().clone();
+        unsafe { super::events::FillBuffer::new(v, this, range, &queue, wait) }
     }
 
     #[docfg(feature = "map")]

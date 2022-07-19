@@ -9,7 +9,7 @@ pub struct CopyImage<'src, 'dst> {
 }
 
 impl<'src, 'dst> CopyImage<'src, 'dst> {
-    pub unsafe fn new (src: &'src RawImage, offset_src: [usize; 3], dst: &'dst mut RawImage, offset_dst: [usize; 3], region: [usize; 3], queue: &RawCommandQueue, wait: impl Into<WaitList>) -> Result<Self> {
+    pub unsafe fn new (src: &'src RawImage, offset_src: [usize; 3], dst: &'dst mut RawImage, offset_dst: [usize; 3], region: [usize; 3], queue: &CommandQueue, wait: impl Into<WaitList>) -> Result<Self> {
         let event = dst.copy_from(offset_dst, src, offset_src, region, queue, wait)?;
         Ok(Self {
             event,

@@ -9,7 +9,7 @@ pub struct CopyBuffer<Src, Dst> {
 
 impl<T: Copy + Unpin, Src: Deref<Target = Buffer<T, C>>, Dst: DerefMut<Target = Buffer<T, C>>, C: Context> CopyBuffer<Src, Dst> {
     #[inline]
-    pub unsafe fn new (src: Src, offset_src: usize, mut dst: Dst, offset_dst: usize, len: usize, queue: &RawCommandQueue, wait: impl Into<WaitList>) -> Result<Self> {
+    pub unsafe fn new (src: Src, offset_src: usize, mut dst: Dst, offset_dst: usize, len: usize, queue: &CommandQueue, wait: impl Into<WaitList>) -> Result<Self> {
         let dst_offset = offset_dst.checked_mul(core::mem::size_of::<T>()).unwrap();
         let src_offset = offset_src.checked_mul(core::mem::size_of::<T>()).unwrap();
         let size = len.checked_mul(core::mem::size_of::<T>()).unwrap();

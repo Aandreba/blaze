@@ -100,8 +100,8 @@ pub trait Event {
 
     /// Returns the event's underlying command queue
     #[inline(always)]
-    fn command_queue (&self) -> Result<Option<RawCommandQueue>> {
-        self.as_raw().get_info(CL_EVENT_COMMAND_QUEUE).map(RawCommandQueue::from_id)
+    fn command_queue (&self) -> Result<Option<CommandQueue>> {
+        self.as_raw().get_info(CL_EVENT_COMMAND_QUEUE).map(CommandQueue::from_id)
     }
 
     /// Return the context associated with event.
@@ -314,14 +314,6 @@ impl WaitList {
         match self.0 {
             Some(ref x) => RawEvent::wait_all(&x),
             None => Ok(())
-        }
-    }
-
-    #[inline(always)]
-    pub fn into_vec (self) -> Vec<RawEvent> {
-        match self.0 {
-            Some(x) => x,
-            None => Vec::new()
         }
     }
 }

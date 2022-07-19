@@ -9,7 +9,7 @@ pub struct FillImage<'dst> {
 
 impl<'dst> FillImage<'dst> {
     #[inline]
-    pub unsafe fn new<P: RawPixel> (dst: &'dst mut RawImage, color: &P, slice: impl IntoSlice2D, queue: &RawCommandQueue, wait: impl Into<WaitList>) -> Result<Self> where f32: FromPrimitive<P::Subpixel> {
+    pub unsafe fn new<P: RawPixel> (dst: &'dst mut RawImage, color: &P, slice: impl IntoSlice2D, queue: &CommandQueue, wait: impl Into<WaitList>) -> Result<Self> where f32: FromPrimitive<P::Subpixel> {
         if let Some(slice) = slice.into_slice(dst.width()?, dst.height()?) {
             let [origin, region] = slice.raw_parts();
             let color = Self::get_color(color);
