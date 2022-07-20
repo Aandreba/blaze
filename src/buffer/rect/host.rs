@@ -3,9 +3,9 @@ use std::{ptr::{NonNull, addr_of}, num::NonZeroUsize, mem::{MaybeUninit, Manuall
 /// A 2D rectangle stored in host memory in [row-major order](https://en.wikipedia.org/wiki/Row-_and_column-major_order)
 pub struct Rect2D<T, A: Allocator = Global> {
     ptr: NonNull<T>,
-    alloc: A,
     width: NonZeroUsize,
-    height: NonZeroUsize
+    height: NonZeroUsize,
+    alloc: A
 }
 
 impl<T> Rect2D<T> {
@@ -27,6 +27,11 @@ impl<T> Rect2D<T> {
     #[inline(always)]
     pub fn new_zeroed (width: usize, height: usize) -> Option<Rect2D<MaybeUninit<T>>> {
         Self::new_zeroed_in(width, height, Global)
+    }
+
+    #[inline(always)]
+    pub const unsafe fn from_raw_parts (ptr: NonNull<T>, width: NonZeroUsize, height: NonZeroUsize) -> Self {
+        Self::from_raw_parts_with_allocator(ptr, width, height, std::alloc::Global)
     }
 }
 

@@ -1,6 +1,5 @@
-use std::{pin::Pin, ops::Deref, marker::PhantomData};
-use image::ImageBuffer;
-use crate::{prelude::*, image::{channel::RawPixel, RawImage}, event::WaitList, memobj::{Slice2D}};
+use std::{marker::PhantomData};
+use crate::{prelude::*, image::{channel::RawPixel, RawImage}, event::WaitList, memobj::{Slice2D}, buffer::rect::Rect2D};
 
 #[repr(transparent)]
 pub struct WriteImage2D<'src, 'dst, P: RawPixel> where P::Subpixel: Unpin {
@@ -11,12 +10,11 @@ pub struct WriteImage2D<'src, 'dst, P: RawPixel> where P::Subpixel: Unpin {
 
 impl<'src, 'dst, P: RawPixel> WriteImage2D<'src, 'dst, P> where P::Subpixel: Unpin {
     #[inline]
-    pub unsafe fn new<C: Deref<Target = [P::Subpixel]>> (src: &'src ImageBuffer<P, C>, dst: &'dst mut RawImage, queue: &CommandQueue, offset: [usize; 2], row_pitch: Option<usize>, slice_pitch: Option<usize>, wait: impl Into<WaitList>) -> Result<Self> {
+    pub unsafe fn new (src: &'src Rect2D<P>, dst: &'dst mut RawImage, queue: &CommandQueue, offset: [usize; 2], row_pitch: Option<usize>, slice_pitch: Option<usize>, wait: impl Into<WaitList>) -> Result<Self> {
         if let Some(slice) = Slice2D::try_new(offset[0], offset[1], src.width() as usize, src.height() as usize) {
             let [origin, region] = slice.raw_parts();
-            let buffer = Pin::new(src.as_raw().deref());
+            let event = dst.write_from_ptr(origin, region, row_pitch, slice_pitch, src.as_ptr().cast(), queue, wait)?;
 
-            let event = dst.write_from_ptr(origin, region, row_pitch, slice_pitch, buffer.as_ptr().cast(), queue, wait)?;
             return Ok(Self {
                 event,
                 src: PhantomData,

@@ -1,8 +1,8 @@
 use std::{ptr::NonNull, os::raw::c_void, marker::PhantomData, ops::{Deref, DerefMut}, path::Path, io::{Seek, BufRead}, borrow::Borrow};
 use image::{ImageBuffer, io::Reader};
 use opencl_sys::cl_mem;
-use crate::{core::*, context::{Context, Global}, buffer::{flags::{HostPtr, MemFlags, MemAccess}}, event::WaitList, memobj::{MemObjectType, IntoSlice2D, MemObject}};
-use super::{RawImage, ImageDesc, channel::{RawPixel, FromDynamic, FromPrimitive}, events::{ReadImage2D, WriteImage2D, CopyImage, FillImage}};
+use crate::{core::*, context::{Context, Global}, buffer::{flags::{HostPtr, MemFlags, MemAccess}, rect::Rect2D}, event::WaitList, memobj::{MemObjectType, IntoSlice2D, MemObject}};
+use super::{RawImage, ImageDesc, channel::{RawPixel}, events::{ReadImage2D, WriteImage2D, CopyImage, FillImage}};
 
 #[derive(Debug)]
 pub struct Image2D<P: RawPixel, C: Context = Global> {
@@ -12,7 +12,7 @@ pub struct Image2D<P: RawPixel, C: Context = Global> {
 }
 
 impl<P: RawPixel> Image2D<P> {
-    #[inline(always)]
+    /*#[inline(always)]
     pub fn from_file (path: impl AsRef<Path>, access: MemAccess, alloc: bool) -> Result<Self> where P: FromDynamic {
         Self::from_file_in(Global, path, access, alloc)
     }
@@ -25,7 +25,7 @@ impl<P: RawPixel> Image2D<P> {
     #[inline(always)]
     pub fn from_buffer<Raw: Deref<Target = [P::Subpixel]>> (buffer: &ImageBuffer<P, Raw>, access: MemAccess, alloc: bool) -> Result<Self> {
         Self::from_buffer_in(Global, buffer, access, alloc)
-    }
+    }*/
 
     #[inline(always)]
     pub fn from_raw (v: &[P::Subpixel], width: usize, height: usize, access: MemAccess, alloc: bool) -> Result<Self> {
@@ -44,7 +44,7 @@ impl<P: RawPixel> Image2D<P> {
 }
 
 impl<P: RawPixel, C: Context> Image2D<P, C> {
-    #[inline]
+    /*#[inline]
     pub fn from_file_in (ctx: C, path: impl AsRef<Path>, access: MemAccess, alloc: bool) -> Result<Self> where P: FromDynamic {
         let reader = match Reader::open(path) {
             Ok(x) => x,
@@ -74,7 +74,7 @@ impl<P: RawPixel, C: Context> Image2D<P, C> {
 
         let v : &[P::Subpixel] = buffer.as_raw().deref();
         Self::from_raw_in(ctx, v, width, height, access, alloc)
-    }
+    }*/
     
     /// Creates a new 2D image from it's raw pixels.
     #[inline(always)]
@@ -132,12 +132,12 @@ impl<P: RawPixel, C: Context> Image2D<P, C> where P::Subpixel: Unpin {
     }
 
     #[inline(always)]
-    pub fn write<'src, 'dst, Raw: Deref<Target = [P::Subpixel]>> (&'dst mut self, src: &'src ImageBuffer<P, Raw>, offset: [usize; 2], wait: impl Into<WaitList>) -> Result<WriteImage2D<'src, 'dst, P>> {
+    pub fn write<'src, 'dst> (&'dst mut self, src: &'src Rect2D<P>, offset: [usize; 2], wait: impl Into<WaitList>) -> Result<WriteImage2D<'src, 'dst, P>> {
         self.write_with_pitch(src, offset, None, None, wait)
     }
 
     #[inline(always)]
-    pub fn write_with_pitch<'src, 'dst, Raw: Deref<Target = [P::Subpixel]>> (&'dst mut self, src: &'src ImageBuffer<P, Raw>, offset: [usize; 2], row_pitch: Option<usize>, slice_pitch: Option<usize>, wait: impl Into<WaitList>) -> Result<WriteImage2D<'src, 'dst, P>> {
+    pub fn write_with_pitch<'src, 'dst> (&'dst mut self, src: &'src Rect2D<P>, offset: [usize; 2], row_pitch: Option<usize>, slice_pitch: Option<usize>, wait: impl Into<WaitList>) -> Result<WriteImage2D<'src, 'dst, P>> {
         unsafe { WriteImage2D::new(src, &mut self.inner, self.ctx.next_queue(), offset, row_pitch, slice_pitch, wait) }
     }
 
@@ -161,10 +161,10 @@ impl<P: RawPixel, C: Context> Image2D<P, C> where P::Subpixel: Unpin {
         dst.copy_from(offset_dst, self, offset_src, region, wait)
     }
 
-    #[inline(always)]
+    /*#[inline(always)]
     pub fn fill<'dst> (&'dst mut self, color: impl Borrow<P>, slice: impl IntoSlice2D, wait: impl Into<WaitList>) -> Result<FillImage<'dst>> where f32: FromPrimitive<P::Subpixel> {
         unsafe { FillImage::new(&mut self.inner, color.borrow(), slice, self.ctx.next_queue(), wait) }
-    }
+    }*/
 
     /*#[docfg(feature = "map")]
     #[inline(always)]

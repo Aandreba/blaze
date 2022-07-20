@@ -1,12 +1,11 @@
-use std::{pin::Pin, mem::MaybeUninit, marker::PhantomData, num::NonZeroUsize};
-use image::ImageBuffer;
-use crate::{prelude::*, image::{channel::RawPixel, RawImage}, event::WaitList, memobj::{IntoSlice2D}};
+use std::{mem::MaybeUninit, marker::PhantomData, num::NonZeroUsize};
+use crate::{prelude::*, image::{channel::RawPixel, RawImage}, event::WaitList, memobj::{IntoSlice2D}, buffer::rect::Rect2D};
 
 pub struct ReadImage2D<'src, P: RawPixel> {
     event: RawEvent,
     width: usize,
     height: usize,
-    dst: Pin<Box<[MaybeUninit<P::Subpixel>]>>,
+    dst: Rect2D<MaybeUninit<P>>,
     src: PhantomData<&'src P>
 }
 
@@ -17,7 +16,7 @@ impl<'src, P: RawPixel> ReadImage2D<'src, P> where P::Subpixel: Unpin {
             let [origin, region] = slice.raw_parts();
             let size = slice.size().and_then(|x| x.checked_mul(NonZeroUsize::new(P::CHANNEL_COUNT as usize).unwrap())).unwrap().get();
 
-            let mut result = Pin::new(Box::new_uninit_slice(size));
+            let mut result = Rect2D::new_uninit(src.width()?, src.height()?).unwrap();
             let event = src.read_to_ptr(origin, region, row_pitch, slice_pitch, result.as_mut_ptr().cast(), queue, wait)?;
 
             return Ok(Self {
@@ -34,7 +33,7 @@ impl<'src, P: RawPixel> ReadImage2D<'src, P> where P::Subpixel: Unpin {
 }
 
 impl<'src, P: RawPixel> Event for ReadImage2D<'src, P> where P::Subpixel: Unpin {
-    type Output = ImageBuffer<P, Box<[P::Subpixel]>>;
+    type Output = Rect2D<P>;
 
     #[inline(always)]
     fn as_raw (&self) -> &RawEvent {
@@ -44,11 +43,7 @@ impl<'src, P: RawPixel> Event for ReadImage2D<'src, P> where P::Subpixel: Unpin 
     #[inline]
     fn consume (self, err: Option<Error>) -> Result<Self::Output> {
         if let Some(err) = err { return Err(err) };
-        let pixels = unsafe { Pin::into_inner(self.dst).assume_init() };
-
-        let width = u32::try_from(self.width).unwrap();
-        let height = u32::try_from(self.height).unwrap();
-
-        Ok(ImageBuffer::from_raw(width, height, pixels).unwrap())
+        let pixels = unsafe { self.dst.assume_init() };
+        Ok(pixels)
     }
 }
