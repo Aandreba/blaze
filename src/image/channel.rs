@@ -101,9 +101,9 @@ impl RawPixel for Rgb<i32> {
 }
 
 impl RawPixel for Rgb<f32> {
-    #[cfg(feature = "cl2")]
-    const ORDER : ChannelOrder = ChannelOrder::sRGB;
-    #[cfg(not(feature = "cl2"))]
+    //#[cfg(feature = "cl2")]
+    //const ORDER : ChannelOrder = ChannelOrder::sRGB;
+    //#[cfg(not(feature = "cl2"))]
     const ORDER : ChannelOrder = ChannelOrder::RGB;
     const TY : ChannelType = ChannelType::F32;
 }

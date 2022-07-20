@@ -37,7 +37,7 @@ impl MemFlags {
     pub const fn to_bits (self) -> cl_mem_flags {
         cfg_if::cfg_if! {
             if #[cfg(feature = "cl1_2")] {
-                self.access.to_bits() | self.host.to_bits() | self.host_access.to_bits()
+                self.access.to_bits() | self.host.to_bits() | self.host_access.to_bits_host()
             } else {
                 self.access.to_bits() | self.host.to_bits()
             }
