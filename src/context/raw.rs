@@ -274,7 +274,11 @@ unsafe extern "C" fn destructor_callback (_context: cl_context, user_data: *mut 
 
 #[cfg(feature = "cl3")]
 unsafe extern "C" fn context_error (errinfo: *const i8, private_info: *const c_void, cb: usize, user_data: *mut c_void) {
-    let str = std::ffi::CStr::from_ptr(errinfo).to_str().unwrap();
+    let str = String::from_utf8_lossy(std::ffi::CStr::from_ptr(errinfo).to_bytes());
     let user_data = &mut *(user_data as *mut Box<dyn Fn(&str) + Send>);
-    user_data(str)
+    
+    //let info = core::slice::from_raw_parts(private_info as *const u8, cb);
+    //println!("{info:?}");
+
+    user_data(&str)
 }

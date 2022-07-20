@@ -1,6 +1,6 @@
 flat_mod!(host, read, write);
 
-use std::{ptr::NonNull, ops::{Deref, DerefMut}, num::NonZeroUsize};
+use std::{ptr::NonNull, ops::{Deref, DerefMut}, num::NonZeroUsize, mem::MaybeUninit, fmt::Debug};
 use crate::{prelude::*, event::WaitList, memobj::IntoSlice2D};
 use super::{Buffer, flags::{MemFlags, MemAccess, HostPtr}};
 
@@ -12,13 +12,19 @@ pub struct BufferRect2D<T: Copy, C: Context = Global> {
 }
 
 impl<T: Copy> BufferRect2D<T> {
+    /// Creates a new rectangular buffer from the specified values in [row-major order](https://en.wikipedia.org/wiki/Row-_and_column-major_order).
     #[inline(always)]
-    pub fn new (v: &Rect2D<T>, access: MemAccess, alloc: bool) -> Result<Self> {
-        Self::new_in(Global, v, access, alloc)
+    pub fn new (v: &[T], width: usize, access: MemAccess, alloc: bool) -> Result<Self> {
+        Self::new_in(Global, v, width, access, alloc)
     }
 
     #[inline(always)]
-    pub unsafe fn uninit (width: usize, height: usize, access: MemAccess, alloc: bool) -> Result<Self> {
+    pub fn from_rect (v: &Rect2D<T>, access: MemAccess, alloc: bool) -> Result<Self> {
+        Self::from_rect_in(Global, v, access, alloc)
+    }
+
+    #[inline(always)]
+    pub fn uninit (width: usize, height: usize, access: MemAccess, alloc: bool) -> Result<BufferRect2D<MaybeUninit<T>>> {
         Self::uninit_in(Global, width, height, access, alloc)
     }
     
@@ -29,17 +35,25 @@ impl<T: Copy> BufferRect2D<T> {
 }
 
 impl<T: Copy, C: Context> BufferRect2D<T, C> {
+    /// Creates a new rectangular buffer, in the specified context, from the specified values in [row-major order](https://en.wikipedia.org/wiki/Row-_and_column-major_order).
+    #[inline]
+    pub fn new_in (ctx: C, v: &[T], width: usize, access: MemAccess, alloc: bool) -> Result<Self> {
+        let height = v.len() / width;
+        let host = MemFlags::new(access, HostPtr::new(alloc, true));
+        unsafe { Self::create_in(ctx, width, height, host, NonNull::new(v.as_ptr() as *mut _)) }
+    }
+
     /// Creates new rectangular buffer
     #[inline]
-    pub fn new_in (ctx: C, v: &Rect2D<T>, access: MemAccess, alloc: bool) -> Result<Self> {
+    pub fn from_rect_in (ctx: C, v: &Rect2D<T>, access: MemAccess, alloc: bool) -> Result<Self> {
         let host = MemFlags::new(access, HostPtr::new(alloc, true));
         unsafe { Self::create_in(ctx, v.width(), v.height(), host, NonNull::new(v.as_ptr() as *mut _)) }
     }
 
     #[inline]
-    pub unsafe fn uninit_in (ctx: C, width: usize, height: usize, access: MemAccess, alloc: bool) -> Result<Self> {
+    pub fn uninit_in (ctx: C, width: usize, height: usize, access: MemAccess, alloc: bool) -> Result<BufferRect2D<MaybeUninit<T>, C>> {
         let host = MemFlags::new(access, HostPtr::new(alloc, false));
-        Self::create_in(ctx, width, height, host, None)
+        unsafe { BufferRect2D::create_in(ctx, width, height, host, None) }
     }
     
     #[inline]
@@ -76,6 +90,13 @@ impl<T: Copy, C: Context> BufferRect2D<T, C> {
     }
 }
 
+impl<T: Copy, C: Context> BufferRect2D<MaybeUninit<T>, C> {
+    #[inline(always)]
+    pub unsafe fn assume_init (self) -> BufferRect2D<T, C> {
+        self.transmute()
+    }
+}
+
 impl<T: Copy, C: Context> BufferRect2D<T, C> {
     #[inline(always)]
     pub fn width (&self) -> NonZeroUsize {
@@ -105,6 +126,11 @@ impl<T: Copy, C: Context> BufferRect2D<T, C> {
 }
 
 impl<T: Copy + Unpin, C: Context> BufferRect2D<T, C> {
+    #[inline(always)]
+    pub fn read_all<'src> (&'src self, wait: impl Into<WaitList>) -> Result<ReadBufferRect2D<'src, T>> {
+        self.read((.., ..), wait)
+    }
+
     #[inline(always)]
     pub fn read<'src> (&'src self, slice: impl IntoSlice2D, wait: impl Into<WaitList>) -> Result<ReadBufferRect2D<'src, T>> {
         let (buffer_row_pitch, buffer_slice_pitch) = self.row_and_slice_pitch();
@@ -149,5 +175,13 @@ impl<T: Copy, C: Context> DerefMut for BufferRect2D<T, C> {
     #[inline(always)]
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.inner
+    }
+}
+
+impl<T: Copy + Unpin + Debug, C: Context> Debug for BufferRect2D<T, C> {
+    #[inline(always)]
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let all = self.read_all(WaitList::EMPTY).unwrap().wait().unwrap();
+        Debug::fmt(&all, f)
     }
 }

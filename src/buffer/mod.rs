@@ -20,7 +20,20 @@ pub unsafe trait KernelPointer<T> {
     fn complete (&self, event: &RawEvent) -> Result<()>;
 }
 
-unsafe impl<T: Copy + Send, C: Context> KernelPointer<T> for Buffer<T, C> {
+unsafe impl<T: Copy + Sync, C: Context> KernelPointer<T> for Buffer<T, C> {
+    #[inline(always)]
+    unsafe fn set_arg (&self, kernel: &mut Kernel, _wait: &mut WaitList, idx: u32) -> Result<()> {
+        kernel.set_argument(idx, self.id_ref())
+    }
+
+    #[inline(always)]
+    fn complete (&self, _event: &RawEvent) -> Result<()> {
+        Ok(())
+    }
+}
+
+#[docfg(feature = "cl1_1")]
+unsafe impl<T: Copy + Sync, C: Context> KernelPointer<T> for BufferRect2D<T, C> {
     #[inline(always)]
     unsafe fn set_arg (&self, kernel: &mut Kernel, _wait: &mut WaitList, idx: u32) -> Result<()> {
         kernel.set_argument(idx, self.id_ref())
@@ -33,7 +46,7 @@ unsafe impl<T: Copy + Send, C: Context> KernelPointer<T> for Buffer<T, C> {
 }
 
 #[docfg(feature = "svm")]
-unsafe impl<T: Send, C: Context> KernelPointer<T> for crate::svm::SvmBox<T, C> where C: 'static + Send + Clone {
+unsafe impl<T: Sync, C: Context> KernelPointer<T> for crate::svm::SvmBox<T, C> where C: 'static + Send + Clone {
     #[inline(always)]
     unsafe fn set_arg (&self, kernel: &mut Kernel, wait: &mut WaitList, idx: u32) -> Result<()> {
         kernel.set_svm_argument(idx, self)?;
@@ -62,7 +75,7 @@ unsafe impl<T: Send, C: Context> KernelPointer<T> for crate::svm::SvmBox<T, C> w
 }
 
 #[docfg(feature = "svm")]
-unsafe impl<T: Send, C: Context> KernelPointer<T> for crate::svm::SvmBox<[T], C> where C: 'static + Send + Clone {
+unsafe impl<T: Sync, C: Context> KernelPointer<T> for crate::svm::SvmBox<[T], C> where C: 'static + Send + Clone {
     #[inline(always)]
     unsafe fn set_arg (&self, kernel: &mut Kernel, wait: &mut WaitList, idx: u32) -> Result<()> {
         kernel.set_svm_argument(idx, self)?;
@@ -92,7 +105,7 @@ unsafe impl<T: Send, C: Context> KernelPointer<T> for crate::svm::SvmBox<[T], C>
 }
 
 #[docfg(feature = "svm")]
-unsafe impl<T: Send, C: Context> KernelPointer<T> for crate::svm::SvmVec<T, C> where C: 'static + Send + Clone {
+unsafe impl<T: Sync, C: Context> KernelPointer<T> for crate::svm::SvmVec<T, C> where C: 'static + Send + Clone {
     #[inline(always)]
     unsafe fn set_arg (&self, kernel: &mut Kernel, wait: &mut WaitList, idx: u32) -> Result<()> {
         kernel.set_svm_argument(idx, self)?;
