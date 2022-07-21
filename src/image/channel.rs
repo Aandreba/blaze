@@ -1,4 +1,4 @@
-use std::{ops::{Deref, DerefMut}, mem::MaybeUninit, hash::Hash, any::TypeId, ptr::addr_of};
+use std::{ops::{Deref, DerefMut}, mem::MaybeUninit, hash::Hash, any::TypeId, ptr::addr_of, f32::consts::PI};
 use image::Primitive;
 use num_traits::AsPrimitive;
 use rscl_proc::docfg;
@@ -54,80 +54,6 @@ impl<T: AsChannelType, U: AsChannelType> From<Inten<U>> for Red<T> where f32: As
     }
 }
 
-impl<T: AsChannelType, U: AsChannelType> From<RG<U>> for Red<T> where f32: AsPrimitive<T> {
-    #[inline(always)]
-    fn from(x: RG<U>) -> Self {
-        Self(x.red.convert())
-    }
-}
-
-impl<T: AsChannelType, U: AsChannelType> From<RA<U>> for Red<T> where f32: AsPrimitive<T> {
-    #[inline(always)]
-    fn from(x: RA<U>) -> Self {
-        Self(x.red.convert())
-    }
-}
-
-#[docfg(feature = "cl1_1")]
-impl<T: AsChannelType, U: AsChannelType> From<Rx<U>> for Red<T> where f32: AsPrimitive<T> {
-    #[inline(always)]
-    fn from(x: Rx<U>) -> Self {
-        Self(x.red.convert())
-    }
-}
-
-impl<T: AsChannelType, U: AsChannelType> From<RGB<U>> for Red<T> where f32: AsPrimitive<T> {
-    #[inline(always)]
-    fn from(x: RGB<U>) -> Self {
-        Self(x.red.convert())
-    }
-}
-
-#[docfg(feature = "cl1_1")]
-impl<T: AsChannelType, U: AsChannelType> From<RGx<U>> for Red<T> where f32: AsPrimitive<T> {
-    #[inline(always)]
-    fn from(x: RGx<U>) -> Self {
-        Self(x.red.convert())
-    }
-}
-
-impl<T: AsChannelType, U: AsChannelType> From<ARGB<U>> for Red<T> where f32: AsPrimitive<T> {
-    #[inline(always)]
-    fn from(x: ARGB<U>) -> Self {
-        Self(x.red.convert())
-    }
-}
-
-impl<T: AsChannelType, U: AsChannelType> From<RGBA<U>> for Red<T> where f32: AsPrimitive<T> {
-    #[inline(always)]
-    fn from(x: RGBA<U>) -> Self {
-        Self(x.red.convert())
-    }
-}
-
-impl<T: AsChannelType, U: AsChannelType> From<BGRA<U>> for Red<T> where f32: AsPrimitive<T> {
-    #[inline(always)]
-    fn from(x: BGRA<U>) -> Self {
-        Self(x.red.convert())
-    }
-}
-
-#[docfg(feature = "cl2")]
-impl<T: AsChannelType, U: AsChannelType> From<ABGR<U>> for Red<T> where f32: AsPrimitive<T> {
-    #[inline(always)]
-    fn from(x: ABGR<U>) -> Self {
-        Self(x.red.convert())
-    }
-}
-
-#[docfg(feature = "cl1_1")]
-impl<T: AsChannelType, U: AsChannelType> From<RGBx<U>> for Red<T> where f32: AsPrimitive<T> {
-    #[inline(always)]
-    fn from(x: RGBx<U>) -> Self {
-        Self(x.red.convert())
-    }
-}
-
 /// Single channel pixel formats where the single channel represents an alpha component.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 #[repr(transparent)]
@@ -141,6 +67,61 @@ impl<T: AsChannelType> RawPixel for Alpha<T> {
     fn channels (&self) -> &[Self::Subpixel] {
         core::slice::from_ref(&self.0)
     }
+}
+
+impl<T: AsChannelType, U: AsChannelType> From<Inten<U>> for Alpha<T> where f32: AsPrimitive<T> {
+    #[inline(always)]
+    fn from(x: Inten<U>) -> Self {
+        Self(x.0.convert())
+    }
+}
+
+macro_rules! take_impl {
+    ($($take:ident for $name:ident => [$($(#[docfg(feature = $feat:literal)])? $i:ident),+]),+) => {
+        $(
+            $(
+                $(#[docfg(feature = $feat)])?
+                impl<T: AsChannelType, U: AsChannelType> From<$i<U>> for $name<T> where f32: AsPrimitive<T> {
+                    #[inline(always)]
+                    fn from(x: $i<U>) -> Self {
+                        Self(x.$take.convert())
+                    }
+                }
+            )+
+        )+
+    };
+}
+
+take_impl! {
+    red for Red => [
+        RG, RA, RGB, RGBA, ARGB, BGRA,
+        #[docfg(feature = "cl1_1")]
+        Rx,
+        #[docfg(feature = "cl1_1")]
+        RGx,
+        #[docfg(feature = "cl1_1")]
+        RGBx,
+        #[docfg(feature = "cl2")]
+        ABGR,
+        #[docfg(feature = "cl2")]
+        SRGB,
+        #[docfg(feature = "cl2")]
+        SRGBA,
+        #[docfg(feature = "cl2")]
+        SBGRA,
+        #[docfg(feature = "cl2")]
+        SRGBx
+    ],
+
+    alpha for Alpha => [
+        RA, RGBA, ARGB, BGRA,
+        #[docfg(feature = "cl2")]
+        ABGR,
+        #[docfg(feature = "cl2")]
+        SRGBA,
+        #[docfg(feature = "cl2")]
+        SBGRA
+    ]
 }
 
 /// A single channel pixel format where the single channel represents a depth component.
@@ -190,12 +171,130 @@ impl<T: AsChannelType> RawPixel for Inten<T> {
     }
 }
 
+impl<T: AsChannelType, U: AsChannelType> From<Red<U>> for Luma<T> where f32: AsPrimitive<T> {
+    #[inline(always)]
+    fn from(x: Red<U>) -> Self {
+        Self(x.0.convert())
+    }
+}
+
+impl<T: AsChannelType, U: AsChannelType> From<Inten<U>> for Luma<T> where f32: AsPrimitive<T> {
+    #[inline(always)]
+    fn from(x: Inten<U>) -> Self {
+        Self(x.0.convert())
+    }
+}
+
+macro_rules! impl_mix {
+    ($($name:ident => [$($(#[docfg(feature = $feat:literal)])? $i:ident: ($($var:ident)&+) / $len:literal),+]),+) => {
+        $(
+            $(
+                $(#[docfg(feature = $feat)])?
+                impl<T: AsChannelType, U: AsChannelType> From<$i<U>> for $name<T> where f32: AsPrimitive<T> {
+                    #[inline]
+                    fn from(x: $i<U>) -> Self {
+                        let mean = 0f32 $( + x.$var.as_())+ / ($len as f32);
+                        let norm = (mean - U::MIN) / U::DELTA;
+                        Self(f32::as_((norm * T::DELTA) + T::MIN))
+                    }
+                }
+            )+
+        )+
+    };
+}
+
+impl_mix! {
+    Luma => [
+        RG: (red & green) / 2,
+        RA: (red) / 1,
+        #[docfg(feature = "cl1_1")]
+        Rx: (red) / 1,
+        RGB: (red & green & blue) / 3,
+        #[docfg(feature = "cl1_1")]
+        RGx: (red & green) / 2,
+        RGBA: (red & green & blue) / 3,
+        ARGB: (red & green & blue) / 3,
+        BGRA: (red & green & blue) / 3,
+        #[docfg(feature = "cl2")]
+        ABGR: (red & green & blue) / 3,
+        #[docfg(feature = "cl1_1")]
+        RGBx: (red & green & blue) / 3,
+        #[docfg(feature = "cl2")]
+        SRGB: (red & green & blue) / 3,
+        #[docfg(feature = "cl2")]
+        SRGBA: (red & green & blue) / 3,
+        #[docfg(feature = "cl2")]
+        SBGRA: (red & green & blue) / 3,
+        #[docfg(feature = "cl2")]
+        SRGBx: (red & green & blue) / 3
+    ],
+
+    Inten => [
+        RG: (red & green) / 2,
+        RA: (red & alpha) / 2,
+        #[docfg(feature = "cl1_1")]
+        Rx: (red) / 1,
+        RGB: (red & green & blue) / 3,
+        #[docfg(feature = "cl1_1")]
+        RGx: (red & green) / 2,
+        RGBA: (red & green & blue & alpha) / 4,
+        ARGB: (red & green & blue & alpha) / 4,
+        BGRA: (red & green & blue & alpha) / 4,
+        #[docfg(feature = "cl2")]
+        ABGR: (red & green & blue & alpha) / 4,
+        #[docfg(feature = "cl1_1")]
+        RGBx: (red & green & blue) / 3,
+        #[docfg(feature = "cl2")]
+        SRGB: (red & green & blue) / 3,
+        #[docfg(feature = "cl2")]
+        SRGBA: (red & green & blue & alpha) / 4,
+        #[docfg(feature = "cl2")]
+        SBGRA: (red & green & blue & alpha) / 4,
+        #[docfg(feature = "cl2")]
+        SRGBx: (red & green & blue) / 3
+    ]
+}
+
+macro_rules! take_mult {
+    ($($($take:ident),+ for $name:ident => [$($(#[docfg(feature = $feat:literal)])? $i:ident),+]),+) => {
+        $(
+            $(
+                $(#[docfg(feature = $feat)])?
+                impl<T: AsChannelType, U: AsChannelType> From<$i<U>> for $name<T> where f32: AsPrimitive<T> {
+                    #[inline(always)]
+                    fn from(x: $i<U>) -> Self {
+                        Self {
+                            $take: x.$take.convert()
+                        }
+                    }
+                }
+            )+
+        )+
+    };
+}
+
 /// The first channel represents a red component, the second channel represents a green component.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 #[repr(C)]
 pub struct RG<T> {
     pub red: T,
     pub green: T
+}
+
+impl<T: AsChannelType, U: AsChannelType> From<Luma<U>> for RG<T> where f32: AsPrimitive<T> {
+    #[inline(always)]
+    fn from(x: Luma<U>) -> Self {
+        let conv = x.0.convert();
+        Self { red: conv, green: conv }
+    }
+}
+
+impl<T: AsChannelType, U: AsChannelType> From<Inten<U>> for RG<T> where f32: AsPrimitive<T> {
+    #[inline(always)]
+    fn from(x: Inten<U>) -> Self {
+        let conv = x.0.convert();
+        Self { red: conv, green: conv }
+    }
 }
 
 impl<T: AsChannelType> RawPixel for RG<T> {
@@ -217,6 +316,14 @@ pub struct RA<T> {
     pub alpha: T
 }
 
+impl<T: AsChannelType, U: AsChannelType> From<Inten<U>> for RA<T> where f32: AsPrimitive<T> {
+    #[inline(always)]
+    fn from(x: Inten<U>) -> Self {
+        let conv = x.0.convert();
+        Self { red: conv, alpha: conv }
+    }
+}
+
 impl<T: AsChannelType> RawPixel for RA<T> {
     type Subpixel = T;
     const ORDER : ChannelOrder = ChannelOrder::RedAlpha;
@@ -226,6 +333,12 @@ impl<T: AsChannelType> RawPixel for RA<T> {
         assert_eq!(core::mem::size_of::<Self>(), core::mem::size_of::<[T; 2]>());
         unsafe { core::slice::from_raw_parts(self as *const _ as *const _, Self::CHANNEL_COUNT) }
     }
+}
+
+take_mult! {
+    red, alpha for RA => [
+        RGB
+    ]
 }
 
 /// A two channel pixel format, where the first channel represents a red component and the second channel is ignored.
@@ -254,7 +367,7 @@ impl<T: AsChannelType> RawPixel for Rx<T> {
     #[inline(always)]
     fn channels (&self) -> &[Self::Subpixel] {
         assert_eq!(core::mem::size_of::<Self>(), core::mem::size_of::<[T; 2]>());
-        unsafe { core::slice::from_raw_parts(self as *const _ as *const _, Self::CHANNEL_COUNT) }
+        core::slice::from_ref(&self.red)
     }
 }
 
@@ -390,7 +503,7 @@ impl<T: AsChannelType> RawPixel for RGx<T> {
     #[inline(always)]
     fn channels (&self) -> &[Self::Subpixel] {
         assert_eq!(core::mem::size_of::<Self>(), core::mem::size_of::<[T; 3]>());
-        unsafe { core::slice::from_raw_parts(self as *const _ as *const _, Self::CHANNEL_COUNT) }
+        unsafe { core::slice::from_raw_parts(self as *const _ as *const _, 2) }
     }
 }
 
@@ -540,7 +653,7 @@ impl<T: AsChannelType> RawPixel for RGBx<T> {
     #[inline(always)]
     fn channels (&self) -> &[Self::Subpixel] {
         assert_eq!(core::mem::size_of::<Self>(), core::mem::size_of::<[T; 4]>());
-        unsafe { core::slice::from_raw_parts(self as *const _ as *const _, Self::CHANNEL_COUNT) }
+        unsafe { core::slice::from_raw_parts(self as *const _ as *const _, 3) }
     }
 }
 
@@ -673,7 +786,7 @@ impl<T: AsChannelType> RawPixel for SRGBx<T> {
     #[inline(always)]
     fn channels (&self) -> &[Self::Subpixel] {
         assert_eq!(core::mem::size_of::<Self>(), core::mem::size_of::<[T; 4]>());
-        unsafe { core::slice::from_raw_parts(self as *const _ as *const _, Self::CHANNEL_COUNT) }
+        unsafe { core::slice::from_raw_parts(self as *const _ as *const _, 3) }
     }
 }
 
@@ -822,4 +935,6 @@ impl<T: 'static + Copy> AsPrimitive<Norm<T>> for f32 where f32: AsPrimitive<T> {
 
 #[test]
 fn casting () {
+    let test = RGx::new(0.9f32, 0.5);
+    println!("{:?}", test.channels())
 }
