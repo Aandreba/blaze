@@ -1,4 +1,4 @@
-use std::{ops::{Deref, DerefMut}, mem::MaybeUninit, hash::Hash, any::TypeId, ptr::addr_of, f32::consts::PI};
+use std::{ops::{Deref, DerefMut}, mem::MaybeUninit, hash::Hash};
 use image::Primitive;
 use num_traits::AsPrimitive;
 use rscl_proc::docfg;
@@ -28,7 +28,9 @@ pub trait RawPixel: Copy {
 /// Single channel pixel formats where the single channel represents a red component.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 #[repr(transparent)]
-pub struct Red<T> (pub T);
+pub struct Red<T> {
+    pub red: T
+}
 
 impl<T: AsChannelType> RawPixel for Red<T> {
     type Subpixel = T;
@@ -36,28 +38,16 @@ impl<T: AsChannelType> RawPixel for Red<T> {
 
     #[inline(always)]
     fn channels (&self) -> &[Self::Subpixel] {
-        core::slice::from_ref(&self.0)
-    }
-}
-
-impl<T: AsChannelType, U: AsChannelType> From<Luma<U>> for Red<T> where f32: AsPrimitive<T> {
-    #[inline(always)]
-    fn from(x: Luma<U>) -> Self {
-        Self(x.0.convert())
-    }
-}
-
-impl<T: AsChannelType, U: AsChannelType> From<Inten<U>> for Red<T> where f32: AsPrimitive<T> {
-    #[inline(always)]
-    fn from(x: Inten<U>) -> Self {
-        Self(x.0.convert())
+        core::slice::from_ref(&self.red)
     }
 }
 
 /// Single channel pixel formats where the single channel represents an alpha component.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 #[repr(transparent)]
-pub struct Alpha<T> (pub T);
+pub struct Alpha<T> {
+    pub alpha: T
+}
 
 impl<T: AsChannelType> RawPixel for Alpha<T> {
     type Subpixel = T;
@@ -65,63 +55,8 @@ impl<T: AsChannelType> RawPixel for Alpha<T> {
 
     #[inline(always)]
     fn channels (&self) -> &[Self::Subpixel] {
-        core::slice::from_ref(&self.0)
+        core::slice::from_ref(&self.alpha)
     }
-}
-
-impl<T: AsChannelType, U: AsChannelType> From<Inten<U>> for Alpha<T> where f32: AsPrimitive<T> {
-    #[inline(always)]
-    fn from(x: Inten<U>) -> Self {
-        Self(x.0.convert())
-    }
-}
-
-macro_rules! take_impl {
-    ($($take:ident for $name:ident => [$($(#[docfg(feature = $feat:literal)])? $i:ident),+]),+) => {
-        $(
-            $(
-                $(#[docfg(feature = $feat)])?
-                impl<T: AsChannelType, U: AsChannelType> From<$i<U>> for $name<T> where f32: AsPrimitive<T> {
-                    #[inline(always)]
-                    fn from(x: $i<U>) -> Self {
-                        Self(x.$take.convert())
-                    }
-                }
-            )+
-        )+
-    };
-}
-
-take_impl! {
-    red for Red => [
-        RG, RA, RGB, RGBA, ARGB, BGRA,
-        #[docfg(feature = "cl1_1")]
-        Rx,
-        #[docfg(feature = "cl1_1")]
-        RGx,
-        #[docfg(feature = "cl1_1")]
-        RGBx,
-        #[docfg(feature = "cl2")]
-        ABGR,
-        #[docfg(feature = "cl2")]
-        SRGB,
-        #[docfg(feature = "cl2")]
-        SRGBA,
-        #[docfg(feature = "cl2")]
-        SBGRA,
-        #[docfg(feature = "cl2")]
-        SRGBx
-    ],
-
-    alpha for Alpha => [
-        RA, RGBA, ARGB, BGRA,
-        #[docfg(feature = "cl2")]
-        ABGR,
-        #[docfg(feature = "cl2")]
-        SRGBA,
-        #[docfg(feature = "cl2")]
-        SBGRA
-    ]
 }
 
 /// A single channel pixel format where the single channel represents a depth component.
@@ -144,7 +79,9 @@ impl<T: AsChannelType> RawPixel for Depth<T> {
 /// A single channel pixel format where the single channel represents a luminance value. The luminance value is replicated into the red, green, and blue components.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 #[repr(transparent)]
-pub struct Luma<T> (pub T);
+pub struct Luma<T> {
+    pub luma: T
+}
 
 impl<T: AsChannelType> RawPixel for Luma<T> {
     type Subpixel = T;
@@ -152,14 +89,16 @@ impl<T: AsChannelType> RawPixel for Luma<T> {
 
     #[inline(always)]
     fn channels (&self) -> &[Self::Subpixel] {
-        core::slice::from_ref(&self.0)
+        core::slice::from_ref(&self.luma)
     }
 }
 
 /// A single channel pixel format where the single channel represents an intensity value. The intensity value is replicated into the red, green, blue, and alpha components.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 #[repr(transparent)]
-pub struct Inten<T> (pub T);
+pub struct Inten<T> {
+    pub inten: T
+}
 
 impl<T: AsChannelType> RawPixel for Inten<T> {
     type Subpixel = T;
@@ -167,26 +106,12 @@ impl<T: AsChannelType> RawPixel for Inten<T> {
 
     #[inline(always)]
     fn channels (&self) -> &[Self::Subpixel] {
-        core::slice::from_ref(&self.0)
-    }
-}
-
-impl<T: AsChannelType, U: AsChannelType> From<Red<U>> for Luma<T> where f32: AsPrimitive<T> {
-    #[inline(always)]
-    fn from(x: Red<U>) -> Self {
-        Self(x.0.convert())
-    }
-}
-
-impl<T: AsChannelType, U: AsChannelType> From<Inten<U>> for Luma<T> where f32: AsPrimitive<T> {
-    #[inline(always)]
-    fn from(x: Inten<U>) -> Self {
-        Self(x.0.convert())
+        core::slice::from_ref(&self.inten)
     }
 }
 
 macro_rules! impl_mix {
-    ($($name:ident => [$($(#[docfg(feature = $feat:literal)])? $i:ident: ($($var:ident)&+) / $len:literal),+]),+) => {
+    ($($field:ident for $name:ident => [$($(#[docfg(feature = $feat:literal)])? $i:ident: ($($var:ident)&+) / $len:literal),+]),+) => {
         $(
             $(
                 $(#[docfg(feature = $feat)])?
@@ -195,7 +120,9 @@ macro_rules! impl_mix {
                     fn from(x: $i<U>) -> Self {
                         let mean = 0f32 $( + x.$var.as_())+ / ($len as f32);
                         let norm = (mean - U::MIN) / U::DELTA;
-                        Self(f32::as_((norm * T::DELTA) + T::MIN))
+                        Self {
+                            $field: f32::as_((norm * T::DELTA) + T::MIN)
+                        }
                     }
                 }
             )+
@@ -204,7 +131,7 @@ macro_rules! impl_mix {
 }
 
 impl_mix! {
-    Luma => [
+    luma for Luma => [
         RG: (red & green) / 2,
         RA: (red) / 1,
         #[docfg(feature = "cl1_1")]
@@ -229,7 +156,7 @@ impl_mix! {
         SRGBx: (red & green & blue) / 3
     ],
 
-    Inten => [
+    inten for Inten => [
         RG: (red & green) / 2,
         RA: (red & alpha) / 2,
         #[docfg(feature = "cl1_1")]
@@ -256,7 +183,7 @@ impl_mix! {
 }
 
 macro_rules! take_mult {
-    ($($($take:ident),+ for $name:ident => [$($(#[docfg(feature = $feat:literal)])? $i:ident),+]),+) => {
+    ($($name:ident => [$($(#[docfg(feature = $feat:literal)])? $i:ident: $($take:ident $(as $ntake:ident)?),+);+]),+) => {
         $(
             $(
                 $(#[docfg(feature = $feat)])?
@@ -264,13 +191,39 @@ macro_rules! take_mult {
                     #[inline(always)]
                     fn from(x: $i<U>) -> Self {
                         Self {
-                            $take: x.$take.convert()
+                            $(
+                                $take: take_mult! { @in x $take $(as $ntake)? }
+                            ),+
                         }
                     }
                 }
             )+
         )+
     };
+
+    (@in $x:ident $take:ident) => {
+        $x.$take.convert()
+    };
+
+    (@in $x:ident $take:ident as $ntake:ident) => {
+        $x.$ntake.convert()
+    };
+}
+
+macro_rules! take_multx {
+    ($($name:ident => [$($(#[docfg(feature = $feat:literal)])? $i:ident: $($take:ident),+);+]),+) => {
+        $(
+            $(
+                $(#[docfg(feature = $feat)])?
+                impl<T: AsChannelType, U: AsChannelType> From<$i<U>> for $name<T> where f32: AsPrimitive<T> {
+                    #[inline(always)]
+                    fn from(x: $i<U>) -> Self {
+                        Self::new($(x.$take.convert()),+)
+                    }
+                }
+            )+
+        )+
+    }
 }
 
 /// The first channel represents a red component, the second channel represents a green component.
@@ -279,22 +232,6 @@ macro_rules! take_mult {
 pub struct RG<T> {
     pub red: T,
     pub green: T
-}
-
-impl<T: AsChannelType, U: AsChannelType> From<Luma<U>> for RG<T> where f32: AsPrimitive<T> {
-    #[inline(always)]
-    fn from(x: Luma<U>) -> Self {
-        let conv = x.0.convert();
-        Self { red: conv, green: conv }
-    }
-}
-
-impl<T: AsChannelType, U: AsChannelType> From<Inten<U>> for RG<T> where f32: AsPrimitive<T> {
-    #[inline(always)]
-    fn from(x: Inten<U>) -> Self {
-        let conv = x.0.convert();
-        Self { red: conv, green: conv }
-    }
 }
 
 impl<T: AsChannelType> RawPixel for RG<T> {
@@ -316,14 +253,6 @@ pub struct RA<T> {
     pub alpha: T
 }
 
-impl<T: AsChannelType, U: AsChannelType> From<Inten<U>> for RA<T> where f32: AsPrimitive<T> {
-    #[inline(always)]
-    fn from(x: Inten<U>) -> Self {
-        let conv = x.0.convert();
-        Self { red: conv, alpha: conv }
-    }
-}
-
 impl<T: AsChannelType> RawPixel for RA<T> {
     type Subpixel = T;
     const ORDER : ChannelOrder = ChannelOrder::RedAlpha;
@@ -333,12 +262,6 @@ impl<T: AsChannelType> RawPixel for RA<T> {
         assert_eq!(core::mem::size_of::<Self>(), core::mem::size_of::<[T; 2]>());
         unsafe { core::slice::from_raw_parts(self as *const _ as *const _, Self::CHANNEL_COUNT) }
     }
-}
-
-take_mult! {
-    red, alpha for RA => [
-        RGB
-    ]
 }
 
 /// A two channel pixel format, where the first channel represents a red component and the second channel is ignored.
@@ -790,18 +713,279 @@ impl<T: AsChannelType> RawPixel for SRGBx<T> {
     }
 }
 
+take_mult! {
+    Red => [
+        Luma: red as luma;
+        Inten: red as inten;
+        RG: red;
+        RA: red;
+        #[docfg(feature = "cl1_1")]
+        Rx: red;
+        RGB: red;
+        RGx: red;
+        RGBA: red;
+        ARGB: red;
+        BGRA: red;
+        #[docfg(feature = "cl2")]
+        ABGR: red;
+        #[docfg(feature = "cl1_1")]
+        RGBx: red;
+        #[docfg(feature = "cl2")]
+        SRGB: red;
+        #[docfg(feature = "cl2")]
+        SRGBA: red;
+        #[docfg(feature = "cl2")]
+        SBGRA: red;
+        #[docfg(feature = "cl2")]
+        SRGBx: red
+    ],
+
+    Alpha => [
+        Inten: alpha as inten;
+        RA: alpha;
+        RGBA: alpha;
+        ARGB: alpha;
+        BGRA: alpha;
+        #[docfg(feature = "cl2")]
+        ABGR: alpha;
+        #[docfg(feature = "cl2")]
+        SRGBA: alpha;
+        #[docfg(feature = "cl2")]
+        SBGRA: alpha
+    ],
+
+    RA => [
+        Inten: red as inten, alpha as inten;
+        RGBA: red, alpha;
+        ARGB: red, alpha;
+        BGRA: red, alpha;
+        #[docfg(feature = "cl2")]
+        ABGR: red, alpha;
+        #[docfg(feature = "cl2")]
+        SRGBA: red, alpha;
+        #[docfg(feature = "cl2")]
+        SBGRA: red, alpha
+    ],
+
+    RG => [
+        Luma: red as luma, green as luma;
+        Inten: red as inten, green as inten;
+        RGB: red, green;
+        RGx: red, green;
+        RGBA: red, green;
+        ARGB: red, green;
+        BGRA: red, green;
+        #[docfg(feature = "cl2")]
+        ABGR: red, green;
+        #[docfg(feature = "cl1_1")]
+        RGBx: red, green;
+        #[docfg(feature = "cl2")]
+        SRGB: red, green;
+        #[docfg(feature = "cl2")]
+        SRGBA: red, green;
+        #[docfg(feature = "cl2")]
+        SBGRA: red, green;
+        #[docfg(feature = "cl2")]
+        SRGBx: red, green
+    ],
+
+    RGB => [
+        Luma: red as luma, green as luma, blue as luma;
+        Inten: red as inten, green as inten, blue as inten;
+        RGBA: red, green, blue;
+        ARGB: red, green, blue;
+        BGRA: red, green, blue;
+        #[docfg(feature = "cl2")]
+        ABGR: red, green, blue;
+        #[docfg(feature = "cl1_1")]
+        RGBx: red, green, blue;
+        #[docfg(feature = "cl2")]
+        SRGB: red, green, blue;
+        #[docfg(feature = "cl2")]
+        SRGBA: red, green, blue;
+        #[docfg(feature = "cl2")]
+        SBGRA: red, green, blue;
+        #[docfg(feature = "cl2")]
+        SRGBx: red, green, blue
+    ],
+
+    RGBA => [
+        Inten: red as inten, green as inten, blue as inten, alpha as inten;
+        ARGB: red, green, blue, alpha;
+        BGRA: red, green, blue, alpha;
+        #[docfg(feature = "cl2")]
+        ABGR: red, green, blue, alpha;
+        #[docfg(feature = "cl2")]
+        SRGBA: red, green, blue, alpha;
+        #[docfg(feature = "cl2")]
+        SBGRA: red, green, blue, alpha
+    ],
+
+    ARGB => [
+        Inten: red as inten, green as inten, blue as inten, alpha as inten;
+        RGBA: red, green, blue, alpha;
+        BGRA: red, green, blue, alpha;
+        #[docfg(feature = "cl2")]
+        ABGR: red, green, blue, alpha;
+        #[docfg(feature = "cl2")]
+        SRGBA: red, green, blue, alpha;
+        #[docfg(feature = "cl2")]
+        SBGRA: red, green, blue, alpha
+    ],
+
+    BGRA => [
+        Inten: red as inten, green as inten, blue as inten, alpha as inten;
+        RGBA: red, green, blue, alpha;
+        ARGB: red, green, blue, alpha;
+        #[docfg(feature = "cl2")]
+        ABGR: red, green, blue, alpha;
+        #[docfg(feature = "cl2")]
+        SRGBA: red, green, blue, alpha;
+        #[docfg(feature = "cl2")]
+        SBGRA: red, green, blue, alpha
+    ]
+}
+
+#[docfg(feature = "cl1_1")]
+take_multx! {
+    Rx => [
+        Luma: luma;    
+        Inten: inten;
+        Red: red;
+        RG: red;
+        RA: red;
+        RGB: red;
+        RGx: red;
+        RGBA: red;
+        ARGB: red;
+        BGRA: red;
+        #[docfg(feature = "cl2")]
+        ABGR: red;
+        RGBx: red;
+        #[docfg(feature = "cl2")]
+        SRGB: red;
+        #[docfg(feature = "cl2")]
+        SRGBA: red;
+        #[docfg(feature = "cl2")]
+        SBGRA: red;
+        #[docfg(feature = "cl2")]
+        SRGBx: red
+    ],
+
+    RGx => [
+        Luma: luma, luma;    
+        Inten: inten, inten;
+        RG: red, green;
+        RGB: red, green;
+        RGBA: red, green;
+        ARGB: red, green;
+        BGRA: red, green;
+        #[docfg(feature = "cl2")]
+        ABGR: red, green;
+        RGBx: red, green;
+        #[docfg(feature = "cl2")]
+        SRGB: red, green;
+        #[docfg(feature = "cl2")]
+        SRGBA: red, green;
+        #[docfg(feature = "cl2")]
+        SBGRA: red, green;
+        #[docfg(feature = "cl2")]
+        SRGBx: red, green
+    ],
+
+    RGBx => [
+        Luma: luma, luma, luma;
+        Inten: inten, inten, inten;
+        RGB: red, green, blue;
+        RGBA: red, green, blue;
+        ARGB: red, green, blue;
+        BGRA: red, green, blue;
+        #[docfg(feature = "cl2")]
+        ABGR: red, green, blue;
+        #[docfg(feature = "cl2")]
+        SRGB: red, green, blue;
+        #[docfg(feature = "cl2")]
+        SRGBA: red, green, blue;
+        #[docfg(feature = "cl2")]
+        SBGRA: red, green, blue;
+        #[docfg(feature = "cl2")]
+        SRGBx: red, green, blue
+    ]
+}
+
+#[docfg(feature = "cl2")]
+take_mult! {
+    ABGR => [
+        Inten: red as inten, green as inten, blue as inten, alpha as inten;
+        RGBA: red, green, blue, alpha;
+        ARGB: red, green, blue, alpha;
+        BGRA: red, green, blue, alpha;
+        SRGBA: red, green, blue, alpha;
+        SBGRA: red, green, blue, alpha
+    ],
+
+    SRGB => [
+        Luma: red as luma, green as luma, blue as luma;
+        Inten: red as inten, green as inten, blue as inten;
+        RGB: red, green, blue;
+        RGBA: red, green, blue;
+        ARGB: red, green, blue;
+        BGRA: red, green, blue;
+        ABGR: red, green, blue;
+        RGBx: red, green, blue;
+        SRGBA: red, green, blue;
+        SBGRA: red, green, blue;
+        SRGBx: red, green, blue
+    ],
+
+    SRGBA => [
+        Inten: red as inten, green as inten, blue as inten, alpha as inten;
+        RGBA: red, green, blue, alpha;
+        ARGB: red, green, blue, alpha;
+        BGRA: red, green, blue, alpha;
+        ABGR: red, green, blue, alpha;
+        SBGRA: red, green, blue, alpha
+    ],
+
+    SBGRA => [
+        Inten: red as inten, green as inten, blue as inten, alpha as inten;
+        RGBA: red, green, blue, alpha;
+        ARGB: red, green, blue, alpha;
+        BGRA: red, green, blue, alpha;
+        ABGR: red, green, blue, alpha;
+        SRGBA: red, green, blue, alpha
+    ]
+}
+
+#[docfg(feature = "cl2")]
+take_multx! {
+    SRGBx => [
+        Luma: luma, luma, luma;
+        Inten: inten, inten, inten;
+        RGBx: red, green, blue;
+        RGB: red, green, blue;
+        RGBA: red, green, blue;
+        ARGB: red, green, blue;
+        BGRA: red, green, blue;
+        ABGR: red, green, blue;
+        SRGB: red, green, blue;
+        SRGBA: red, green, blue;
+        SBGRA: red, green, blue
+    ]
+}
+
 // Conversions from and into `image` crate
 impl<T: Primitive + AsChannelType> From<image::Luma<T>> for Luma<T> {
     #[inline(always)]
     fn from(x: image::Luma<T>) -> Self {
-        Luma(x.0[0])
+        Luma { luma: x.0[0] }
     }
 }
 
 impl<T: Primitive + AsChannelType> Into<image::Luma<T>> for Luma<T> {
     #[inline(always)]
     fn into(self) -> image::Luma<T> {
-        image::Luma([self.0])
+        image::Luma([self.luma])
     }
 }
 
@@ -816,9 +1000,9 @@ pub trait AsChannelType: AsPrimitive<f32> {
     #[inline]
     fn convert<U: AsChannelType> (self) -> U where f32: AsPrimitive<U> {
         // Optimize self converssion
-        if TypeId::of::<Self>() == TypeId::of::<U>() {
+        /*if TypeId::of::<Self>() == TypeId::of::<U>() {
             return unsafe { *(addr_of!(self) as *const U) }
-        }
+        }*/
 
         let norm = (self.as_() - Self::MIN) / Self::DELTA;
         f32::as_((norm * U::DELTA) + U::MIN)
