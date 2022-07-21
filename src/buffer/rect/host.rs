@@ -33,6 +33,22 @@ impl<T> Rect2D<T> {
     pub const unsafe fn from_raw_parts (ptr: NonNull<T>, width: NonZeroUsize, height: NonZeroUsize) -> Self {
         Self::from_raw_parts_with_allocator(ptr, width, height, std::alloc::Global)
     }
+
+    #[inline(always)]
+    pub unsafe fn into_raw_parts (self) -> (NonNull<T>, NonZeroUsize, NonZeroUsize) {
+        let this = ManuallyDrop::new(self);
+        (this.ptr, this.width, this.height)
+    }
+
+    #[inline(always)]
+    pub fn from_boxed_slice (v: Box<[T]>, width: usize) -> Option<Self> {
+        Self::from_boxed_slice_in(v, width)
+    }
+
+    #[inline(always)]
+    pub fn into_boxed_slice (self) -> Box<[T]> {
+        Self::into_boxed_slice_in(self)
+    }
 }
 
 impl<T, A: Allocator> Rect2D<T, A> {
@@ -203,11 +219,6 @@ impl<T, A: Allocator> Rect2D<T, A> {
         core::slice::from_raw_parts_mut(ptr, self.width())
     }
 
-    #[inline(always)]
-    pub const unsafe fn from_raw_parts_with_allocator (ptr: NonNull<T>, width: NonZeroUsize, height: NonZeroUsize, alloc: A) -> Self {
-        Self { ptr, alloc, width, height }
-    }
-
     pub fn new_in (v: &[T], width: usize, alloc: A) -> Option<Self> where T: Copy {
         let width = NonZeroUsize::new(width)?;
         let height = NonZeroUsize::new(v.len() / width)?;
@@ -284,6 +295,40 @@ impl<T, A: Allocator> Rect2D<T, A> {
                 width,
                 height
             })
+        }
+    }
+
+    #[inline(always)]
+    pub const unsafe fn from_raw_parts_with_allocator (ptr: NonNull<T>, width: NonZeroUsize, height: NonZeroUsize, alloc: A) -> Self {
+        Self { ptr, alloc, width, height }
+    }
+
+    #[inline(always)]
+    pub unsafe fn into_raw_parts_with_allocator (self) -> (NonNull<T>, NonZeroUsize, NonZeroUsize, A) {
+        let this = ManuallyDrop::new(self);
+        let alloc = core::ptr::read(addr_of!(this.alloc));
+        (this.ptr, this.width, this.height, alloc)
+    }
+
+    #[inline]
+    pub fn from_boxed_slice_in (v: Box<[T], A>, width: usize) -> Option<Self> {
+        let width = NonZeroUsize::new(width)?;
+        let height = NonZeroUsize::new(v.len() / width)?;
+
+        let (ptr, alloc) = Box::into_raw_with_allocator(v);
+        let ptr = NonNull::new(ptr as *mut T)?;
+
+        unsafe { Some(Self::from_raw_parts_with_allocator(ptr, width, height, alloc)) }
+    }
+
+    #[inline]
+    pub fn into_boxed_slice_in (self) -> Box<[T], A> {
+        let (ptr, width, height, alloc) = unsafe { self.into_raw_parts_with_allocator() };
+        let len = width.checked_mul(height).unwrap();
+
+        unsafe {
+            let slice = core::slice::from_raw_parts_mut(ptr.as_ptr(), len.get());
+            Box::from_raw_in(slice, alloc)
         }
     }
 }

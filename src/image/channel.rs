@@ -1,9 +1,12 @@
 use std::{ops::{Deref, DerefMut}, mem::MaybeUninit, hash::Hash};
-use image::Primitive;
+use image::{DynamicImage, Pixel, ImageBuffer, Primitive};
 use num_traits::AsPrimitive;
 use rscl_proc::docfg;
-use crate::{prelude::RawContext, buffer::flags::MemAccess, memobj::MemObjectType};
+use crate::{prelude::RawContext, buffer::{flags::MemAccess, rect::Rect2D}, memobj::MemObjectType};
 use super::{ChannelType, ChannelOrder, ImageFormat};
+
+#[cfg(feature = "half")]
+use ::half::f16;
 
 pub trait RawPixel: Copy {
     type Subpixel: AsChannelType;
@@ -63,7 +66,9 @@ impl<T: AsChannelType> RawPixel for Alpha<T> {
 #[docfg(feature = "cl2")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 #[repr(transparent)]
-pub struct Depth<T> (pub T);
+pub struct Depth<T> {
+    pub depth: T
+}
 
 #[docfg(feature = "cl2")]
 impl<T: AsChannelType> RawPixel for Depth<T> {
@@ -72,7 +77,7 @@ impl<T: AsChannelType> RawPixel for Depth<T> {
 
     #[inline(always)]
     fn channels (&self) -> &[Self::Subpixel] {
-        core::slice::from_ref(&self.0)
+        core::slice::from_ref(&self.depth)
     }
 }
 
@@ -118,7 +123,7 @@ macro_rules! impl_mix {
                 impl<T: AsChannelType, U: AsChannelType> From<$i<U>> for $name<T> where f32: AsPrimitive<T> {
                     #[inline]
                     fn from(x: $i<U>) -> Self {
-                        let mean = 0f32 $( + x.$var.as_())+ / ($len as f32);
+                        let mean = (0f32 $( + x.$var.as_())+) / ($len as f32);
                         let norm = (mean - U::MIN) / U::DELTA;
                         Self {
                             $field: f32::as_((norm * T::DELTA) + T::MIN)
@@ -974,18 +979,137 @@ take_multx! {
     ]
 }
 
-// Conversions from and into `image` crate
-impl<T: Primitive + AsChannelType> From<image::Luma<T>> for Luma<T> {
+macro_rules! impl_cast {
+    ($($(#[docfg(feature = $feat:literal)])? $i:ident $(in $x:ident)? => [$($field:ident),+]),+) => {
+        $(
+            $(#[docfg(feature = $feat)])?
+            impl<T: AsChannelType> $i<T> {
+                #[inline(always)]
+                pub fn convert<U: AsChannelType> (self) -> $i<U> where f32: AsPrimitive<U> {
+                    $i {
+                        $(
+                            $field: self.$field.convert()
+                        ),+
+
+                        $(, $x: MaybeUninit::uninit())?
+                    }
+                }
+            }
+
+            $(#[docfg(feature = $feat)])?
+            impl_cast!(@in $i => $($field),+);
+        )+
+    };
+
+    (@in $i:ident => $($field:ident),+) => {
+        impl_cast!(@in $i @ u8 => [u16, u32, i8, i16, i32, Norm<u8>, Norm<u16>, Norm<i8>, Norm<i16>, f32, #[docfg(feature = "half")] f16]);
+        impl_cast!(@in $i @ u16 => [u8, u32, i8, i16, i32, Norm<u8>, Norm<u16>, Norm<i8>, Norm<i16>, f32, #[docfg(feature = "half")] f16]);
+        impl_cast!(@in $i @ u32 => [u8, u16, i8, i16, i32, Norm<u8>, Norm<u16>, Norm<i8>, Norm<i16>, f32, #[docfg(feature = "half")] f16]);
+        impl_cast!(@in $i @ i8 => [u8, u16, u32, i16, i32, Norm<u8>, Norm<u16>, Norm<i8>, Norm<i16>, f32, #[docfg(feature = "half")] f16]);
+        impl_cast!(@in $i @ i16 => [u8, u16, u32, i8, i32, Norm<u8>, Norm<u16>, Norm<i8>, Norm<i16>, f32, #[docfg(feature = "half")] f16]);
+        impl_cast!(@in $i @ i32 => [u8, u16, u32, i8, i16, Norm<u8>, Norm<u16>, Norm<i8>, Norm<i16>, f32, #[docfg(feature = "half")] f16]);
+        impl_cast!(@in $i @ Norm<u8> => [u8, u16, u32, i8, i16, i32, Norm<u16>, Norm<i8>, Norm<i16>, f32, #[docfg(feature = "half")] f16]);
+        impl_cast!(@in $i @ Norm<u16> => [u8, u16, u32, i8, i16, i32, Norm<u8>, Norm<i8>, Norm<i16>, f32, #[docfg(feature = "half")] f16]);
+        impl_cast!(@in $i @ Norm<i8> => [u8, u16, u32, i8, i16, i32, Norm<u8>, Norm<u16>, Norm<i16>, f32, #[docfg(feature = "half")] f16]);
+        impl_cast!(@in $i @ Norm<i16> => [u8, u16, u32, i8, i16, i32, Norm<u8>, Norm<u16>, Norm<i8>, f32, #[docfg(feature = "half")] f16]);
+        impl_cast!(@in $i @ f32 => [u16, u32, i8, i16, i32, Norm<u8>, Norm<u16>, Norm<i8>, Norm<i16>, #[docfg(feature = "half")] f16]);
+        #[docfg(feature = "half")]
+        impl_cast!(@in $i @ f16 => [u16, u32, i8, i16, i32, Norm<u8>, Norm<u16>, Norm<i8>, Norm<i16>, f32]);
+    };
+
+    (@in $i:ident @ $from:ty => [$($(#[docfg(feature = $feat:literal)])? $to:ty),+]) => {
+        $(
+            $(#[docfg(feature = $feat)])?
+            impl From<$i<$from>> for $i<$to> {
+                #[inline(always)]
+                fn from(x: $i<$from>) -> Self {
+                    x.convert()
+                }
+            }
+        )+
+    }
+}
+
+impl_cast! {
+    Red => [red],
+    Alpha => [alpha],
+    #[docfg(feature = "cl2")]
+    Depth => [depth],
+    Luma => [luma],
+    Inten => [inten],
+    RG => [red, green],
+    RA => [red, alpha],
+    #[docfg(feature = "cl1_1")]
+    Rx in x => [red],
+    RGB => [red, green, blue],
+    #[docfg(feature = "cl1_1")]
+    RGx in x => [red, green],
+    RGBA => [red, green, blue, alpha],
+    ARGB => [red, green, blue, alpha],
+    BGRA => [red, green, blue, alpha],
+    #[docfg(feature = "cl2")]
+    ABGR => [red, green, blue, alpha],
+    #[docfg(feature = "cl1_1")]
+    RGBx in x => [red, green, blue],
+    #[docfg(feature = "cl2")]
+    SRGB => [red, green, blue],
+    #[docfg(feature = "cl2")]
+    SRGBA => [red, green, blue, alpha],
+    #[docfg(feature = "cl2")]
+    SBGRA => [red, green, blue, alpha],
+    #[docfg(feature = "cl2")]
+    SRGBx in x => [red, green, blue]
+}
+
+// Conversions from `image` crate
+impl<T: Copy> From<image::Luma<T>> for Luma<T> {
     #[inline(always)]
     fn from(x: image::Luma<T>) -> Self {
         Luma { luma: x.0[0] }
     }
 }
 
-impl<T: Primitive + AsChannelType> Into<image::Luma<T>> for Luma<T> {
+impl<T: Copy> From<image::Rgb<T>> for RGB<T> {
+    #[inline(always)]
+    fn from(x: image::Rgb<T>) -> Self {
+        RGB {
+            red: x.0[0],
+            green: x.0[1],
+            blue: x.0[2]
+        }
+    }
+}
+
+impl<T: Copy> From<image::Rgba<T>> for RGBA<T> {
+    #[inline(always)]
+    fn from(x: image::Rgba<T>) -> Self {
+        RGBA {
+            red: x.0[0],
+            green: x.0[1],
+            blue: x.0[2],
+            alpha: x.0[3]
+        }
+    }
+}
+
+impl<T: Copy> Into<image::Luma<T>> for Luma<T> {
     #[inline(always)]
     fn into(self) -> image::Luma<T> {
         image::Luma([self.luma])
+    }
+}
+
+impl<T: Copy> Into<image::Rgb<T>> for RGB<T> {
+    #[inline(always)]
+    fn into(self) -> image::Rgb<T> {
+        image::Rgb ([self.red, self.green, self.blue])
+    }
+}
+
+impl<T: Copy> Into<image::Rgba<T>> for RGBA<T> {
+    #[inline(always)]
+    fn into(self) -> image::Rgba<T> {
+        image::Rgba ([self.red, self.green, self.blue, self.alpha])
     }
 }
 
@@ -1005,7 +1129,7 @@ pub trait AsChannelType: AsPrimitive<f32> {
         }*/
 
         let norm = (self.as_() - Self::MIN) / Self::DELTA;
-        f32::as_((norm * U::DELTA) + U::MIN)
+        f32::as_((f32::clamp(norm, 0f32, 1f32) * U::DELTA) + U::MIN)
     }
 }
 
@@ -1117,8 +1241,116 @@ impl<T: 'static + Copy> AsPrimitive<Norm<T>> for f32 where f32: AsPrimitive<T> {
     }
 }
 
+pub trait FromDynImage: 
+    From<Luma<u8>> + From<RGB<u8>> + From<RGBA<u8>> +
+    From<Luma<u16>> + From<RGB<u16>> + From<RGBA<u16>> + 
+    From<RGB<f32>> + From<RGBA<f32>> {
+
+    fn from_dyn_image (img: DynamicImage) -> Rect2D<Self> {
+        match img {
+            DynamicImage::ImageLuma8(img) => {
+                let pixels = img.pixels()
+                    .copied()
+                    .map(Luma::<u8>::from)
+                    .map(Self::from)
+                    .collect::<Box<[_]>>();
+
+                Rect2D::from_boxed_slice(pixels, img.width() as usize).unwrap()
+            },
+
+            DynamicImage::ImageRgb8(img) => {
+                let pixels = img.pixels()
+                    .copied()
+                    .map(RGB::<u8>::from)
+                    .map(Self::from)
+                    .collect::<Box<[_]>>();
+
+                Rect2D::from_boxed_slice(pixels, img.width() as usize).unwrap()
+            },
+
+            DynamicImage::ImageRgba8(img) => {
+                let pixels = img.pixels()
+                    .copied()
+                    .map(RGBA::<u8>::from)
+                    .map(Self::from)
+                    .collect::<Box<[_]>>();
+
+                Rect2D::from_boxed_slice(pixels, img.width() as usize).unwrap()
+            },
+
+            DynamicImage::ImageLuma16(img) => {
+                let pixels = img.pixels()
+                    .copied()
+                    .map(Luma::<u16>::from)
+                    .map(Self::from)
+                    .collect::<Box<[_]>>();
+
+                Rect2D::from_boxed_slice(pixels, img.width() as usize).unwrap()
+            },
+
+            DynamicImage::ImageRgb16(img) => {
+                let pixels = img.pixels()
+                    .copied()
+                    .map(RGB::<u16>::from)
+                    .map(Self::from)
+                    .collect::<Box<[_]>>();
+
+                Rect2D::from_boxed_slice(pixels, img.width() as usize).unwrap()
+            },
+
+            DynamicImage::ImageRgba16(img) => {
+                let pixels = img.pixels()
+                    .copied()
+                    .map(RGBA::<u16>::from)
+                    .map(Self::from)
+                    .collect::<Box<[_]>>();
+
+                Rect2D::from_boxed_slice(pixels, img.width() as usize).unwrap()
+            },
+
+            DynamicImage::ImageRgb32F(img) => {
+                let pixels = img.pixels()
+                    .copied()
+                    .map(RGB::<f32>::from)
+                    .map(Self::from)
+                    .collect::<Box<[_]>>();
+
+                Rect2D::from_boxed_slice(pixels, img.width() as usize).unwrap()
+            },
+
+            DynamicImage::ImageRgba32F(img) => {
+                let pixels = img.pixels()
+                    .copied()
+                    .map(RGBA::<f32>::from)
+                    .map(Self::from)
+                    .collect::<Box<[_]>>();
+
+                Rect2D::from_boxed_slice(pixels, img.width() as usize).unwrap()
+            },
+
+            // TODO LumaA
+            _ => todo!()
+        }
+    }
+}
+
+impl<T: From<Luma<u8>> + From<RGB<u8>> + From<RGBA<u8>> +
+From<Luma<u16>> + From<RGB<u16>> + From<RGBA<u16>> + 
+From<RGB<f32>> + From<RGBA<f32>>> FromDynImage for T {}
+
+pub trait IntoDynImage<T: Pixel> {
+    fn into_dyn_image<I: IntoIterator<Item = Self>> (iter: I) -> ImageBuffer<T, Vec<T>>;
+}
+
+impl<T: Primitive, P: From<Luma<T>>> IntoDynImage<image::Luma<T>> for P where  {
+    fn into_dyn_image<I: IntoIterator<Item = Self>> (iter: I) -> ImageBuffer<image::Luma<T>, Vec<image::Luma<T>>> {
+        let iter = iter.into_iter().map(Luma::<T>::from);
+        todo!()
+    }
+}
+
 #[test]
 fn casting () {
     let test = RGx::new(0.9f32, 0.5);
-    println!("{:?}", test.channels())
+    println!("{:?}", Luma::<u8>::from(test))
 }

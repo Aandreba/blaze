@@ -1,8 +1,8 @@
 use std::{ptr::NonNull, os::raw::c_void, marker::PhantomData, ops::{Deref, DerefMut}, path::Path, io::{Seek, BufRead}, borrow::Borrow};
-use image::{ImageBuffer, io::Reader};
+use image::{io::Reader};
 use opencl_sys::cl_mem;
 use crate::{core::*, context::{Context, Global}, buffer::{flags::{HostPtr, MemFlags, MemAccess}, rect::Rect2D}, event::WaitList, memobj::{MemObjectType, IntoSlice2D, MemObject}};
-use super::{RawImage, ImageDesc, channel::{RawPixel}, events::{ReadImage2D, WriteImage2D, CopyImage, FillImage}};
+use super::{RawImage, ImageDesc, channel::{RawPixel, FromDynImage}, events::{ReadImage2D, WriteImage2D, CopyImage, FillImage}};
 
 #[derive(Debug)]
 pub struct Image2D<P: RawPixel, C: Context = Global> {
@@ -12,20 +12,20 @@ pub struct Image2D<P: RawPixel, C: Context = Global> {
 }
 
 impl<P: RawPixel> Image2D<P> {
-    /*#[inline(always)]
-    pub fn from_file (path: impl AsRef<Path>, access: MemAccess, alloc: bool) -> Result<Self> where P: FromDynamic {
+    #[inline(always)]
+    pub fn from_file (path: impl AsRef<Path>, access: MemAccess, alloc: bool) -> Result<Self> where P: FromDynImage {
         Self::from_file_in(Global, path, access, alloc)
     }
 
     #[inline(always)]
-    pub fn from_reader<R: BufRead + Seek> (reader: Reader<R>, access: MemAccess, alloc: bool) -> Result<Self> where P: FromDynamic {
+    pub fn from_reader<R: BufRead + Seek> (reader: Reader<R>, access: MemAccess, alloc: bool) -> Result<Self> where P: FromDynImage {
         Self::from_reader_in(Global, reader, access, alloc)
     }
 
     #[inline(always)]
-    pub fn from_buffer<Raw: Deref<Target = [P::Subpixel]>> (buffer: &ImageBuffer<P, Raw>, access: MemAccess, alloc: bool) -> Result<Self> {
-        Self::from_buffer_in(Global, buffer, access, alloc)
-    }*/
+    pub fn from_rect (v: &Rect2D<P>, access: MemAccess, alloc: bool) -> Result<Self> {
+        Self::from_rect_in(Global, v, access, alloc)
+    }
 
     #[inline(always)]
     pub fn from_raw (v: &[P::Subpixel], width: usize, height: usize, access: MemAccess, alloc: bool) -> Result<Self> {
@@ -44,8 +44,8 @@ impl<P: RawPixel> Image2D<P> {
 }
 
 impl<P: RawPixel, C: Context> Image2D<P, C> {
-    /*#[inline]
-    pub fn from_file_in (ctx: C, path: impl AsRef<Path>, access: MemAccess, alloc: bool) -> Result<Self> where P: FromDynamic {
+    #[inline]
+    pub fn from_file_in (ctx: C, path: impl AsRef<Path>, access: MemAccess, alloc: bool) -> Result<Self> where P: FromDynImage {
         let reader = match Reader::open(path) {
             Ok(x) => x,
             Err(e) => return Err(Error::new(ErrorType::InvalidValue, e))
@@ -56,25 +56,22 @@ impl<P: RawPixel, C: Context> Image2D<P, C> {
 
     /// Creates a new 2D image from an image reader.
     #[inline]
-    pub fn from_reader_in<R: BufRead + Seek> (ctx: C, reader: Reader<R>, access: MemAccess, alloc: bool) -> Result<Self> where P: FromDynamic {
+    pub fn from_reader_in<R: BufRead + Seek> (ctx: C, reader: Reader<R>, access: MemAccess, alloc: bool) -> Result<Self> where P: FromDynImage {
         let decode = match reader.decode() {
             Ok(x) => x,
             Err(e) => return Err(Error::new(ErrorType::InvalidValue, e))
         };
 
-        let buffer = P::from_dynamic(decode);
-        Self::from_buffer_in(ctx, &buffer, access, alloc)
+        let buffer = P::from_dyn_image(decode);
+        Self::from_rect_in(ctx, &buffer, access, alloc)
     }
 
-    /// Creates a new 2D image from an image buffer.
-    #[inline]
-    pub fn from_buffer_in<Raw: Deref<Target = [P::Subpixel]>> (ctx: C, buffer: &ImageBuffer<P, Raw>, access: MemAccess, alloc: bool) -> Result<Self> {
-        let width = buffer.width() as usize;
-        let height = buffer.height() as usize;
-
-        let v : &[P::Subpixel] = buffer.as_raw().deref();
-        Self::from_raw_in(ctx, v, width, height, access, alloc)
-    }*/
+    /// Creates a new 2D image from a 2D rect.
+    #[inline(always)]
+    pub fn from_rect_in (ctx: C, v: &Rect2D<P>, access: MemAccess, alloc: bool) -> Result<Self> {
+        let host = MemFlags::new(access, HostPtr::new(alloc, true));
+        unsafe { Self::create_in(ctx, v.width(), v.height(), host, NonNull::new(v.as_ptr() as *mut _)) }
+    }
     
     /// Creates a new 2D image from it's raw pixels.
     #[inline(always)]
