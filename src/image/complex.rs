@@ -1,8 +1,8 @@
 use std::{ptr::NonNull, os::raw::c_void, marker::PhantomData, ops::{Deref, DerefMut}, path::Path, io::{Seek, BufRead}, borrow::Borrow};
-use image::{io::Reader};
+use image::{io::Reader, PixelWithColorType, ImageResult};
 use opencl_sys::cl_mem;
-use crate::{core::*, context::{Context, Global}, buffer::{flags::{HostPtr, MemFlags, MemAccess}, rect::Rect2D}, event::WaitList, memobj::{MemObjectType, IntoSlice2D, MemObject}};
-use super::{RawImage, ImageDesc, channel::{RawPixel, FromDynImage}, events::{ReadImage2D, WriteImage2D, CopyImage, FillImage}};
+use crate::{core::*, context::{Context, Global}, buffer::{flags::{HostPtr, MemFlags, MemAccess}, rect::Rect2D}, event::WaitList, memobj::{MemObjectType, IntoSlice2D, MemObject}, prelude::Event};
+use super::{RawImage, ImageDesc, channel::{RawPixel, FromDynImage, AsChannelType}, events::{ReadImage2D, WriteImage2D, CopyImage, FillImage}};
 
 #[derive(Debug)]
 pub struct Image2D<P: RawPixel, C: Context = Global> {
@@ -112,7 +112,26 @@ impl<P: RawPixel, C: Context> Image2D<P, C> {
     }
 }
 
-impl<P: RawPixel, C: Context> Image2D<P, C> where P::Subpixel: Unpin {
+impl<P: RawPixel + Unpin, C: Context> Image2D<P, C> {
+    pub fn save (&self, path: impl AsRef<Path>, wait: impl Into<WaitList>) where P::Pixel: PixelWithColorType {
+        let all = self.read_all(wait).unwrap().wait().unwrap();
+        let width = u32::try_from(all.width()).unwrap();
+        let height = u32::try_from(all.height()).unwrap();
+
+        let pixels = all.into_vec().into_iter()
+            .map(P::into_pixel)
+            .collect::<Box<[_]>>();
+
+        let len = pixels.len() ;
+        let pixels = Box::into_raw(pixels);
+        let pixels = unsafe { core::slice::from_raw_parts(pixels as *const <P::Subpixel as AsChannelType>::Primitive, len) };
+
+        let buffer = image::ImageBuffer::from_vec(width, height, pixels).unwrap();        
+        todo!()
+    }
+}
+
+impl<P: RawPixel + Unpin, C: Context> Image2D<P, C> {
     #[inline(always)]
     pub fn read_all (&self, wait: impl Into<WaitList>) -> Result<ReadImage2D<P>> {
         self.read((.., ..), wait)

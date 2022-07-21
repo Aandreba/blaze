@@ -39,16 +39,6 @@ impl<T> Rect2D<T> {
         let this = ManuallyDrop::new(self);
         (this.ptr, this.width, this.height)
     }
-
-    #[inline(always)]
-    pub fn from_boxed_slice (v: Box<[T]>, width: usize) -> Option<Self> {
-        Self::from_boxed_slice_in(v, width)
-    }
-
-    #[inline(always)]
-    pub fn into_boxed_slice (self) -> Box<[T]> {
-        Self::into_boxed_slice_in(self)
-    }
 }
 
 impl<T, A: Allocator> Rect2D<T, A> {
@@ -104,6 +94,13 @@ impl<T, A: Allocator> Rect2D<T, A> {
     #[inline(always)]
     pub fn as_mut_slice (&mut self) -> &mut [T] {
         unsafe { core::slice::from_raw_parts_mut(self.ptr.as_ptr(), self.width() * self.height()) }
+    }
+
+    #[inline(always)]
+    pub unsafe fn transmute<U> (self) -> Rect2D<U, A> {
+        let this = ManuallyDrop::new(self);
+        let alloc = core::ptr::read(addr_of!(this.alloc));
+        Rect2D { ptr: this.ptr.cast(), width: this.width, height: this.height, alloc }
     }
 
     #[inline(always)]
@@ -311,7 +308,7 @@ impl<T, A: Allocator> Rect2D<T, A> {
     }
 
     #[inline]
-    pub fn from_boxed_slice_in (v: Box<[T], A>, width: usize) -> Option<Self> {
+    pub fn from_boxed_slice (v: Box<[T], A>, width: usize) -> Option<Self> {
         let width = NonZeroUsize::new(width)?;
         let height = NonZeroUsize::new(v.len() / width)?;
 
@@ -322,7 +319,7 @@ impl<T, A: Allocator> Rect2D<T, A> {
     }
 
     #[inline]
-    pub fn into_boxed_slice_in (self) -> Box<[T], A> {
+    pub fn into_boxed_slice (self) -> Box<[T], A> {
         let (ptr, width, height, alloc) = unsafe { self.into_raw_parts_with_allocator() };
         let len = width.checked_mul(height).unwrap();
 
@@ -330,6 +327,11 @@ impl<T, A: Allocator> Rect2D<T, A> {
             let slice = core::slice::from_raw_parts_mut(ptr.as_ptr(), len.get());
             Box::from_raw_in(slice, alloc)
         }
+    }
+
+    #[inline(always)]
+    pub fn into_vec (self) -> Vec<T, A> {
+        self.into_boxed_slice().into_vec()
     }
 }
 

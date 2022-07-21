@@ -9,7 +9,7 @@ pub struct ReadImage2D<'src, P: RawPixel> {
     src: PhantomData<&'src P>
 }
 
-impl<'src, P: RawPixel> ReadImage2D<'src, P> where P::Subpixel: Unpin {
+impl<'src, P: RawPixel + Unpin> ReadImage2D<'src, P> {
     #[inline]
     pub unsafe fn new (src: &'src RawImage, queue: &CommandQueue, slice: impl IntoSlice2D, row_pitch: Option<usize>, slice_pitch: Option<usize>, wait: impl Into<WaitList>) -> Result<Self> {
         if let Some(slice) = slice.into_slice(src.width()?, src.height()?) {
@@ -32,7 +32,7 @@ impl<'src, P: RawPixel> ReadImage2D<'src, P> where P::Subpixel: Unpin {
     }
 }
 
-impl<'src, P: RawPixel> Event for ReadImage2D<'src, P> where P::Subpixel: Unpin {
+impl<'src, P: RawPixel + Unpin> Event for ReadImage2D<'src, P> {
     type Output = Rect2D<P>;
 
     #[inline(always)]
