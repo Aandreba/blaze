@@ -115,7 +115,7 @@ impl ChannelOrder {
             Red | Alpha | Luminance | Intensity => 1,
             RedGreen | RedAlpha => 2,
             RGB => 3,
-            RGBA | ARGB | BGRA | ABGR => 4,
+            RGBA | ARGB | BGRA => 4,
             #[cfg(feature = "cl1_1")]
             Rx => 2,
             #[cfg(feature = "cl1_1")]

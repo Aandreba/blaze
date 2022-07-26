@@ -1,6 +1,6 @@
 use std::{ptr::NonNull, os::raw::c_void, marker::PhantomData, ops::{Deref, DerefMut}};
 use opencl_sys::cl_mem;
-use crate::{core::*, context::{Context, Global}, buffer::{flags::{HostPtr, MemFlags, MemAccess}, rect::Rect2D}, event::WaitList, memobj::{MemObjectType, IntoSlice2D, MemObject}, prelude::Event};
+use crate::{core::*, context::{Context, Global}, buffer::{flags::{HostPtr, MemFlags, MemAccess}, rect::Rect2D}, event::WaitList, memobj::{MemObjectType, IntoSlice2D, MemObject}};
 use super::{RawImage, ImageDesc, channel::{RawPixel}, events::{ReadImage2D, WriteImage2D, CopyImage}};
 
 #[derive(Debug)]
@@ -27,7 +27,7 @@ impl<P: RawPixel> Image2D<P> {
     }
 
     #[inline(always)]
-    pub fn from_raw (v: &[P::Type], width: usize, height: usize, access: MemAccess, alloc: bool) -> Result<Self> {
+    pub fn from_raw (v: &[P::Channel], width: usize, height: usize, access: MemAccess, alloc: bool) -> Result<Self> {
         Self::from_raw_in(Global, v, width, height, access, alloc)
     }
 
@@ -74,7 +74,7 @@ impl<P: RawPixel, C: Context> Image2D<P, C> {
     
     /// Creates a new 2D image from it's raw pixels.
     #[inline(always)]
-    pub fn from_raw_in (ctx: C, v: &[P::Type], width: usize, height: usize, access: MemAccess, alloc: bool) -> Result<Self> {
+    pub fn from_raw_in (ctx: C, v: &[P::Channel], width: usize, height: usize, access: MemAccess, alloc: bool) -> Result<Self> {
         let host = MemFlags::new(access, HostPtr::new(alloc, true));
         unsafe { Self::create_in(ctx, width, height, host, NonNull::new(v as *const _ as *mut _)) }
     }
@@ -93,7 +93,7 @@ impl<P: RawPixel, C: Context> Image2D<P, C> {
         #[cfg(feature = "cl1_2")]
         let inner = RawImage::new(ctx.as_raw(), flags, P::FORMAT, desc, host_ptr)?;
         #[cfg(not(feature = "cl1_2"))]
-        let inner = RawImage::new_2d(ctx.raw_context(), flags, P::FORMAT, desc, host_ptr)?;
+        let inner = RawImage::new_2d(ctx.as_raw(), flags, P::FORMAT, desc, host_ptr)?;
 
         Ok(Self { inner, ctx, phtm: PhantomData })
     }

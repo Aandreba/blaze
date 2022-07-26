@@ -110,7 +110,7 @@ impl Sampler {
         let normalized_coords = self.normalized_coords()?;
         let addressing_mode = self.addressing_mode()?;
         let filter_mode = self.filter_mode()?;
-        Ok(SamplerProperties::new(normalized_coords, addressing_node, filter_mode))
+        Ok(SamplerProperties::new(normalized_coords, addressing_mode, filter_mode))
     }
 
     #[inline]

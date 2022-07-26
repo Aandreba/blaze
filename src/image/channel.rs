@@ -1,1251 +1,462 @@
-use std::{ops::{Deref, DerefMut}, mem::MaybeUninit, hash::Hash};
-use num_derive::NumOps;
-use num_traits::{AsPrimitive, Zero, NumOps};
-use rscl_proc::docfg;
-use crate::{prelude::RawContext, buffer::{flags::MemAccess}, memobj::MemObjectType};
+use std::ops::*;
+use bytemuck::Zeroable;
+use num_traits::{NumOps, NumAssignOps, AsPrimitive, Zero, One};
+use rscl_proc::{docfg, NumOps, NumOpsAssign};
+use crate::{prelude::{RawContext, Result}, buffer::flags::MemAccess, memobj::MemObjectType};
 use super::{ChannelType, ChannelOrder, ImageFormat};
-
-#[cfg(feature = "half")]
-use ::half::f16;
+use std::{hash::{Hash, Hasher}, mem::MaybeUninit};
 
 /// # Safety
-/// - `Self` must have the same size and alignment as `[Type; CHANNEL_COUNT]`
-/// - `Pixel` must have represented as an array of `Type` values
+/// - `Self` must have the same size and alignment as `[Channel; CHANNEL_COUNT]`
 ///     - This might be accomplished with `#[repr(C)]` or `#[repr(transparent)]`
-pub unsafe trait RawPixel: Copy + NumOps {
-    type Type: AsChannelType;
+pub unsafe trait RawPixel: Copy + NumOps + NumAssignOps + bytemuck::Zeroable {
+    type Channel: RawChannel;
 
     const ORDER : ChannelOrder;
-    const FORMAT : ImageFormat = ImageFormat::new(Self::ORDER, <Self::Type as AsChannelType>::TYPE);
+    const FORMAT : ImageFormat = ImageFormat::new(Self::ORDER, <Self::Channel as RawChannel>::TYPE);
     const CHANNEL_COUNT : usize = Self::ORDER.channel_count();
 
-    fn channels (&self) -> &[Self::Type];
+    fn channels (&self) -> &[Self::Channel];
+    fn channels_mut (&mut self) -> &mut [Self::Channel];
+
+    #[inline(always)]
+    unsafe fn from_channels_unchecked (v: &[Self::Channel]) -> Self {
+        *(v as *const _ as *const Self)
+    }
+
+    #[inline(always)]
+    fn from_channels (v: &[Self::Channel]) -> Option<Self> {
+        if v.len() != Self::CHANNEL_COUNT {
+            return None
+        }
+
+        unsafe { Some(Self::from_channels_unchecked(v)) }
+    }
 
     #[inline]
-    fn is_supported (ctx: &RawContext, access: MemAccess, ty: MemObjectType) -> bool {
-        let iter = match ctx.supported_image_formats(access, ty) {
-            Ok(x) => x,
-            Err(_) => return false
-        };
-
-        iter.into_iter().any(|x| x == Self::FORMAT)
+    fn is_supported (ctx: &RawContext, access: MemAccess, ty: MemObjectType) -> Result<bool> {
+        let iter = ctx.supported_image_formats(access, ty)?;
+        Ok(iter.into_iter().any(|x| x == Self::FORMAT))
     }
 }
 
-/// Single channel pixel formats where the single channel represents a red component.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
-#[repr(transparent)]
-pub struct Red<T> {
-    pub red: T
-}
-
-unsafe impl<T: AsChannelType> RawPixel for Red<T> {
-    type Type = T;
-    const ORDER : ChannelOrder = ChannelOrder::Red;
-
-    #[inline(always)]
-    fn channels (&self) -> &[Self::Type] {
-        core::slice::from_ref(&self.red)
-    }
-}
-
-/// Single channel pixel formats where the single channel represents an alpha component.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
-#[repr(transparent)]
-pub struct Alpha<T> {
-    pub alpha: T
-}
-
-unsafe impl<T: AsChannelType> RawPixel for Alpha<T> {
-    type Type = T;
-
-    const ORDER : ChannelOrder = ChannelOrder::Alpha;
-
-    #[inline(always)]
-    fn channels (&self) -> &[Self::Type] {
-        core::slice::from_ref(&self.alpha)
-    }
-}
-
-/// A single channel pixel format where the single channel represents a depth component.
-#[docfg(feature = "cl2")]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
-#[repr(transparent)]
-pub struct Depth<T> {
-    pub depth: T
-}
-
-#[docfg(feature = "cl2")]
-unsafe impl<T: AsChannelType> RawPixel for Depth<T> {
-    type Type = T;
-
-    const ORDER : ChannelOrder = ChannelOrder::Depth;
-
-    #[inline(always)]
-    fn channels (&self) -> &[Self::Type] {
-        core::slice::from_ref(&self.depth)
-    }
-}
-
-/// A single channel pixel format where the single channel represents a luminance value. The luminance value is replicated into the red, green, and blue components.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
-#[repr(transparent)]
-pub struct Luma<T> {
-    pub luma: T
-}
-
-unsafe impl<T: AsChannelType> RawPixel for Luma<T> {
-    type Type = T;
-    const ORDER : ChannelOrder = ChannelOrder::Luminance;
-
-    #[inline(always)]
-    fn channels (&self) -> &[Self::Type] {
-        core::slice::from_ref(&self.luma)
-    }
-}
-
-/// A single channel pixel format where the single channel represents an intensity value. The intensity value is replicated into the red, green, blue, and alpha components.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
-#[repr(transparent)]
-pub struct Inten<T> {
-    pub inten: T
-}
-
-unsafe impl<T: AsChannelType> RawPixel for Inten<T> {
-    type Type = T;
-    const ORDER : ChannelOrder = ChannelOrder::Intensity;
-
-    #[inline(always)]
-    fn channels (&self) -> &[Self::Type] {
-        core::slice::from_ref(&self.inten)
-    }
-}
-
-macro_rules! impl_mix {
-    ($($field:ident for $name:ident => [$($(#[docfg(feature = $feat:literal)])? $i:ident: ($($var:ident)&+) / $len:literal),+]),+) => {
+macro_rules! impl_pixel {
+    (
         $(
-            $(
-                $(#[docfg(feature = $feat)])?
-                impl<T: AsChannelType, U: AsChannelType> From<$i<U>> for $name<T> where f32: AsPrimitive<T> {
-                    #[inline]
-                    fn from(x: $i<U>) -> Self {
-                        let mean = (0f32 $( + x.$var.as_())+) / ($len as f32);
-                        let norm = (mean - U::MIN) / U::DELTA;
-                        Self {
-                            $field: f32::as_((norm * T::DELTA) + T::MIN)
-                        }
-                    }
-                }
-            )+
+            $(#[docfg(feature = $feat:literal)])?
+            #[repr($repr:ident)]
+            $name:ident as $v:ident {
+                $(
+                    $(#[$init:ident])?
+                    $field:ident
+                ),+
+            }
         )+
-    };
-}
-
-impl_mix! {
-    luma for Luma => [
-        RG: (red & green) / 2,
-        RA: (red) / 1,
-        #[docfg(feature = "cl1_1")]
-        Rx: (red) / 1,
-        RGB: (red & green & blue) / 3,
-        #[docfg(feature = "cl1_1")]
-        RGx: (red & green) / 2,
-        RGBA: (red & green & blue) / 3,
-        ARGB: (red & green & blue) / 3,
-        BGRA: (red & green & blue) / 3,
-        #[docfg(feature = "cl2")]
-        ABGR: (red & green & blue) / 3,
-        #[docfg(feature = "cl1_1")]
-        RGBx: (red & green & blue) / 3,
-        #[docfg(feature = "cl2")]
-        SRGB: (red & green & blue) / 3,
-        #[docfg(feature = "cl2")]
-        SRGBA: (red & green & blue) / 3,
-        #[docfg(feature = "cl2")]
-        SBGRA: (red & green & blue) / 3,
-        #[docfg(feature = "cl2")]
-        SRGBx: (red & green & blue) / 3
-    ],
-
-    inten for Inten => [
-        RG: (red & green) / 2,
-        RA: (red & alpha) / 2,
-        #[docfg(feature = "cl1_1")]
-        Rx: (red) / 1,
-        RGB: (red & green & blue) / 3,
-        #[docfg(feature = "cl1_1")]
-        RGx: (red & green) / 2,
-        RGBA: (red & green & blue & alpha) / 4,
-        ARGB: (red & green & blue & alpha) / 4,
-        BGRA: (red & green & blue & alpha) / 4,
-        #[docfg(feature = "cl2")]
-        ABGR: (red & green & blue & alpha) / 4,
-        #[docfg(feature = "cl1_1")]
-        RGBx: (red & green & blue) / 3,
-        #[docfg(feature = "cl2")]
-        SRGB: (red & green & blue) / 3,
-        #[docfg(feature = "cl2")]
-        SRGBA: (red & green & blue & alpha) / 4,
-        #[docfg(feature = "cl2")]
-        SBGRA: (red & green & blue & alpha) / 4,
-        #[docfg(feature = "cl2")]
-        SRGBx: (red & green & blue) / 3
-    ]
-}
-
-macro_rules! take_mult {
-    ($($name:ident => [$($(#[docfg(feature = $feat:literal)])? $i:ident: $($take:ident $(as $ntake:ident)?),+);+]),+) => {
-        $(
-            $(
-                $(#[docfg(feature = $feat)])?
-                impl<T: AsChannelType, U: AsChannelType> From<$i<U>> for $name<T> where f32: AsPrimitive<T> {
-                    #[inline(always)]
-                    fn from(x: $i<U>) -> Self {
-                        Self {
-                            $(
-                                $take: take_mult! { @in x $take $(as $ntake)? }
-                            ),+
-                        }
-                    }
-                }
-            )+
-        )+
-    };
-
-    (@in $x:ident $take:ident) => {
-        $x.$take.convert()
-    };
-
-    (@in $x:ident $take:ident as $ntake:ident) => {
-        $x.$ntake.convert()
-    };
-}
-
-macro_rules! take_multx {
-    ($($name:ident => [$($(#[docfg(feature = $feat:literal)])? $i:ident: $($take:ident),+);+]),+) => {
-        $(
-            $(
-                $(#[docfg(feature = $feat)])?
-                impl<T: AsChannelType, U: AsChannelType> From<$i<U>> for $name<T> where f32: AsPrimitive<T> {
-                    #[inline(always)]
-                    fn from(x: $i<U>) -> Self {
-                        Self::new($(x.$take.convert()),+)
-                    }
-                }
-            )+
-        )+
-    }
-}
-
-/// The first channel represents a red component, the second channel represents a green component.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
-#[repr(C)]
-pub struct RG<T> {
-    pub red: T,
-    pub green: T
-}
-
-unsafe impl<T: AsChannelType> RawPixel for RG<T> {
-    type Type = T;
-    const ORDER : ChannelOrder = ChannelOrder::RedGreen;
-
-    #[inline(always)]
-    fn channels (&self) -> &[Self::Type] {
-        assert_eq!(core::mem::size_of::<Self>(), core::mem::size_of::<[T; 2]>());
-        unsafe { core::slice::from_raw_parts(self as *const _ as *const _, Self::CHANNEL_COUNT) }
-    }
-}
-
-/// The first channel represents a red component, the second channel represents an alpha component.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
-#[repr(C)]
-pub struct RA<T> {
-    pub red: T,
-    pub alpha: T
-}
-
-unsafe impl<T: AsChannelType> RawPixel for RA<T> {
-    type Type = T;
-    const ORDER : ChannelOrder = ChannelOrder::RedAlpha;
-
-    #[inline(always)]
-    fn channels (&self) -> &[Self::Type] {
-        assert_eq!(core::mem::size_of::<Self>(), core::mem::size_of::<[T; 2]>());
-        unsafe { core::slice::from_raw_parts(self as *const _ as *const _, Self::CHANNEL_COUNT) }
-    }
-}
-
-/// A two channel pixel format, where the first channel represents a red component and the second channel is ignored.
-#[docfg(feature = "cl1_1")]
-#[derive(Debug, Copy)]
-#[repr(C)]
-pub struct Rx<T> {
-    pub red: T,
-    #[doc(hidden)]
-    x: MaybeUninit<T>
-}
-
-#[cfg(feature = "cl1_1")]
-impl<T> Rx<T> {
-    #[inline(always)]
-    pub const fn new (red: T) -> Self {
-        Self { red, x: MaybeUninit::uninit() }
-    }
-}
-
-#[docfg(feature = "cl1_1")]
-unsafe impl<T: AsChannelType> RawPixel for Rx<T> {
-    type Type = T;
-    const ORDER : ChannelOrder = ChannelOrder::Rx;
-
-    #[inline(always)]
-    fn channels (&self) -> &[Self::Type] {
-        assert_eq!(core::mem::size_of::<Self>(), core::mem::size_of::<[T; 2]>());
-        core::slice::from_ref(&self.red)
-    }
-}
-
-#[cfg(feature = "cl1_1")]
-impl<T: PartialEq> PartialEq for Rx<T> {
-    #[inline(always)]
-    fn eq(&self, other: &Self) -> bool {
-        self.red == other.red
-    }
-}
-
-#[cfg(feature = "cl1_1")]
-impl<T: PartialOrd> PartialOrd for Rx<T> {
-    #[inline(always)]
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        self.red.partial_cmp(&other.red)
-    }
-}
-
-#[cfg(feature = "cl1_1")]
-impl<T: Ord> Ord for Rx<T> {
-    #[inline(always)]
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.red.cmp(&other.red)
-    }
-}
-
-#[cfg(feature = "cl1_1")]
-impl<T: Hash> Hash for Rx<T> {
-    #[inline(always)]
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.red.hash(state);
-    }
-}
-
-#[cfg(feature = "cl1_1")]
-impl<T: Clone> Clone for Rx<T> {
-    #[inline(always)]
-    fn clone(&self) -> Self {
-        Self { red: self.red.clone(), x: MaybeUninit::uninit() }
-    }
-}
-
-#[cfg(feature = "cl1_1")]
-impl<T: Default> Default for Rx<T> {
-    #[inline(always)]
-    fn default() -> Self {
-        Self { red: Default::default(), x: MaybeUninit::uninit() }
-    }
-}
-
-#[cfg(feature = "cl1_1")]
-impl<T: Eq> Eq for Rx<T> {}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
-#[repr(C)]
-pub struct RGB<T> {
-    pub red: T,
-    pub green: T,
-    pub blue: T
-}
-
-unsafe impl<T: AsChannelType> RawPixel for RGB<T> {
-    type Type = T;
-    const ORDER : ChannelOrder = ChannelOrder::RGB;
-
-    #[inline(always)]
-    fn channels (&self) -> &[Self::Type] {
-        assert_eq!(core::mem::size_of::<Self>(), core::mem::size_of::<[T; 3]>());
-        unsafe { core::slice::from_raw_parts(self as *const _ as *const _, Self::CHANNEL_COUNT) }
-    }
-}
-
-#[docfg(feature = "cl1_1")]
-#[derive(Debug, Copy)]
-#[repr(C)]
-pub struct RGx<T> {
-    pub red: T,
-    pub green: T,
-    #[doc(hidden)]
-    x: MaybeUninit<T>
-}
-
-#[cfg(feature = "cl1_1")]
-impl<T> RGx<T> {
-    #[inline(always)]
-    pub const fn new (red: T, green: T) -> Self {
-        Self { red, green, x: MaybeUninit::uninit() }
-    }
-}
-
-#[cfg(feature = "cl1_1")]
-impl<T: PartialEq> PartialEq for RGx<T> {
-    #[inline(always)]
-    fn eq(&self, other: &Self) -> bool {
-        self.red == other.red && self.green == other.green
-    }
-}
-
-#[cfg(feature = "cl1_1")]
-impl<T: Hash> Hash for RGx<T> {
-    #[inline(always)]
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.red.hash(state);
-        self.green.hash(state);
-    }
-}
-
-#[cfg(feature = "cl1_1")]
-impl<T: Clone> Clone for RGx<T> {
-    #[inline(always)]
-    fn clone(&self) -> Self {
-        Self { red: self.red.clone(), green: self.green.clone(), x: MaybeUninit::uninit() }
-    }
-}
-
-#[cfg(feature = "cl1_1")]
-impl<T: Default> Default for RGx<T> {
-    #[inline(always)]
-    fn default() -> Self {
-        Self { red: Default::default(), green: Default::default(), x: MaybeUninit::uninit() }
-    }
-}
-
-#[cfg(feature = "cl1_1")]
-impl<T: Eq> Eq for RGx<T> {}
-
-#[docfg(feature = "cl1_1")]
-unsafe impl<T: AsChannelType> RawPixel for RGx<T> {
-    type Type = T;
-    const ORDER : ChannelOrder = ChannelOrder::RGx;
-
-    #[inline(always)]
-    fn channels (&self) -> &[Self::Type] {
-        assert_eq!(core::mem::size_of::<Self>(), core::mem::size_of::<[T; 3]>());
-        unsafe { core::slice::from_raw_parts(self as *const _ as *const _, 2) }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
-#[repr(C)]
-pub struct RGBA<T> {
-    pub red: T,
-    pub green: T,
-    pub blue: T,
-    pub alpha: T
-}
-
-unsafe impl<T: AsChannelType> RawPixel for RGBA<T> {
-    type Type = T;
-    const ORDER : ChannelOrder = ChannelOrder::RGBA;
-
-    #[inline(always)]
-    fn channels (&self) -> &[Self::Type] {
-        assert_eq!(core::mem::size_of::<Self>(), core::mem::size_of::<[T; 4]>());
-        unsafe { core::slice::from_raw_parts(self as *const _ as *const _, Self::CHANNEL_COUNT) }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
-#[repr(C)]
-pub struct ARGB<T> {
-    pub alpha: T,
-    pub red: T,
-    pub green: T,
-    pub blue: T
-}
-
-unsafe impl<T: AsChannelType> RawPixel for ARGB<T> {
-    type Type = T;
-    const ORDER : ChannelOrder = ChannelOrder::ARGB;
-
-    #[inline(always)]
-    fn channels (&self) -> &[Self::Type] {
-        assert_eq!(core::mem::size_of::<Self>(), core::mem::size_of::<[T; 4]>());
-        unsafe { core::slice::from_raw_parts(self as *const _ as *const _, Self::CHANNEL_COUNT) }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
-#[repr(C)]
-pub struct BGRA<T> {
-    pub blue: T,
-    pub green: T,
-    pub red: T,
-    pub alpha: T
-}
-
-unsafe impl<T: AsChannelType> RawPixel for BGRA<T> {
-    type Type = T;
-    const ORDER : ChannelOrder = ChannelOrder::BGRA;
-
-    #[inline(always)]
-    fn channels (&self) -> &[Self::Type] {
-        assert_eq!(core::mem::size_of::<Self>(), core::mem::size_of::<[T; 4]>());
-        unsafe { core::slice::from_raw_parts(self as *const _ as *const _, Self::CHANNEL_COUNT) }
-    }
-}
-
-#[docfg(feature = "cl2")]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
-#[repr(C)]
-pub struct ABGR<T> {
-    pub alpha: T,
-    pub blue: T,
-    pub green: T,
-    pub red: T
-}
-
-#[docfg(feature = "cl2")]
-unsafe impl<T: AsChannelType> RawPixel for ABGR<T> {
-    type Type = T;
-    const ORDER : ChannelOrder = ChannelOrder::ABGR;
-
-    #[inline(always)]
-    fn channels (&self) -> &[Self::Type] {
-        assert_eq!(core::mem::size_of::<Self>(), core::mem::size_of::<[T; 4]>());
-        unsafe { core::slice::from_raw_parts(self as *const _ as *const _, Self::CHANNEL_COUNT) }
-    }
-}
-
-#[docfg(feature = "cl1_1")]
-#[derive(Debug, Copy)]
-#[repr(C)]
-pub struct RGBx<T> {
-    pub red: T,
-    pub green: T,
-    pub blue: T,
-    #[doc(hidden)]
-    x: MaybeUninit<T>
-}
-
-#[cfg(feature = "cl1_1")]
-impl<T> RGBx<T> {
-    #[inline(always)]
-    pub const fn new (red: T, green: T, blue: T) -> Self {
-        Self { red, green, blue, x: MaybeUninit::uninit() }
-    }
-}
-
-#[cfg(feature = "cl1_1")]
-impl<T: PartialEq> PartialEq for RGBx<T> {
-    #[inline(always)]
-    fn eq(&self, other: &Self) -> bool {
-        self.red == other.red && self.green == other.green && self.blue == other.blue
-    }
-}
-
-#[cfg(feature = "cl1_1")]
-impl<T: Hash> Hash for RGBx<T> {
-    #[inline(always)]
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.red.hash(state);
-        self.green.hash(state);
-        self.blue.hash(state);
-    }
-}
-
-#[cfg(feature = "cl1_1")]
-impl<T: Clone> Clone for RGBx<T> {
-    #[inline(always)]
-    fn clone(&self) -> Self {
-        Self { red: self.red.clone(), green: self.green.clone(), blue: self.blue.clone(), x: MaybeUninit::uninit() }
-    }
-}
-
-#[cfg(feature = "cl1_1")]
-impl<T: Default> Default for RGBx<T> {
-    #[inline(always)]
-    fn default() -> Self {
-        Self { red: Default::default(), green: Default::default(), blue: Default::default(), x: MaybeUninit::uninit() }
-    }
-}
-
-#[cfg(feature = "cl1_1")]
-impl<T: Eq> Eq for RGBx<T> {}
-
-#[docfg(feature = "cl1_1")]
-unsafe impl<T: AsChannelType> RawPixel for RGBx<T> {
-    type Type = T;
-    const ORDER : ChannelOrder = ChannelOrder::RGBx;
-
-    #[inline(always)]
-    fn channels (&self) -> &[Self::Type] {
-        assert_eq!(core::mem::size_of::<Self>(), core::mem::size_of::<[T; 4]>());
-        unsafe { core::slice::from_raw_parts(self as *const _ as *const _, 3) }
-    }
-}
-
-#[docfg(feature = "cl2")]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
-#[repr(C)]
-pub struct SRGB<T> {
-    pub red: T,
-    pub green: T,
-    pub blue: T
-}
-
-#[docfg(feature = "cl2")]
-unsafe impl<T: AsChannelType> RawPixel for SRGB<T> {
-    type Type = T;
-    const ORDER : ChannelOrder = ChannelOrder::sRGB;
-
-    #[inline(always)]
-    fn channels (&self) -> &[Self::Type] {
-        assert_eq!(core::mem::size_of::<Self>(), core::mem::size_of::<[T; 3]>());
-        unsafe { core::slice::from_raw_parts(self as *const _ as *const _, Self::CHANNEL_COUNT) }
-    }
-}
-
-#[docfg(feature = "cl2")]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
-#[repr(C)]
-pub struct SRGBA<T> {
-    pub red: T,
-    pub green: T,
-    pub blue: T,
-    pub alpha: T
-}
-
-#[docfg(feature = "cl2")]
-unsafe impl<T: AsChannelType> RawPixel for SRGBA<T> {
-    type Type = T;
-    const ORDER : ChannelOrder = ChannelOrder::sRGBA;
-
-    #[inline(always)]
-    fn channels (&self) -> &[Self::Type] {
-        assert_eq!(core::mem::size_of::<Self>(), core::mem::size_of::<[T; 4]>());
-        unsafe { core::slice::from_raw_parts(self as *const _ as *const _, Self::CHANNEL_COUNT) }
-    }
-}
-
-#[docfg(feature = "cl2")]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
-#[repr(C)]
-pub struct SBGRA<T> {
-    pub blue: T,
-    pub green: T,
-    pub red: T,
-    pub alpha: T
-}
-
-#[docfg(feature = "cl2")]
-unsafe impl<T: AsChannelType> RawPixel for SBGRA<T> {
-    type Type = T;
-    const ORDER : ChannelOrder = ChannelOrder::sBGRA;
-
-    #[inline(always)]
-    fn channels (&self) -> &[Self::Type] {
-        assert_eq!(core::mem::size_of::<Self>(), core::mem::size_of::<[T; 4]>());
-        unsafe { core::slice::from_raw_parts(self as *const _ as *const _, Self::CHANNEL_COUNT) }
-    }
-}
-
-#[docfg(feature = "cl2")]
-#[derive(Debug, Copy)]
-#[repr(C)]
-pub struct SRGBx<T> {
-    pub red: T,
-    pub green: T,
-    pub blue: T,
-    #[doc(hidden)]
-    x: MaybeUninit<T>
-}
-
-#[cfg(feature = "cl2")]
-impl<T> SRGBx<T> {
-    #[inline(always)]
-    pub const fn new (red: T, green: T, blue: T) -> Self {
-        Self { red, green, blue, x: MaybeUninit::uninit() }
-    }
-}
-
-#[cfg(feature = "cl2")]
-impl<T: PartialEq> PartialEq for SRGBx<T> {
-    #[inline(always)]
-    fn eq(&self, other: &Self) -> bool {
-        self.red == other.red && self.green == other.green && self.blue == other.blue
-    }
-}
-
-#[cfg(feature = "cl2")]
-impl<T: Hash> Hash for SRGBx<T> {
-    #[inline(always)]
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.red.hash(state);
-        self.green.hash(state);
-        self.blue.hash(state);
-    }
-}
-
-#[cfg(feature = "cl2")]
-impl<T: Clone> Clone for SRGBx<T> {
-    #[inline(always)]
-    fn clone(&self) -> Self {
-        Self { red: self.red.clone(), green: self.green.clone(), blue: self.blue.clone(), x: MaybeUninit::uninit() }
-    }
-}
-
-#[cfg(feature = "cl2")]
-impl<T: Default> Default for SRGBx<T> {
-    #[inline(always)]
-    fn default() -> Self {
-        Self { red: Default::default(), green: Default::default(), blue: Default::default(), x: MaybeUninit::uninit() }
-    }
-}
-
-#[cfg(feature = "cl2")]
-impl<T: Eq> Eq for SRGBx<T> {}
-
-#[docfg(feature = "cl2")]
-unsafe impl<T: AsChannelType> RawPixel for SRGBx<T> {
-    type Type = T;
-    const ORDER : ChannelOrder = ChannelOrder::sRGBx;
-
-    #[inline(always)]
-    fn channels (&self) -> &[Self::Type] {
-        assert_eq!(core::mem::size_of::<Self>(), core::mem::size_of::<[T; 4]>());
-        unsafe { core::slice::from_raw_parts(self as *const _ as *const _, 3) }
-    }
-}
-
-take_mult! {
-    Red => [
-        Luma: red as luma;
-        Inten: red as inten;
-        RG: red;
-        RA: red;
-        #[docfg(feature = "cl1_1")]
-        Rx: red;
-        RGB: red;
-        RGx: red;
-        RGBA: red;
-        ARGB: red;
-        BGRA: red;
-        #[docfg(feature = "cl2")]
-        ABGR: red;
-        #[docfg(feature = "cl1_1")]
-        RGBx: red;
-        #[docfg(feature = "cl2")]
-        SRGB: red;
-        #[docfg(feature = "cl2")]
-        SRGBA: red;
-        #[docfg(feature = "cl2")]
-        SBGRA: red;
-        #[docfg(feature = "cl2")]
-        SRGBx: red
-    ],
-
-    Alpha => [
-        Inten: alpha as inten;
-        RA: alpha;
-        RGBA: alpha;
-        ARGB: alpha;
-        BGRA: alpha;
-        #[docfg(feature = "cl2")]
-        ABGR: alpha;
-        #[docfg(feature = "cl2")]
-        SRGBA: alpha;
-        #[docfg(feature = "cl2")]
-        SBGRA: alpha
-    ],
-
-    RA => [
-        Inten: red as inten, alpha as inten;
-        RGBA: red, alpha;
-        ARGB: red, alpha;
-        BGRA: red, alpha;
-        #[docfg(feature = "cl2")]
-        ABGR: red, alpha;
-        #[docfg(feature = "cl2")]
-        SRGBA: red, alpha;
-        #[docfg(feature = "cl2")]
-        SBGRA: red, alpha
-    ],
-
-    RG => [
-        Luma: red as luma, green as luma;
-        Inten: red as inten, green as inten;
-        RGB: red, green;
-        RGx: red, green;
-        RGBA: red, green;
-        ARGB: red, green;
-        BGRA: red, green;
-        #[docfg(feature = "cl2")]
-        ABGR: red, green;
-        #[docfg(feature = "cl1_1")]
-        RGBx: red, green;
-        #[docfg(feature = "cl2")]
-        SRGB: red, green;
-        #[docfg(feature = "cl2")]
-        SRGBA: red, green;
-        #[docfg(feature = "cl2")]
-        SBGRA: red, green;
-        #[docfg(feature = "cl2")]
-        SRGBx: red, green
-    ],
-
-    RGB => [
-        Luma: red as luma, green as luma, blue as luma;
-        Inten: red as inten, green as inten, blue as inten;
-        RGBA: red, green, blue;
-        ARGB: red, green, blue;
-        BGRA: red, green, blue;
-        #[docfg(feature = "cl2")]
-        ABGR: red, green, blue;
-        #[docfg(feature = "cl1_1")]
-        RGBx: red, green, blue;
-        #[docfg(feature = "cl2")]
-        SRGB: red, green, blue;
-        #[docfg(feature = "cl2")]
-        SRGBA: red, green, blue;
-        #[docfg(feature = "cl2")]
-        SBGRA: red, green, blue;
-        #[docfg(feature = "cl2")]
-        SRGBx: red, green, blue
-    ],
-
-    RGBA => [
-        Inten: red as inten, green as inten, blue as inten, alpha as inten;
-        ARGB: red, green, blue, alpha;
-        BGRA: red, green, blue, alpha;
-        #[docfg(feature = "cl2")]
-        ABGR: red, green, blue, alpha;
-        #[docfg(feature = "cl2")]
-        SRGBA: red, green, blue, alpha;
-        #[docfg(feature = "cl2")]
-        SBGRA: red, green, blue, alpha
-    ],
-
-    ARGB => [
-        Inten: red as inten, green as inten, blue as inten, alpha as inten;
-        RGBA: red, green, blue, alpha;
-        BGRA: red, green, blue, alpha;
-        #[docfg(feature = "cl2")]
-        ABGR: red, green, blue, alpha;
-        #[docfg(feature = "cl2")]
-        SRGBA: red, green, blue, alpha;
-        #[docfg(feature = "cl2")]
-        SBGRA: red, green, blue, alpha
-    ],
-
-    BGRA => [
-        Inten: red as inten, green as inten, blue as inten, alpha as inten;
-        RGBA: red, green, blue, alpha;
-        ARGB: red, green, blue, alpha;
-        #[docfg(feature = "cl2")]
-        ABGR: red, green, blue, alpha;
-        #[docfg(feature = "cl2")]
-        SRGBA: red, green, blue, alpha;
-        #[docfg(feature = "cl2")]
-        SBGRA: red, green, blue, alpha
-    ]
-}
-
-#[docfg(feature = "cl1_1")]
-take_multx! {
-    Rx => [
-        Luma: luma;    
-        Inten: inten;
-        Red: red;
-        RG: red;
-        RA: red;
-        RGB: red;
-        RGx: red;
-        RGBA: red;
-        ARGB: red;
-        BGRA: red;
-        #[docfg(feature = "cl2")]
-        ABGR: red;
-        RGBx: red;
-        #[docfg(feature = "cl2")]
-        SRGB: red;
-        #[docfg(feature = "cl2")]
-        SRGBA: red;
-        #[docfg(feature = "cl2")]
-        SBGRA: red;
-        #[docfg(feature = "cl2")]
-        SRGBx: red
-    ],
-
-    RGx => [
-        Luma: luma, luma;    
-        Inten: inten, inten;
-        RG: red, green;
-        RGB: red, green;
-        RGBA: red, green;
-        ARGB: red, green;
-        BGRA: red, green;
-        #[docfg(feature = "cl2")]
-        ABGR: red, green;
-        RGBx: red, green;
-        #[docfg(feature = "cl2")]
-        SRGB: red, green;
-        #[docfg(feature = "cl2")]
-        SRGBA: red, green;
-        #[docfg(feature = "cl2")]
-        SBGRA: red, green;
-        #[docfg(feature = "cl2")]
-        SRGBx: red, green
-    ],
-
-    RGBx => [
-        Luma: luma, luma, luma;
-        Inten: inten, inten, inten;
-        RGB: red, green, blue;
-        RGBA: red, green, blue;
-        ARGB: red, green, blue;
-        BGRA: red, green, blue;
-        #[docfg(feature = "cl2")]
-        ABGR: red, green, blue;
-        #[docfg(feature = "cl2")]
-        SRGB: red, green, blue;
-        #[docfg(feature = "cl2")]
-        SRGBA: red, green, blue;
-        #[docfg(feature = "cl2")]
-        SBGRA: red, green, blue;
-        #[docfg(feature = "cl2")]
-        SRGBx: red, green, blue
-    ]
-}
-
-#[docfg(feature = "cl2")]
-take_mult! {
-    ABGR => [
-        Inten: red as inten, green as inten, blue as inten, alpha as inten;
-        RGBA: red, green, blue, alpha;
-        ARGB: red, green, blue, alpha;
-        BGRA: red, green, blue, alpha;
-        SRGBA: red, green, blue, alpha;
-        SBGRA: red, green, blue, alpha
-    ],
-
-    SRGB => [
-        Luma: red as luma, green as luma, blue as luma;
-        Inten: red as inten, green as inten, blue as inten;
-        RGB: red, green, blue;
-        RGBA: red, green, blue;
-        ARGB: red, green, blue;
-        BGRA: red, green, blue;
-        ABGR: red, green, blue;
-        RGBx: red, green, blue;
-        SRGBA: red, green, blue;
-        SBGRA: red, green, blue;
-        SRGBx: red, green, blue
-    ],
-
-    SRGBA => [
-        Inten: red as inten, green as inten, blue as inten, alpha as inten;
-        RGBA: red, green, blue, alpha;
-        ARGB: red, green, blue, alpha;
-        BGRA: red, green, blue, alpha;
-        ABGR: red, green, blue, alpha;
-        SBGRA: red, green, blue, alpha
-    ],
-
-    SBGRA => [
-        Inten: red as inten, green as inten, blue as inten, alpha as inten;
-        RGBA: red, green, blue, alpha;
-        ARGB: red, green, blue, alpha;
-        BGRA: red, green, blue, alpha;
-        ABGR: red, green, blue, alpha;
-        SRGBA: red, green, blue, alpha
-    ]
-}
-
-#[docfg(feature = "cl2")]
-take_multx! {
-    SRGBx => [
-        Luma: luma, luma, luma;
-        Inten: inten, inten, inten;
-        RGBx: red, green, blue;
-        RGB: red, green, blue;
-        RGBA: red, green, blue;
-        ARGB: red, green, blue;
-        BGRA: red, green, blue;
-        ABGR: red, green, blue;
-        SRGB: red, green, blue;
-        SRGBA: red, green, blue;
-        SBGRA: red, green, blue
-    ]
-}
-
-macro_rules! impl_cast {
-    ($($(#[docfg(feature = $feat:literal)])? $i:ident $(in $x:ident)? => [$($field:ident),+]),+) => {
+    ) => {
         $(
             $(#[docfg(feature = $feat)])?
-            impl<T: AsChannelType> $i<T> {
+            #[repr($repr)]
+            pub struct $name<T> {
+                $(
+                    pub $field: impl_pixel!(@field $($init)? $field)
+                ),+
+            }
+
+            $(#[cfg(feature = $feat)])?
+            unsafe impl<T: RawChannel> RawPixel for $name<T> {
+                type Channel = T;
+                const ORDER : ChannelOrder = ChannelOrder::$v;
+
                 #[inline(always)]
-                pub fn convert<U: AsChannelType> (self) -> $i<U> where f32: AsPrimitive<U> {
-                    $i {
+                fn channels (&self) -> &[Self::Channel] {
+                    unsafe { 
+                        core::slice::from_raw_parts (
+                            self as *const _ as *const _,
+                            Self::CHANNEL_COUNT
+                        )
+                    }
+                }
+
+                #[inline(always)]
+                fn channels_mut (&mut self) -> &mut [Self::Channel] {
+                    unsafe { 
+                        core::slice::from_raw_parts_mut (
+                            self as *mut _ as *mut _,
+                            Self::CHANNEL_COUNT
+                        )
+                    }
+                }
+            }
+            
+            $(#[cfg(feature = $feat)])?
+            impl<T: Clone> Clone for $name<T> {
+                #[inline]
+                fn clone (&self) -> Self {
+                    Self {
                         $(
-                            $field: self.$field.convert()
+                            $field: impl_pixel!(@clone $($init)? self $field)
                         ),+
-
-                        $(, $x: MaybeUninit::uninit())?
                     }
                 }
             }
 
-            $(#[docfg(feature = $feat)])?
-            impl_cast!(@in $i => $($field),+);
-        )+
-    };
-
-    (@in $i:ident => $($field:ident),+) => {
-        impl_cast!(@in $i @ u8 => [u16, u32, i8, i16, i32, Norm<u8>, Norm<u16>, Norm<i8>, Norm<i16>, f32, #[docfg(feature = "half")] f16]);
-        impl_cast!(@in $i @ u16 => [u8, u32, i8, i16, i32, Norm<u8>, Norm<u16>, Norm<i8>, Norm<i16>, f32, #[docfg(feature = "half")] f16]);
-        impl_cast!(@in $i @ u32 => [u8, u16, i8, i16, i32, Norm<u8>, Norm<u16>, Norm<i8>, Norm<i16>, f32, #[docfg(feature = "half")] f16]);
-        impl_cast!(@in $i @ i8 => [u8, u16, u32, i16, i32, Norm<u8>, Norm<u16>, Norm<i8>, Norm<i16>, f32, #[docfg(feature = "half")] f16]);
-        impl_cast!(@in $i @ i16 => [u8, u16, u32, i8, i32, Norm<u8>, Norm<u16>, Norm<i8>, Norm<i16>, f32, #[docfg(feature = "half")] f16]);
-        impl_cast!(@in $i @ i32 => [u8, u16, u32, i8, i16, Norm<u8>, Norm<u16>, Norm<i8>, Norm<i16>, f32, #[docfg(feature = "half")] f16]);
-        impl_cast!(@in $i @ Norm<u8> => [u8, u16, u32, i8, i16, i32, Norm<u16>, Norm<i8>, Norm<i16>, f32, #[docfg(feature = "half")] f16]);
-        impl_cast!(@in $i @ Norm<u16> => [u8, u16, u32, i8, i16, i32, Norm<u8>, Norm<i8>, Norm<i16>, f32, #[docfg(feature = "half")] f16]);
-        impl_cast!(@in $i @ Norm<i8> => [u8, u16, u32, i8, i16, i32, Norm<u8>, Norm<u16>, Norm<i16>, f32, #[docfg(feature = "half")] f16]);
-        impl_cast!(@in $i @ Norm<i16> => [u8, u16, u32, i8, i16, i32, Norm<u8>, Norm<u16>, Norm<i8>, f32, #[docfg(feature = "half")] f16]);
-        impl_cast!(@in $i @ f32 => [u16, u32, i8, i16, i32, Norm<u8>, Norm<u16>, Norm<i8>, Norm<i16>, #[docfg(feature = "half")] f16]);
-        #[docfg(feature = "half")]
-        impl_cast!(@in $i @ f16 => [u16, u32, i8, i16, i32, Norm<u8>, Norm<u16>, Norm<i8>, Norm<i16>, f32]);
-    };
-
-    (@in $i:ident @ $from:ty => [$($(#[docfg(feature = $feat:literal)])? $to:ty),+]) => {
-        $(
-            $(#[docfg(feature = $feat)])?
-            impl From<$i<$from>> for $i<$to> {
-                #[inline(always)]
-                fn from(x: $i<$from>) -> Self {
-                    x.convert()
+            $(#[cfg(feature = $feat)])?
+            impl<T: PartialEq> PartialEq for $name<T> {
+                #[inline]
+                fn eq (&self, other: &Self) -> bool {
+                    return $(
+                        impl_pixel! { @eq $($init)? self other $field }
+                    )&+
                 }
             }
+
+            $(#[cfg(feature = $feat)])?
+            impl<T: Hash> Hash for $name<T> {
+                #[inline]
+                fn hash<H> (&self, state: &mut H) where H: Hasher {
+                    $(
+                        impl_pixel! { @hash $($init)? self $field state }
+                    )*
+                }
+            }
+
+            // ARITHMETIC
+
+            impl<T: Add<T, Output = T>> Add for $name<T> {
+                type Output = Self;
+
+                #[inline]
+                fn add (self, rhs: Self) -> Self::Output {
+                    Self {
+                        $($field: impl_pixel!(@op $($init)? self rhs $field add)),+
+                    }
+                }
+            }
+
+            impl<T: Sub<T, Output = T>> Sub for $name<T> {
+                type Output = Self;
+
+                #[inline]
+                fn sub (self, rhs: Self) -> Self::Output {
+                    Self {
+                        $($field: impl_pixel!(@op $($init)? self rhs $field sub)),+
+                    }
+                }
+            }
+
+            impl<T: Mul<T, Output = T>> Mul for $name<T> {
+                type Output = Self;
+
+                #[inline]
+                fn mul (self, rhs: Self) -> Self::Output {
+                    Self {
+                        $($field: impl_pixel!(@op $($init)? self rhs $field mul)),+
+                    }
+                }
+            }
+
+            impl<T: Div<T, Output = T>> Div for $name<T> {
+                type Output = Self;
+
+                #[inline]
+                fn div (self, rhs: Self) -> Self::Output {
+                    Self {
+                        $($field: impl_pixel!(@op $($init)? self rhs $field div)),+
+                    }
+                }
+            }
+
+            impl<T: Rem<T, Output = T>> Rem for $name<T> {
+                type Output = Self;
+
+                #[inline]
+                fn rem (self, rhs: Self) -> Self::Output {
+                    Self {
+                        $($field: impl_pixel!(@op $($init)? self rhs $field rem)),+
+                    }
+                }
+            }
+
+            // ASSIGN ARITHMETIC
+
+            impl<T: AddAssign<T>> AddAssign for $name<T> {
+                #[inline]
+                fn add_assign (&mut self, rhs: Self) {
+                    $(
+                        impl_pixel! { @op_assign $($init)? self rhs $field add_assign }
+                    )+
+                }
+            }
+
+            impl<T: SubAssign<T>> SubAssign for $name<T> {
+                #[inline]
+                fn sub_assign (&mut self, rhs: Self) {
+                    $(
+                        impl_pixel! { @op_assign $($init)? self rhs $field sub_assign }
+                    )+
+                }
+            }
+
+            impl<T: MulAssign<T>> MulAssign for $name<T> {
+                #[inline]
+                fn mul_assign (&mut self, rhs: Self) {
+                    $(
+                        impl_pixel! { @op_assign $($init)? self rhs $field mul_assign }
+                    )+
+                }
+            }
+
+            impl<T: DivAssign<T>> DivAssign for $name<T> {
+                #[inline]
+                fn div_assign (&mut self, rhs: Self) {
+                    $(
+                        impl_pixel! { @op_assign $($init)? self rhs $field div_assign }
+                    )+
+                }
+            }
+
+            impl<T: RemAssign<T>> RemAssign for $name<T> {
+                #[inline]
+                fn rem_assign (&mut self, rhs: Self) {
+                    $(
+                        impl_pixel! { @op_assign $($init)? self rhs $field rem_assign }
+                    )+
+                }
+            }
+
+            $(#[cfg(feature = $feat)])?
+            impl<T: Copy> Copy for $name<T> {}
+            $(#[cfg(feature = $feat)])?
+            impl<T: Eq> Eq for $name<T> {}
+            $(#[cfg(feature = $feat)])?
+            unsafe impl<T: Zeroable> Zeroable for $name<T> {}
         )+
+    };
+
+    (@vis) => { pub };
+    (@vis uninit) => { };
+
+    (@field uninit $field:ident) => { MaybeUninit<T> };
+    (@field $field:ident) => { T };
+
+    (@op uninit $self:ident $rhs:ident $field:ident $op:ident) => { MaybeUninit::uninit() };
+    (@op $self:ident $rhs:ident $field:ident $op:ident) => { $self.$field.$op($rhs.$field) };
+
+    (@op_assign uninit $self:ident $rhs:ident $field:ident $op:ident) => {};
+    (@op_assign $self:ident $rhs:ident $field:ident $op:ident) => { $self.$field.$op($rhs.$field); };
+
+    (@clone uninit $self:ident $field:ident) => { MaybeUninit::uninit() };
+    (@clone $self:ident $field:ident) => { $self.$field.clone() };
+
+    (@eq uninit $self:ident $rhs:ident $field:ident) => { true };
+    (@eq $self:ident $rhs:ident $field:ident) => { $self.$field == $rhs.$field };
+
+    (@hash uninit $self:ident $field:ident $state:ident) => {};
+    (@hash $self:ident $field:ident $state:ident) => { $self.$field.hash($state); };
+}
+
+impl_pixel! {
+    #[repr(transparent)]
+    Red as Red {
+        red
+    }
+
+    #[repr(transparent)]
+    Alpha as Alpha {
+        alpha
+    }
+
+    #[docfg(feature = "cl2")]
+    #[repr(C)]
+    Depth as Depth {
+        depth
+    }
+
+    #[repr(transparent)]
+    Luma as Luminance {
+        luma
+    }
+
+    #[repr(transparent)]
+    Inten as Intensity {
+        inten
+    }
+
+    #[repr(C)]
+    RG as RedGreen {
+        red, green
+    }
+
+    #[repr(C)]
+    RA as RedAlpha {
+        red, alpha
+    }
+
+    #[repr(C)]
+    Rgb as RGB {
+        red, green, blue
+    }
+
+    #[repr(C)]
+    Rgba as RGBA {
+        red, green, blue, alpha
+    }
+
+    #[repr(C)]
+    Argb as ARGB {
+        alpha, red, green, blue
+    }
+
+    #[repr(C)]
+    Bgra as BGRA {
+        blue, green, red, alpha
+    }
+
+    #[docfg(feature = "cl1_1")]
+    #[repr(C)]
+    Rx as Rx {
+        red,
+        #[uninit]
+        x
+    }
+
+    #[docfg(feature = "cl1_1")]
+    #[repr(C)]
+    Rgx as RGBx {
+        red,
+        green,
+        #[uninit]
+        x
+    }
+
+    #[docfg(feature = "cl1_1")]
+    #[repr(C)]
+    Rgbx as RGBx {
+        red,
+        green,
+        blue,
+        #[uninit]
+        x
+    }
+
+    #[docfg(feature = "cl2")]
+    #[repr(C)]
+    Abgr as ABGR {
+        alpha, blue, green, red
+    }
+
+    #[docfg(feature = "cl2")]
+    #[repr(C)]
+    SRgb as sRGB {
+        red, green, blue
+    }
+
+    #[docfg(feature = "cl2")]
+    #[repr(C)]
+    SRgba as sRGBA {
+        red, green, blue, alpha
+    }
+
+    #[docfg(feature = "cl2")]
+    #[repr(C)]
+    SBgra as sBGRA {
+        blue, green, red, alpha
+    }
+
+    #[docfg(feature = "cl2")]
+    #[repr(C)]
+    SRgbx as sRGBx {
+        red,
+        green,
+        blue,
+        #[uninit]
+        x
     }
 }
 
-impl_cast! {
-    Red => [red],
-    Alpha => [alpha],
-    #[docfg(feature = "cl2")]
-    Depth => [depth],
-    Luma => [luma],
-    Inten => [inten],
-    RG => [red, green],
-    RA => [red, alpha],
-    #[docfg(feature = "cl1_1")]
-    Rx in x => [red],
-    RGB => [red, green, blue],
-    #[docfg(feature = "cl1_1")]
-    RGx in x => [red, green],
-    RGBA => [red, green, blue, alpha],
-    ARGB => [red, green, blue, alpha],
-    BGRA => [red, green, blue, alpha],
-    #[docfg(feature = "cl2")]
-    ABGR => [red, green, blue, alpha],
-    #[docfg(feature = "cl1_1")]
-    RGBx in x => [red, green, blue],
-    #[docfg(feature = "cl2")]
-    SRGB => [red, green, blue],
-    #[docfg(feature = "cl2")]
-    SRGBA => [red, green, blue, alpha],
-    #[docfg(feature = "cl2")]
-    SBGRA => [red, green, blue, alpha],
-    #[docfg(feature = "cl2")]
-    SRGBx in x => [red, green, blue]
-}
-
-/// A type that can be represented as an image's channel type
-/// # Safety
-/// `Self` and `Primitive` must have the same size and alignment
-pub unsafe trait AsChannelType: NumOps + AsPrimitive<f32> {
-    type Primitive: Copy + Zero;
-
+/// A type with an associated [`ChannelType`]
+pub unsafe trait RawChannel: Copy + Zero + One + Zeroable + NumOps + NumAssignOps + AsPrimitive<f32> {
     const TYPE : ChannelType;
     const MIN : f32;
     const MAX : f32;
     const DELTA : f32 = Self::MAX - Self::MIN;
 
-    fn into_primitive (self) -> Self::Primitive;
-
     #[inline]
-    fn convert<U: AsChannelType> (self) -> U where f32: AsPrimitive<U> {
-        let norm = (self.as_() - Self::MIN) / Self::DELTA;
-        f32::as_((f32::clamp(norm, 0f32, 1f32) * U::DELTA) + U::MIN)
+    fn cast<U: RawChannel> (self) -> U where f32: AsPrimitive<U> {
+        let norm = (self.as_() / Self::DELTA) + Self::MIN;
+        f32::as_((norm * U::DELTA) - U::MIN)
     }
 }
 
-unsafe impl AsChannelType for u8 {
-    const TYPE : ChannelType = ChannelType::U8;
-    const MIN : f32 = Self::MIN as f32;
-    const MAX : f32 = Self::MAX as f32;
+macro_rules! impl_channel {
+    ($($(#[docfg(feature = $feat:literal)])? $ty:ty as $v:ident $(($two:expr))? $(: $min:expr => $max:expr)?),+) => {
+        $(
+            $(#[rscl_proc::docfg(feature = $feat)])?
+            unsafe impl RawChannel for $ty {
+                const TYPE : ChannelType = ChannelType::$v;
+                const MIN : f32 = impl_channel!(@min $($min)?);
+                const MAX : f32 = impl_channel!(@max $($max)?);
+            }
+        )+
+    };
 
-    type Primitive = Self;
+    (@min) => { Self::MIN as f32 };
+    (@min $v:expr) => { $v };
 
-    #[inline(always)]
-    fn into_primitive (self) -> Self::Primitive {
-        self
-    }
+    (@max) => { Self::MAX as f32 };
+    (@max $v:expr) => { $v };
 }
 
-unsafe impl AsChannelType for i8 {
-    const TYPE : ChannelType = ChannelType::I8;
-    const MIN : f32 = Self::MIN as f32;
-    const MAX : f32 = Self::MAX as f32;
-
-    type Primitive = Self;
-
-    #[inline(always)]
-    fn into_primitive (self) -> Self::Primitive {
-        self
-    }
+impl_channel! {
+    u8 as U8,
+    u16 as U16,
+    u32 as U32,
+    i8 as I8,
+    i16 as I16,
+    i32 as I32,
+    f32 as F32: 0f32 => 1f32,
+    Norm<u8> as NormU8: <u8 as RawChannel>::MIN => <u8 as RawChannel>::MAX,
+    Norm<u16> as NormU16: <u16 as RawChannel>::MIN => <u16 as RawChannel>::MAX,
+    Norm<i8> as NormI8: <i8 as RawChannel>::MIN => <i8 as RawChannel>::MAX,
+    Norm<i16> as NormI16: <i16 as RawChannel>::MIN => <i16 as RawChannel>::MAX,
+    #[docfg(feature = "half")]
+    ::half::f16 as F16: 0f32 => 1f32
 }
 
-unsafe impl AsChannelType for u16 {
-    const TYPE : ChannelType = ChannelType::U16;
-    const MIN : f32 = Self::MIN as f32;
-    const MAX : f32 = Self::MAX as f32;
-
-    type Primitive = Self;
-
-    #[inline(always)]
-    fn into_primitive (self) -> Self::Primitive {
-        self
-    }
-}
-
-unsafe impl AsChannelType for i16 {
-    const TYPE : ChannelType = ChannelType::I16;
-    const MIN : f32 = Self::MIN as f32;
-    const MAX : f32 = Self::MAX as f32;
-
-    type Primitive = Self;
-
-    #[inline(always)]
-    fn into_primitive (self) -> Self::Primitive {
-        self
-    }
-}
-
-unsafe impl AsChannelType for u32 {
-    const TYPE : ChannelType = ChannelType::U32;
-    const MIN : f32 = Self::MIN as f32;
-    const MAX : f32 = Self::MAX as f32;
-
-    type Primitive = Self;
-
-    #[inline(always)]
-    fn into_primitive (self) -> Self::Primitive {
-        self
-    }
-}
-
-unsafe impl AsChannelType for i32 {
-    const TYPE : ChannelType = ChannelType::I32;
-    const MIN : f32 = Self::MIN as f32;
-    const MAX : f32 = Self::MAX as f32;
-
-    type Primitive = Self;
-
-    #[inline(always)]
-    fn into_primitive (self) -> Self::Primitive {
-        self
-    }
-}
-
-#[docfg(feature = "half")]
-unsafe impl AsChannelType for ::half::f16 {
-    const TYPE : ChannelType = ChannelType::F16;
-    const MIN : f32 = 0f32;
-    const MAX : f32 = 1f32;
-
-    type Primitive = ::half::f16;
-
-    #[inline(always)]
-    fn into_primitive (self) -> Self::Primitive {
-        self
-    }
-}
-
-unsafe impl AsChannelType for f32 {
-    const TYPE : ChannelType = ChannelType::F32;
-    const MIN : f32 = 0f32;
-    const MAX : f32 = 1f32;
-
-    type Primitive = Self;
-
-    #[inline(always)]
-    fn into_primitive (self) -> Self::Primitive {
-        self
-    }
-}
-
-/// Normalized channel type
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, NumOps, NumOpsAssign)]
 #[repr(transparent)]
 pub struct Norm<T> (pub T);
 
-unsafe impl AsChannelType for Norm<u8> {
-    const TYPE : ChannelType = ChannelType::NormU8;
-    const MIN : f32 = u8::MIN as f32;
-    const MAX : f32 = u8::MAX as f32;
-
-    type Primitive = u8;
+impl<T: Zero> Zero for Norm<T> {
+    #[inline(always)]
+    fn zero() -> Self {
+        Self(T::zero())
+    }
 
     #[inline(always)]
-    fn into_primitive (self) -> Self::Primitive {
-        self.0
+    fn is_zero(&self) -> bool {
+        self.0.is_zero()
     }
 }
 
-unsafe impl AsChannelType for Norm<i8> {
-    const TYPE : ChannelType = ChannelType::NormI8;
-    const MIN : f32 = i8::MIN as f32;
-    const MAX : f32 = i8::MAX as f32;
-
-    type Primitive = i8;
-
+impl<T: One> One for Norm<T> {
     #[inline(always)]
-    fn into_primitive (self) -> Self::Primitive {
-        self.0
+    fn one() -> Self {
+        Self(T::one())
     }
 }
 
-unsafe impl AsChannelType for Norm<u16> {
-    const TYPE : ChannelType = ChannelType::NormU16;
-    const MIN : f32 = u16::MIN as f32;
-    const MAX : f32 = u16::MAX as f32;
-
-    type Primitive = u16;
-
+impl<T: AsPrimitive<f32>> AsPrimitive<f32> for Norm<T> {
     #[inline(always)]
-    fn into_primitive (self) -> Self::Primitive {
-        self.0
+    fn as_(self) -> f32 {
+        self.0.as_()
     }
 }
 
-unsafe impl AsChannelType for Norm<i16> {
-    const TYPE : ChannelType = ChannelType::NormI16;
-    const MIN : f32 = i16::MIN as f32;
-    const MAX : f32 = i16::MAX as f32;
-
-    type Primitive = i16;
-
+impl<T: 'static + Copy> AsPrimitive<Norm<T>> for f32 where f32: AsPrimitive<T> {
     #[inline(always)]
-    fn into_primitive (self) -> Self::Primitive {
-        self.0
+    fn as_(self) -> Norm<T> {
+        Norm(AsPrimitive::<T>::as_(self))
     }
 }
 
@@ -1265,22 +476,4 @@ impl<T> DerefMut for Norm<T> {
     }
 }
 
-impl<T: AsPrimitive<f32>> AsPrimitive<f32> for Norm<T> {
-    #[inline(always)]
-    fn as_(self) -> f32 {
-        self.0.as_()
-    }
-}
-
-impl<T: 'static + Copy> AsPrimitive<Norm<T>> for f32 where f32: AsPrimitive<T> {
-    #[inline(always)]
-    fn as_(self) -> Norm<T> {
-        Norm(self.as_())
-    }
-}
-
-#[test]
-fn casting () {
-    let test = RGx::new(0.9f32, 0.5);
-    println!("{:?}", Luma::<u8>::from(test))
-}
+unsafe impl<T: Zeroable> Zeroable for Norm<T> {}

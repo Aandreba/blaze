@@ -2,6 +2,7 @@ use std::{marker::PhantomData, mem::MaybeUninit, ops::{DerefMut, Deref}};
 use crate::{buffer::{RawBuffer}, prelude::*, event::WaitList, memobj::{IntoSlice2D}};
 use super::{Rect2D, BufferRect2D};
 
+#[cfg_attr(docsrs, doc(cfg(feature = "cl1_1")))]
 pub struct ReadBufferRect2D<'src, T> {
     event: RawEvent,
     dst: Rect2D<MaybeUninit<T>>,

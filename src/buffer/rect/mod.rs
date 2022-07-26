@@ -1,6 +1,10 @@
-flat_mod!(host, read, write);
+flat_mod!(host);
+#[cfg(feature = "cl1_1")]
+flat_mod!(read, write);
 
 use std::{ptr::NonNull, ops::{Deref, DerefMut}, num::NonZeroUsize, mem::MaybeUninit, fmt::Debug};
+use rscl_proc::docfg;
+
 use crate::{prelude::*, event::WaitList, memobj::IntoSlice2D};
 use super::{Buffer, flags::{MemFlags, MemAccess, HostPtr}};
 
@@ -125,6 +129,7 @@ impl<T: Copy, C: Context> BufferRect2D<T, C> {
     }
 }
 
+#[docfg(feature = "cl1_1")]
 impl<T: Copy + Unpin, C: Context> BufferRect2D<T, C> {
     #[inline(always)]
     pub fn read_all<'src> (&'src self, wait: impl Into<WaitList>) -> Result<ReadBufferRect2D<'src, T>> {

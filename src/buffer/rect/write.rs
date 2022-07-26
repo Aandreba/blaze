@@ -2,6 +2,7 @@ use std::{pin::Pin, ops::{Deref, DerefMut}};
 use crate::{prelude::*, event::WaitList};
 use super::{Rect2D, BufferRect2D};
 
+#[cfg_attr(docsrs, doc(cfg(feature = "cl1_1")))]
 pub struct WriteBufferRect2D<Dst, Src> {
     event: RawEvent,
     src: Pin<Dst>,

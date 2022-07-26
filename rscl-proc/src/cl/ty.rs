@@ -75,6 +75,7 @@ impl Type {
             Self::Array(ty, _) => ty.rustify_ptr(),
             Self::Path(x) => syn::Type::Path(x.clone()),
             Self::Image2d => todo!(),
+            #[allow(unused)]
             Self::Pointer(_, ty) => todo!(),
         }
     }

@@ -21,10 +21,16 @@ mod utils;
 mod cl;
 mod num;
 
-#[proc_macro_derive(NumOps)]
+#[proc_macro_derive(NumOps, attributes(uninit))]
 pub fn derive_num_ops (items: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let items = parse_macro_input!(items as DeriveInput);
     num::derive_ops(items).into()
+}
+
+#[proc_macro_derive(NumOpsAssign, attributes(uninit))]
+pub fn derive_num_ops_assign (items: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    let items = parse_macro_input!(items as DeriveInput);
+    num::derive_ops_assign(items).into()
 }
 
 #[proc_macro_attribute]
