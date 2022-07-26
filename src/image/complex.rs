@@ -1,8 +1,7 @@
-use std::{ptr::NonNull, os::raw::c_void, marker::PhantomData, ops::{Deref, DerefMut}, path::Path, io::{Seek, BufRead}, borrow::Borrow};
-use image::{io::Reader, PixelWithColorType, ImageResult};
+use std::{ptr::NonNull, os::raw::c_void, marker::PhantomData, ops::{Deref, DerefMut}};
 use opencl_sys::cl_mem;
 use crate::{core::*, context::{Context, Global}, buffer::{flags::{HostPtr, MemFlags, MemAccess}, rect::Rect2D}, event::WaitList, memobj::{MemObjectType, IntoSlice2D, MemObject}, prelude::Event};
-use super::{RawImage, ImageDesc, channel::{RawPixel, FromDynImage, AsChannelType}, events::{ReadImage2D, WriteImage2D, CopyImage, FillImage}};
+use super::{RawImage, ImageDesc, channel::{RawPixel}, events::{ReadImage2D, WriteImage2D, CopyImage}};
 
 #[derive(Debug)]
 pub struct Image2D<P: RawPixel, C: Context = Global> {
@@ -12,7 +11,7 @@ pub struct Image2D<P: RawPixel, C: Context = Global> {
 }
 
 impl<P: RawPixel> Image2D<P> {
-    #[inline(always)]
+    /*#[inline(always)]
     pub fn from_file (path: impl AsRef<Path>, access: MemAccess, alloc: bool) -> Result<Self> where P: FromDynImage {
         Self::from_file_in(Global, path, access, alloc)
     }
@@ -20,7 +19,7 @@ impl<P: RawPixel> Image2D<P> {
     #[inline(always)]
     pub fn from_reader<R: BufRead + Seek> (reader: Reader<R>, access: MemAccess, alloc: bool) -> Result<Self> where P: FromDynImage {
         Self::from_reader_in(Global, reader, access, alloc)
-    }
+    }*/
 
     #[inline(always)]
     pub fn from_rect (v: &Rect2D<P>, access: MemAccess, alloc: bool) -> Result<Self> {
@@ -28,7 +27,7 @@ impl<P: RawPixel> Image2D<P> {
     }
 
     #[inline(always)]
-    pub fn from_raw (v: &[P::Subpixel], width: usize, height: usize, access: MemAccess, alloc: bool) -> Result<Self> {
+    pub fn from_raw (v: &[P::Type], width: usize, height: usize, access: MemAccess, alloc: bool) -> Result<Self> {
         Self::from_raw_in(Global, v, width, height, access, alloc)
     }
 
@@ -44,7 +43,7 @@ impl<P: RawPixel> Image2D<P> {
 }
 
 impl<P: RawPixel, C: Context> Image2D<P, C> {
-    #[inline]
+    /*#[inline]
     pub fn from_file_in (ctx: C, path: impl AsRef<Path>, access: MemAccess, alloc: bool) -> Result<Self> where P: FromDynImage {
         let reader = match Reader::open(path) {
             Ok(x) => x,
@@ -64,7 +63,7 @@ impl<P: RawPixel, C: Context> Image2D<P, C> {
 
         let buffer = P::from_dyn_image(decode);
         Self::from_rect_in(ctx, &buffer, access, alloc)
-    }
+    }*/
 
     /// Creates a new 2D image from a 2D rect.
     #[inline(always)]
@@ -75,7 +74,7 @@ impl<P: RawPixel, C: Context> Image2D<P, C> {
     
     /// Creates a new 2D image from it's raw pixels.
     #[inline(always)]
-    pub fn from_raw_in (ctx: C, v: &[P::Subpixel], width: usize, height: usize, access: MemAccess, alloc: bool) -> Result<Self> {
+    pub fn from_raw_in (ctx: C, v: &[P::Type], width: usize, height: usize, access: MemAccess, alloc: bool) -> Result<Self> {
         let host = MemFlags::new(access, HostPtr::new(alloc, true));
         unsafe { Self::create_in(ctx, width, height, host, NonNull::new(v as *const _ as *mut _)) }
     }
@@ -109,25 +108,6 @@ impl<P: RawPixel, C: Context> Image2D<P, C> {
     #[inline(always)]
     pub fn context (&self) -> &C {
         &self.ctx
-    }
-}
-
-impl<P: RawPixel + Unpin, C: Context> Image2D<P, C> {
-    pub fn save (&self, path: impl AsRef<Path>, wait: impl Into<WaitList>) where P::Pixel: PixelWithColorType {
-        let all = self.read_all(wait).unwrap().wait().unwrap();
-        let width = u32::try_from(all.width()).unwrap();
-        let height = u32::try_from(all.height()).unwrap();
-
-        let pixels = all.into_vec().into_iter()
-            .map(P::into_pixel)
-            .collect::<Box<[_]>>();
-
-        let len = pixels.len() ;
-        let pixels = Box::into_raw(pixels);
-        let pixels = unsafe { core::slice::from_raw_parts(pixels as *const <P::Subpixel as AsChannelType>::Primitive, len) };
-
-        let buffer = image::ImageBuffer::from_vec(width, height, pixels).unwrap();        
-        todo!()
     }
 }
 

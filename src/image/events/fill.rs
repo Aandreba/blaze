@@ -35,9 +35,9 @@ impl<'dst> FillImage<'dst> {
             return result
         }
 
-        if !<P::Subpixel as AsChannelType>::TYPE.is_norm() {
+        if !<P::Type as AsChannelType>::TYPE.is_norm() {
             let channels = color.channels();
-            unsafe { core::ptr::copy_nonoverlapping(channels.as_ptr(), ptr as *mut P::Subpixel, channels.len()) }
+            unsafe { core::ptr::copy_nonoverlapping(channels.as_ptr(), ptr as *mut P::Type, channels.len()) }
             return result
         }
 

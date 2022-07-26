@@ -13,12 +13,19 @@ use cl::{Rscl, Link};
 use error::Error;
 use proc_macro2::{TokenStream, Ident};
 use quote::{ToTokens, quote, format_ident};
-use syn::{parse_macro_input, ItemStatic, Meta};
+use syn::{parse_macro_input, ItemStatic, Meta, DeriveInput};
 
 mod context;
 mod error;
 mod utils;
 mod cl;
+mod num;
+
+#[proc_macro_derive(NumOps)]
+pub fn derive_num_ops (items: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    let items = parse_macro_input!(items as DeriveInput);
+    num::derive_ops(items).into()
+}
 
 #[proc_macro_attribute]
 pub fn global_context (_attrs: proc_macro::TokenStream, items: proc_macro::TokenStream) -> proc_macro::TokenStream {

@@ -1,27 +1,25 @@
 use std::{ops::{Deref, DerefMut}, mem::MaybeUninit, hash::Hash};
-use image::{DynamicImage, Primitive};
-use num_traits::{AsPrimitive, Zero};
+use num_derive::NumOps;
+use num_traits::{AsPrimitive, Zero, NumOps};
 use rscl_proc::docfg;
-use crate::{prelude::RawContext, buffer::{flags::MemAccess, rect::Rect2D}, memobj::MemObjectType};
+use crate::{prelude::RawContext, buffer::{flags::MemAccess}, memobj::MemObjectType};
 use super::{ChannelType, ChannelOrder, ImageFormat};
 
 #[cfg(feature = "half")]
 use ::half::f16;
 
 /// # Safety
-/// - `Self` must have the same size and alignment as `[Subpixel; CHANNEL_COUNT]`
-/// - `Pixel` must have represented as an array of `Subpixel::Primitive` values
+/// - `Self` must have the same size and alignment as `[Type; CHANNEL_COUNT]`
+/// - `Pixel` must have represented as an array of `Type` values
 ///     - This might be accomplished with `#[repr(C)]` or `#[repr(transparent)]`
-pub unsafe trait RawPixel: Copy {
-    type Subpixel: AsChannelType;
-    type Pixel;
+pub unsafe trait RawPixel: Copy + NumOps {
+    type Type: AsChannelType;
 
     const ORDER : ChannelOrder;
-    const FORMAT : ImageFormat = ImageFormat::new(Self::ORDER, <Self::Subpixel as AsChannelType>::TYPE);
+    const FORMAT : ImageFormat = ImageFormat::new(Self::ORDER, <Self::Type as AsChannelType>::TYPE);
     const CHANNEL_COUNT : usize = Self::ORDER.channel_count();
 
-    fn channels (&self) -> &[Self::Subpixel];
-    fn into_pixel (self) -> Self::Pixel;
+    fn channels (&self) -> &[Self::Type];
 
     #[inline]
     fn is_supported (ctx: &RawContext, access: MemAccess, ty: MemObjectType) -> bool {
@@ -42,19 +40,12 @@ pub struct Red<T> {
 }
 
 unsafe impl<T: AsChannelType> RawPixel for Red<T> {
-    type Subpixel = T;
-    type Pixel = image::Rgb<T::Primitive>;
-
+    type Type = T;
     const ORDER : ChannelOrder = ChannelOrder::Red;
 
     #[inline(always)]
-    fn channels (&self) -> &[Self::Subpixel] {
+    fn channels (&self) -> &[Self::Type] {
         core::slice::from_ref(&self.red)
-    }
-
-    #[inline(always)]
-    fn into_pixel (self) -> Self::Pixel {
-        image::Rgb ([self.red.into_primitive(), T::Primitive::zero(), T::Primitive::zero()])
     }
 }
 
@@ -66,19 +57,13 @@ pub struct Alpha<T> {
 }
 
 unsafe impl<T: AsChannelType> RawPixel for Alpha<T> {
-    type Subpixel = T;
-    type Pixel = image::Rgba<T::Primitive>;
+    type Type = T;
 
     const ORDER : ChannelOrder = ChannelOrder::Alpha;
 
     #[inline(always)]
-    fn channels (&self) -> &[Self::Subpixel] {
+    fn channels (&self) -> &[Self::Type] {
         core::slice::from_ref(&self.alpha)
-    }
-
-    #[inline(always)]
-    fn into_pixel (self) -> Self::Pixel {
-        image::Rgba ([T::Primitive::zero(), T::Primitive::zero(), T::Primitive::zero(), self.alpha.into_primitive()])
     }
 }
 
@@ -92,19 +77,13 @@ pub struct Depth<T> {
 
 #[docfg(feature = "cl2")]
 unsafe impl<T: AsChannelType> RawPixel for Depth<T> {
-    type Subpixel = T;
-    type Pixel = image::LumaA<T::Primitive>;
+    type Type = T;
 
     const ORDER : ChannelOrder = ChannelOrder::Depth;
 
     #[inline(always)]
-    fn channels (&self) -> &[Self::Subpixel] {
+    fn channels (&self) -> &[Self::Type] {
         core::slice::from_ref(&self.depth)
-    }
-
-    #[inline(always)]
-    fn into_pixel (self) -> Self::Pixel {
-        image::LumaA ([T::Primitive::zero(); 2])
     }
 }
 
@@ -116,18 +95,12 @@ pub struct Luma<T> {
 }
 
 unsafe impl<T: AsChannelType> RawPixel for Luma<T> {
-    type Subpixel = T;
-    type Pixel = image::Luma<T::Primitive>;
+    type Type = T;
     const ORDER : ChannelOrder = ChannelOrder::Luminance;
 
     #[inline(always)]
-    fn channels (&self) -> &[Self::Subpixel] {
+    fn channels (&self) -> &[Self::Type] {
         core::slice::from_ref(&self.luma)
-    }
-
-    #[inline(always)]
-    fn into_pixel (self) -> Self::Pixel {
-        image::Luma([self.luma.into_primitive()])
     }
 }
 
@@ -139,19 +112,12 @@ pub struct Inten<T> {
 }
 
 unsafe impl<T: AsChannelType> RawPixel for Inten<T> {
-    type Subpixel = T;
-    type Pixel = image::Rgba<T::Primitive>;
+    type Type = T;
     const ORDER : ChannelOrder = ChannelOrder::Intensity;
 
     #[inline(always)]
-    fn channels (&self) -> &[Self::Subpixel] {
+    fn channels (&self) -> &[Self::Type] {
         core::slice::from_ref(&self.inten)
-    }
-
-    #[inline(always)]
-    fn into_pixel (self) -> Self::Pixel {
-        let prim = self.inten.into_primitive();
-        image::Rgba([prim; 4])
     }
 }
 
@@ -280,19 +246,13 @@ pub struct RG<T> {
 }
 
 unsafe impl<T: AsChannelType> RawPixel for RG<T> {
-    type Subpixel = T;
-    type Pixel = image::Rgb<T::Primitive>;
+    type Type = T;
     const ORDER : ChannelOrder = ChannelOrder::RedGreen;
 
     #[inline(always)]
-    fn channels (&self) -> &[Self::Subpixel] {
+    fn channels (&self) -> &[Self::Type] {
         assert_eq!(core::mem::size_of::<Self>(), core::mem::size_of::<[T; 2]>());
         unsafe { core::slice::from_raw_parts(self as *const _ as *const _, Self::CHANNEL_COUNT) }
-    }
-
-    #[inline(always)]
-    fn into_pixel (self) -> Self::Pixel {
-        image::Rgb([self.red.into_primitive(), self.green.into_primitive(), T::Primitive::zero()])
     }
 }
 
@@ -305,19 +265,13 @@ pub struct RA<T> {
 }
 
 unsafe impl<T: AsChannelType> RawPixel for RA<T> {
-    type Subpixel = T;
-    type Pixel = image::Rgba<T::Primitive>;
+    type Type = T;
     const ORDER : ChannelOrder = ChannelOrder::RedAlpha;
 
     #[inline(always)]
-    fn channels (&self) -> &[Self::Subpixel] {
+    fn channels (&self) -> &[Self::Type] {
         assert_eq!(core::mem::size_of::<Self>(), core::mem::size_of::<[T; 2]>());
         unsafe { core::slice::from_raw_parts(self as *const _ as *const _, Self::CHANNEL_COUNT) }
-    }
-
-    #[inline(always)]
-    fn into_pixel (self) -> Self::Pixel {
-        image::Rgba([self.red.into_primitive(), T::Primitive::zero(), T::Primitive::zero(), self.alpha.into_primitive()])
     }
 }
 
@@ -341,19 +295,13 @@ impl<T> Rx<T> {
 
 #[docfg(feature = "cl1_1")]
 unsafe impl<T: AsChannelType> RawPixel for Rx<T> {
-    type Subpixel = T;
-    type Pixel = image::Rgb<T::Primitive>;
+    type Type = T;
     const ORDER : ChannelOrder = ChannelOrder::Rx;
 
     #[inline(always)]
-    fn channels (&self) -> &[Self::Subpixel] {
+    fn channels (&self) -> &[Self::Type] {
         assert_eq!(core::mem::size_of::<Self>(), core::mem::size_of::<[T; 2]>());
         core::slice::from_ref(&self.red)
-    }
-
-    #[inline(always)]
-    fn into_pixel (self) -> Self::Pixel {
-        image::Rgb([self.red.into_primitive(), T::Primitive::zero(), T::Primitive::zero()])
     }
 }
 
@@ -417,19 +365,13 @@ pub struct RGB<T> {
 }
 
 unsafe impl<T: AsChannelType> RawPixel for RGB<T> {
-    type Subpixel = T;
-    type Pixel = image::Rgb<T::Primitive>;
+    type Type = T;
     const ORDER : ChannelOrder = ChannelOrder::RGB;
 
     #[inline(always)]
-    fn channels (&self) -> &[Self::Subpixel] {
+    fn channels (&self) -> &[Self::Type] {
         assert_eq!(core::mem::size_of::<Self>(), core::mem::size_of::<[T; 3]>());
         unsafe { core::slice::from_raw_parts(self as *const _ as *const _, Self::CHANNEL_COUNT) }
-    }
-
-    #[inline(always)]
-    fn into_pixel (self) -> Self::Pixel {
-        image::Rgb([self.red.into_primitive(), self.green.into_primitive(), self.blue.into_primitive()])
     }
 }
 
@@ -489,19 +431,13 @@ impl<T: Eq> Eq for RGx<T> {}
 
 #[docfg(feature = "cl1_1")]
 unsafe impl<T: AsChannelType> RawPixel for RGx<T> {
-    type Subpixel = T;
-    type Pixel = image::Rgb<T::Primitive>;
+    type Type = T;
     const ORDER : ChannelOrder = ChannelOrder::RGx;
 
     #[inline(always)]
-    fn channels (&self) -> &[Self::Subpixel] {
+    fn channels (&self) -> &[Self::Type] {
         assert_eq!(core::mem::size_of::<Self>(), core::mem::size_of::<[T; 3]>());
         unsafe { core::slice::from_raw_parts(self as *const _ as *const _, 2) }
-    }
-
-    #[inline(always)]
-    fn into_pixel (self) -> Self::Pixel {
-        image::Rgb ([self.red.into_primitive(), self.green.into_primitive(), T::Primitive::zero()])
     }
 }
 
@@ -515,19 +451,13 @@ pub struct RGBA<T> {
 }
 
 unsafe impl<T: AsChannelType> RawPixel for RGBA<T> {
-    type Subpixel = T;
-    type Pixel = image::Rgba<T::Primitive>;
+    type Type = T;
     const ORDER : ChannelOrder = ChannelOrder::RGBA;
 
     #[inline(always)]
-    fn channels (&self) -> &[Self::Subpixel] {
+    fn channels (&self) -> &[Self::Type] {
         assert_eq!(core::mem::size_of::<Self>(), core::mem::size_of::<[T; 4]>());
         unsafe { core::slice::from_raw_parts(self as *const _ as *const _, Self::CHANNEL_COUNT) }
-    }
-
-    #[inline(always)]
-    fn into_pixel (self) -> Self::Pixel {
-        image::Rgba([self.red.into_primitive(), self.green.into_primitive(), self.blue.into_primitive(), self.alpha.into_primitive()])
     }
 }
 
@@ -541,19 +471,13 @@ pub struct ARGB<T> {
 }
 
 unsafe impl<T: AsChannelType> RawPixel for ARGB<T> {
-    type Subpixel = T;
-    type Pixel = image::Rgba<T::Primitive>;
+    type Type = T;
     const ORDER : ChannelOrder = ChannelOrder::ARGB;
 
     #[inline(always)]
-    fn channels (&self) -> &[Self::Subpixel] {
+    fn channels (&self) -> &[Self::Type] {
         assert_eq!(core::mem::size_of::<Self>(), core::mem::size_of::<[T; 4]>());
         unsafe { core::slice::from_raw_parts(self as *const _ as *const _, Self::CHANNEL_COUNT) }
-    }
-
-    #[inline(always)]
-    fn into_pixel (self) -> Self::Pixel {
-        image::Rgba([self.red.into_primitive(), self.green.into_primitive(), self.blue.into_primitive(), self.alpha.into_primitive()])
     }
 }
 
@@ -567,19 +491,13 @@ pub struct BGRA<T> {
 }
 
 unsafe impl<T: AsChannelType> RawPixel for BGRA<T> {
-    type Subpixel = T;
-    type Pixel = image::Rgba<T::Primitive>;
+    type Type = T;
     const ORDER : ChannelOrder = ChannelOrder::BGRA;
 
     #[inline(always)]
-    fn channels (&self) -> &[Self::Subpixel] {
+    fn channels (&self) -> &[Self::Type] {
         assert_eq!(core::mem::size_of::<Self>(), core::mem::size_of::<[T; 4]>());
         unsafe { core::slice::from_raw_parts(self as *const _ as *const _, Self::CHANNEL_COUNT) }
-    }
-
-    #[inline(always)]
-    fn into_pixel (self) -> Self::Pixel {
-        image::Rgba([self.red.into_primitive(), self.green.into_primitive(), self.blue.into_primitive(), self.alpha.into_primitive()])
     }
 }
 
@@ -595,19 +513,13 @@ pub struct ABGR<T> {
 
 #[docfg(feature = "cl2")]
 unsafe impl<T: AsChannelType> RawPixel for ABGR<T> {
-    type Subpixel = T;
-    type Pixel = image::Rgba<T::Primitive>;
+    type Type = T;
     const ORDER : ChannelOrder = ChannelOrder::ABGR;
 
     #[inline(always)]
-    fn channels (&self) -> &[Self::Subpixel] {
+    fn channels (&self) -> &[Self::Type] {
         assert_eq!(core::mem::size_of::<Self>(), core::mem::size_of::<[T; 4]>());
         unsafe { core::slice::from_raw_parts(self as *const _ as *const _, Self::CHANNEL_COUNT) }
-    }
-
-    #[inline(always)]
-    fn into_pixel (self) -> Self::Pixel {
-        image::Rgba([self.red.into_primitive(), self.green.into_primitive(), self.blue.into_primitive(), self.alpha.into_primitive()])
     }
 }
 
@@ -669,19 +581,13 @@ impl<T: Eq> Eq for RGBx<T> {}
 
 #[docfg(feature = "cl1_1")]
 unsafe impl<T: AsChannelType> RawPixel for RGBx<T> {
-    type Subpixel = T;
-    type Pixel = image::Rgb<T::Primitive>;
+    type Type = T;
     const ORDER : ChannelOrder = ChannelOrder::RGBx;
 
     #[inline(always)]
-    fn channels (&self) -> &[Self::Subpixel] {
+    fn channels (&self) -> &[Self::Type] {
         assert_eq!(core::mem::size_of::<Self>(), core::mem::size_of::<[T; 4]>());
         unsafe { core::slice::from_raw_parts(self as *const _ as *const _, 3) }
-    }
-
-    #[inline(always)]
-    fn into_pixel (self) -> Self::Pixel {
-        image::Rgb ([self.red.into_primitive(), self.green.into_primitive(), self.blue.into_primitive()])
     }
 }
 
@@ -696,19 +602,13 @@ pub struct SRGB<T> {
 
 #[docfg(feature = "cl2")]
 unsafe impl<T: AsChannelType> RawPixel for SRGB<T> {
-    type Subpixel = T;
-    type Pixel = image::Rgb<T::Primitive>;
+    type Type = T;
     const ORDER : ChannelOrder = ChannelOrder::sRGB;
 
     #[inline(always)]
-    fn channels (&self) -> &[Self::Subpixel] {
+    fn channels (&self) -> &[Self::Type] {
         assert_eq!(core::mem::size_of::<Self>(), core::mem::size_of::<[T; 3]>());
         unsafe { core::slice::from_raw_parts(self as *const _ as *const _, Self::CHANNEL_COUNT) }
-    }
-
-    #[inline(always)]
-    fn into_pixel (self) -> Self::Pixel {
-        image::Rgb ([self.red.into_primitive(), self.green.into_primitive(), self.blue.into_primitive()])
     }
 }
 
@@ -724,19 +624,13 @@ pub struct SRGBA<T> {
 
 #[docfg(feature = "cl2")]
 unsafe impl<T: AsChannelType> RawPixel for SRGBA<T> {
-    type Subpixel = T;
-    type Pixel = image::Rgba<T::Primitive>;
+    type Type = T;
     const ORDER : ChannelOrder = ChannelOrder::sRGBA;
 
     #[inline(always)]
-    fn channels (&self) -> &[Self::Subpixel] {
+    fn channels (&self) -> &[Self::Type] {
         assert_eq!(core::mem::size_of::<Self>(), core::mem::size_of::<[T; 4]>());
         unsafe { core::slice::from_raw_parts(self as *const _ as *const _, Self::CHANNEL_COUNT) }
-    }
-
-    #[inline(always)]
-    fn into_pixel (self) -> Self::Pixel {
-        image::Rgba ([self.red.into_primitive(), self.green.into_primitive(), self.blue.into_primitive(), self.alpha.into_primitive()])
     }
 }
 
@@ -752,19 +646,13 @@ pub struct SBGRA<T> {
 
 #[docfg(feature = "cl2")]
 unsafe impl<T: AsChannelType> RawPixel for SBGRA<T> {
-    type Subpixel = T;
-    type Pixel = image::Rgba<T::Primitive>;
+    type Type = T;
     const ORDER : ChannelOrder = ChannelOrder::sBGRA;
 
     #[inline(always)]
-    fn channels (&self) -> &[Self::Subpixel] {
+    fn channels (&self) -> &[Self::Type] {
         assert_eq!(core::mem::size_of::<Self>(), core::mem::size_of::<[T; 4]>());
         unsafe { core::slice::from_raw_parts(self as *const _ as *const _, Self::CHANNEL_COUNT) }
-    }
-
-    #[inline(always)]
-    fn into_pixel (self) -> Self::Pixel {
-        image::Rgba ([self.red.into_primitive(), self.green.into_primitive(), self.blue.into_primitive(), self.alpha.into_primitive()])
     }
 }
 
@@ -826,19 +714,13 @@ impl<T: Eq> Eq for SRGBx<T> {}
 
 #[docfg(feature = "cl2")]
 unsafe impl<T: AsChannelType> RawPixel for SRGBx<T> {
-    type Subpixel = T;
-    type Pixel = image::Rgb<T::Primitive>;
+    type Type = T;
     const ORDER : ChannelOrder = ChannelOrder::sRGBx;
 
     #[inline(always)]
-    fn channels (&self) -> &[Self::Subpixel] {
+    fn channels (&self) -> &[Self::Type] {
         assert_eq!(core::mem::size_of::<Self>(), core::mem::size_of::<[T; 4]>());
         unsafe { core::slice::from_raw_parts(self as *const _ as *const _, 3) }
-    }
-
-    #[inline(always)]
-    fn into_pixel (self) -> Self::Pixel {
-        image::Rgb ([self.red.into_primitive(), self.green.into_primitive(), self.blue.into_primitive()])
     }
 }
 
@@ -1185,61 +1067,11 @@ impl_cast! {
     SRGBx in x => [red, green, blue]
 }
 
-// Conversions from `image` crate
-impl<T: Copy> From<image::Luma<T>> for Luma<T> {
-    #[inline(always)]
-    fn from(x: image::Luma<T>) -> Self {
-        Luma { luma: x.0[0] }
-    }
-}
-
-impl<T: Copy> From<image::Rgb<T>> for RGB<T> {
-    #[inline(always)]
-    fn from(x: image::Rgb<T>) -> Self {
-        RGB {
-            red: x.0[0],
-            green: x.0[1],
-            blue: x.0[2]
-        }
-    }
-}
-
-impl<T: Copy> From<image::Rgba<T>> for RGBA<T> {
-    #[inline(always)]
-    fn from(x: image::Rgba<T>) -> Self {
-        RGBA {
-            red: x.0[0],
-            green: x.0[1],
-            blue: x.0[2],
-            alpha: x.0[3]
-        }
-    }
-}
-
-impl<T: Copy> Into<image::Luma<T>> for Luma<T> {
-    #[inline(always)]
-    fn into(self) -> image::Luma<T> {
-        image::Luma([self.luma])
-    }
-}
-
-impl<T: Copy> Into<image::Rgb<T>> for RGB<T> {
-    #[inline(always)]
-    fn into(self) -> image::Rgb<T> {
-        image::Rgb ([self.red, self.green, self.blue])
-    }
-}
-
-impl<T: Copy> Into<image::Rgba<T>> for RGBA<T> {
-    #[inline(always)]
-    fn into(self) -> image::Rgba<T> {
-        image::Rgba ([self.red, self.green, self.blue, self.alpha])
-    }
-}
-
 /// A type that can be represented as an image's channel type
-pub trait AsChannelType: AsPrimitive<f32> {
-    type Primitive: Primitive + Zero;
+/// # Safety
+/// `Self` and `Primitive` must have the same size and alignment
+pub unsafe trait AsChannelType: NumOps + AsPrimitive<f32> {
+    type Primitive: Copy + Zero;
 
     const TYPE : ChannelType;
     const MIN : f32;
@@ -1255,7 +1087,7 @@ pub trait AsChannelType: AsPrimitive<f32> {
     }
 }
 
-impl AsChannelType for u8 {
+unsafe impl AsChannelType for u8 {
     const TYPE : ChannelType = ChannelType::U8;
     const MIN : f32 = Self::MIN as f32;
     const MAX : f32 = Self::MAX as f32;
@@ -1268,7 +1100,7 @@ impl AsChannelType for u8 {
     }
 }
 
-impl AsChannelType for i8 {
+unsafe impl AsChannelType for i8 {
     const TYPE : ChannelType = ChannelType::I8;
     const MIN : f32 = Self::MIN as f32;
     const MAX : f32 = Self::MAX as f32;
@@ -1281,7 +1113,7 @@ impl AsChannelType for i8 {
     }
 }
 
-impl AsChannelType for u16 {
+unsafe impl AsChannelType for u16 {
     const TYPE : ChannelType = ChannelType::U16;
     const MIN : f32 = Self::MIN as f32;
     const MAX : f32 = Self::MAX as f32;
@@ -1294,7 +1126,7 @@ impl AsChannelType for u16 {
     }
 }
 
-impl AsChannelType for i16 {
+unsafe impl AsChannelType for i16 {
     const TYPE : ChannelType = ChannelType::I16;
     const MIN : f32 = Self::MIN as f32;
     const MAX : f32 = Self::MAX as f32;
@@ -1307,7 +1139,7 @@ impl AsChannelType for i16 {
     }
 }
 
-impl AsChannelType for u32 {
+unsafe impl AsChannelType for u32 {
     const TYPE : ChannelType = ChannelType::U32;
     const MIN : f32 = Self::MIN as f32;
     const MAX : f32 = Self::MAX as f32;
@@ -1320,7 +1152,7 @@ impl AsChannelType for u32 {
     }
 }
 
-impl AsChannelType for i32 {
+unsafe impl AsChannelType for i32 {
     const TYPE : ChannelType = ChannelType::I32;
     const MIN : f32 = Self::MIN as f32;
     const MAX : f32 = Self::MAX as f32;
@@ -1334,20 +1166,20 @@ impl AsChannelType for i32 {
 }
 
 #[docfg(feature = "half")]
-impl AsChannelType for ::half::f16 {
+unsafe impl AsChannelType for ::half::f16 {
     const TYPE : ChannelType = ChannelType::F16;
     const MIN : f32 = 0f32;
     const MAX : f32 = 1f32;
 
-    type Primitive = f32;
+    type Primitive = ::half::f16;
 
     #[inline(always)]
     fn into_primitive (self) -> Self::Primitive {
-        self.to_f32()
+        self
     }
 }
 
-impl AsChannelType for f32 {
+unsafe impl AsChannelType for f32 {
     const TYPE : ChannelType = ChannelType::F32;
     const MIN : f32 = 0f32;
     const MAX : f32 = 1f32;
@@ -1365,7 +1197,7 @@ impl AsChannelType for f32 {
 #[repr(transparent)]
 pub struct Norm<T> (pub T);
 
-impl AsChannelType for Norm<u8> {
+unsafe impl AsChannelType for Norm<u8> {
     const TYPE : ChannelType = ChannelType::NormU8;
     const MIN : f32 = u8::MIN as f32;
     const MAX : f32 = u8::MAX as f32;
@@ -1378,7 +1210,7 @@ impl AsChannelType for Norm<u8> {
     }
 }
 
-impl AsChannelType for Norm<i8> {
+unsafe impl AsChannelType for Norm<i8> {
     const TYPE : ChannelType = ChannelType::NormI8;
     const MIN : f32 = i8::MIN as f32;
     const MAX : f32 = i8::MAX as f32;
@@ -1391,7 +1223,7 @@ impl AsChannelType for Norm<i8> {
     }
 }
 
-impl AsChannelType for Norm<u16> {
+unsafe impl AsChannelType for Norm<u16> {
     const TYPE : ChannelType = ChannelType::NormU16;
     const MIN : f32 = u16::MIN as f32;
     const MAX : f32 = u16::MAX as f32;
@@ -1404,7 +1236,7 @@ impl AsChannelType for Norm<u16> {
     }
 }
 
-impl AsChannelType for Norm<i16> {
+unsafe impl AsChannelType for Norm<i16> {
     const TYPE : ChannelType = ChannelType::NormI16;
     const MIN : f32 = i16::MIN as f32;
     const MAX : f32 = i16::MAX as f32;
@@ -1446,103 +1278,6 @@ impl<T: 'static + Copy> AsPrimitive<Norm<T>> for f32 where f32: AsPrimitive<T> {
         Norm(self.as_())
     }
 }
-
-pub trait FromDynImage: 
-    From<Luma<u8>> + From<RGB<u8>> + From<RGBA<u8>> +
-    From<Luma<u16>> + From<RGB<u16>> + From<RGBA<u16>> + 
-    From<RGB<f32>> + From<RGBA<f32>> {
-
-    fn from_dyn_image (img: DynamicImage) -> Rect2D<Self> {
-        match img {
-            DynamicImage::ImageLuma8(img) => {
-                let pixels = img.pixels()
-                    .copied()
-                    .map(Luma::<u8>::from)
-                    .map(Self::from)
-                    .collect::<Box<[_]>>();
-
-                Rect2D::from_boxed_slice(pixels, img.width() as usize).unwrap()
-            },
-
-            DynamicImage::ImageRgb8(img) => {
-                let pixels = img.pixels()
-                    .copied()
-                    .map(RGB::<u8>::from)
-                    .map(Self::from)
-                    .collect::<Box<[_]>>();
-
-                Rect2D::from_boxed_slice(pixels, img.width() as usize).unwrap()
-            },
-
-            DynamicImage::ImageRgba8(img) => {
-                let pixels = img.pixels()
-                    .copied()
-                    .map(RGBA::<u8>::from)
-                    .map(Self::from)
-                    .collect::<Box<[_]>>();
-
-                Rect2D::from_boxed_slice(pixels, img.width() as usize).unwrap()
-            },
-
-            DynamicImage::ImageLuma16(img) => {
-                let pixels = img.pixels()
-                    .copied()
-                    .map(Luma::<u16>::from)
-                    .map(Self::from)
-                    .collect::<Box<[_]>>();
-
-                Rect2D::from_boxed_slice(pixels, img.width() as usize).unwrap()
-            },
-
-            DynamicImage::ImageRgb16(img) => {
-                let pixels = img.pixels()
-                    .copied()
-                    .map(RGB::<u16>::from)
-                    .map(Self::from)
-                    .collect::<Box<[_]>>();
-
-                Rect2D::from_boxed_slice(pixels, img.width() as usize).unwrap()
-            },
-
-            DynamicImage::ImageRgba16(img) => {
-                let pixels = img.pixels()
-                    .copied()
-                    .map(RGBA::<u16>::from)
-                    .map(Self::from)
-                    .collect::<Box<[_]>>();
-
-                Rect2D::from_boxed_slice(pixels, img.width() as usize).unwrap()
-            },
-
-            DynamicImage::ImageRgb32F(img) => {
-                let pixels = img.pixels()
-                    .copied()
-                    .map(RGB::<f32>::from)
-                    .map(Self::from)
-                    .collect::<Box<[_]>>();
-
-                Rect2D::from_boxed_slice(pixels, img.width() as usize).unwrap()
-            },
-
-            DynamicImage::ImageRgba32F(img) => {
-                let pixels = img.pixels()
-                    .copied()
-                    .map(RGBA::<f32>::from)
-                    .map(Self::from)
-                    .collect::<Box<[_]>>();
-
-                Rect2D::from_boxed_slice(pixels, img.width() as usize).unwrap()
-            },
-
-            // TODO LumaA
-            _ => todo!()
-        }
-    }
-}
-
-impl<T: From<Luma<u8>> + From<RGB<u8>> + From<RGBA<u8>> +
-    From<Luma<u16>> + From<RGB<u16>> + From<RGBA<u16>> + 
-    From<RGB<f32>> + From<RGBA<f32>>> FromDynImage for T {}
 
 #[test]
 fn casting () {
