@@ -4,7 +4,7 @@ use num_traits::{NumOps, NumAssignOps, AsPrimitive, Zero, One};
 use rscl_proc::{docfg, NumOps, NumOpsAssign};
 use crate::{prelude::{RawContext, Result}, buffer::flags::MemAccess, memobj::MemObjectType};
 use super::{ChannelType, ChannelOrder, ImageFormat};
-use std::{hash::{Hash, Hasher}, mem::MaybeUninit};
+use std::{fmt::Debug, hash::{Hash, Hasher}, mem::MaybeUninit};
 
 /// # Safety
 /// - `Self` must have the same size and alignment as `[Channel; CHANNEL_COUNT]`
@@ -117,6 +117,15 @@ macro_rules! impl_pixel {
                     $(
                         impl_pixel! { @hash $($init)? self $field state }
                     )*
+                }
+            }
+
+            impl<T: Debug> Debug for $name<T> {
+                #[inline]
+                fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                    f.debug_struct(stringify!($name))
+                        $(.field(stringify!($field), &self.$field))*
+                        .finish()
                 }
             }
 

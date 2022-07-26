@@ -15,7 +15,7 @@ cl3 = ["cl2_2", "opencl-sys/CL_VERSION_3_0"]
 # Rscl features
 strict = []
 half = ["dep:half"]
-image = ["dep:ffmpeg-next"]
+image = ["dep:ffmpeg-next", "dep:ffmpeg-sys-next"]
 map = []
 svm = ["cl2"]
 atomics = ["svm"]
@@ -29,6 +29,7 @@ rscl-proc = { path = "rscl-proc", version = "0.1.0" }
 opencl-sys = { version = "0.2.1", default-features = false }
 futures = { version = "0.3.21", optional = true }
 ffmpeg-next = { version = "5.0.3", optional = true }
+ffmpeg-sys-next = { version = "5.0.1", optional = true }
 half = { version = "2", features = ["num-traits", "bytemuck"], optional = true }
 bytemuck = "1.10.0"
 bytemuck_derive = "1.1.1"

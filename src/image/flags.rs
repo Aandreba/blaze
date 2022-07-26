@@ -1,3 +1,4 @@
+use ffmpeg_next::format::Pixel;
 use num_enum::{IntoPrimitive, TryFromPrimitive, TryFromPrimitiveError};
 use opencl_sys::{CL_R, CL_A, CL_LUMINANCE, CL_INTENSITY, CL_RG, CL_RA, CL_RGB, CL_RGBA, CL_ARGB, CL_BGRA, cl_channel_type, CL_UNSIGNED_INT8, CL_UNSIGNED_INT16, CL_UNSIGNED_INT32, CL_SIGNED_INT8, CL_SIGNED_INT16, CL_SIGNED_INT32, CL_FLOAT, CL_SNORM_INT8, CL_SNORM_INT16, CL_UNORM_INT8, CL_UNORM_INT16, cl_image_format, CL_HALF_FLOAT, CL_UNORM_SHORT_565, CL_UNORM_SHORT_555, CL_UNORM_INT_101010, cl_channel_order};
 
@@ -27,6 +28,33 @@ impl ImageFormat {
             image_channel_order: self.order as cl_channel_order,
             image_channel_data_type: self.ty as cl_channel_type,
         }
+    }
+
+    #[inline(always)]
+    pub fn from_ffmpeg (pixel: Pixel) -> Option<Self> {
+        let v = match pixel {
+            // Luma
+            Pixel::GRAY8 => Luma::<u8>::FORMAT,
+
+            // RGB
+            Pixel::RGB48 => Rgb::<u16>::FORMAT,
+            Pixel::RGB24 => Rgb::<u8>::FORMAT,
+
+            // RGB + Alpha
+            Pixel::ARGB => Argb::<u8>::FORMAT,
+            Pixel::RGBA => Rgba::<u8>::FORMAT,
+            Pixel::BGRA => Bgra::<u8>::FORMAT,
+            #[cfg(feature = "cl2")]
+            Pixel::ABGR => super::channel::Abgr::<u8>::FORMAT,
+            _ => return None
+        };
+
+        Some(v)
+    }
+
+    #[inline(always)]
+    pub const fn unzip (self) -> (ChannelOrder, ChannelType) {
+        (self.order, self.ty)
     }
 }
 
@@ -125,7 +153,7 @@ impl ChannelOrder {
             #[cfg(feature = "cl2")]
             sRGB => 3,
             #[cfg(feature = "cl2")]
-            sRGBA | sRGBx | sBGRA | sBGRA | ABGR | RGBx => 4
+            sRGBA | sRGBx | sBGRA | ABGR | RGBx => 4
         }
     }
 }
@@ -201,6 +229,8 @@ impl From<TryFromPrimitiveError<ChannelType>> for FromRawError {
 
 use opencl_sys::{cl_image_desc, cl_mem_object_type};
 use crate::{memobj::{MemObjectType, MemObject}};
+
+use super::channel::{Argb, RawPixel, Rgba, Bgra, Rgb, Luma};
 
 #[derive(Clone)]
 #[non_exhaustive]

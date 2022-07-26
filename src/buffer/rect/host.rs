@@ -63,6 +63,11 @@ impl<T, A: Allocator> Rect2D<T, A> {
     }
 
     #[inline(always)]
+    pub fn len (&self) -> usize {
+        self.width() * self.height()
+    }
+
+    #[inline(always)]
     pub fn rows_iter (&self) -> Rows<'_, T, A> {
         Rows {
             inner: self,
