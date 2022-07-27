@@ -68,6 +68,7 @@ fn svm_mul () -> Result<()> {
 }
 
 mod test {
+    use std::{sync::Arc};
     use blaze::{prelude::*, context::SimpleContext, buffer::events::ReadBuffer};
 
     #[global_context]
@@ -75,23 +76,35 @@ mod test {
 
     #[test]
     fn main () -> Result<()> {
-        let buffer = Buffer::new(&[1, 2, 3, 4, 5], MemAccess::READ_ONLY, false)?;
-        let buffer2 = Buffer::new(&[5, 4, 3, 2, 1], MemAccess::WRITE_ONLY, false)?;
+        //without_global()?;
 
-        let read = buffer.read_all(EMPTY)?;
-        let read2 = buffer2.read_all(&read)?;
+        // TODO fix join_ordered
+        let buffer = Buffer::new(&[1, 2, 3, 4, 5], MemAccess::READ_ONLY, false).map(Arc::new)?;
+        let buffer2 = Buffer::new(&[5, 4, 3, 2, 1], MemAccess::WRITE_ONLY, false).map(Arc::new)?;
+
+        let read = buffer.read_all_owned(EMPTY)?;
+        let read2 = buffer2.read_all_owned(&read)?;
         let join = ReadBuffer::join([read2, read])?.wait()?;
 
-        assert_eq!(join[0].as_slice(), &[1, 2, 3, 4, 5]);
+        println!("{join:?}");
+        assert_eq!(join[0].as_slice(), &[5, 4, 3, 2, 1]);
         assert_eq!(join[1].as_slice(), &[1, 2, 3, 4, 5]);
         Ok(())
     }
 
     fn without_global () -> Result<()> {
         let ctx = SimpleContext::default()?;
-        let buffer = Buffer::new_in(ctx, &[1, 2, 3, 4, 5], MemAccess::READ_ONLY, false)?;
-        let read = buffer.read_all(EMPTY)?.wait()?;
-        assert_eq!(&read, &[1, 2, 3, 4, 5]);
+        
+        let buffer = Buffer::new_in(ctx.clone(), &[1, 2, 3, 4, 5], MemAccess::READ_ONLY, false).map(Arc::new)?;
+        let buffer2 = Buffer::new_in(ctx.clone(), &[5, 4, 3, 2, 1], MemAccess::WRITE_ONLY, false).map(Arc::new)?;
+
+        let read = buffer.read_all_owned(EMPTY)?;
+        let read2 = buffer2.read_all_owned(&read)?;
+        let join = ReadBuffer::join_ordered_in(&ctx, [read2, read])?.wait()?;
+
+        println!("{join:?}");
+        assert_eq!(join[0].as_slice(), &[5, 4, 3, 2, 1]);
+        assert_eq!(join[1].as_slice(), &[1, 2, 3, 4, 5]);
         Ok(())
     }
 }

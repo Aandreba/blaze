@@ -173,7 +173,7 @@ struct JoinOrderedInner<E: Event> where E::Output: Unpin {
 
 struct JoinOrderedList<E: Event> where E::Output: Unpin {
     inner: Pin<Box<[MaybeUninit<E::Output>]>>,
-    has_init: BitBox
+    has_init: BitBox<u8>
 }
 
 impl<E: Event> EventJoinOrdered<E> where E: 'static + Send, E::Output: Send + Sync + Unpin {
@@ -187,7 +187,7 @@ impl<E: Event> EventJoinOrdered<E> where E: 'static + Send, E::Output: Send + Sy
 
         let results = JoinOrderedList {
             inner: Pin::new(Box::new_uninit_slice(events.len())),
-            has_init: bitbox![0; events.len()]
+            has_init: bitbox![u8, _; 0; events.len()]
         };
 
         let data = Arc::pin(JoinOrderedInner {

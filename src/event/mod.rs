@@ -204,8 +204,8 @@ pub trait EventExt: Sized + Event {
         EventJoin::new(iter)
     }
 
-    /// BLocks the current thread until all the events inside `iter` have completed.\
-    /// Unlike [`join`](EventExt::join) and [`join_ordered`](EventExt::join_ordered), this method does not require it's types to implement `'static`, [`Send`], [`Sync`] or [`Unpin`], nor does it require `iter` to be [`ExactSizeIterator`] \
+    /// Blocks the current thread until all the events inside `iter` have completed.\
+    /// Unlike [`join`](EventExt::join) and [`join_ordered`](EventExt::join_ordered), this method does not require it's types to implement `'static`, [`Send`], [`Sync`] or [`Unpin`], nor does it require `iter` to be [`ExactSizeIterator`]. \
     /// The return vector maintains the same order as `iter`.
     #[inline]
     fn join_blocking<I: IntoIterator<Item = Self>> (iter: I) -> Result<Vec<Self::Output>> {
