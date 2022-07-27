@@ -13,7 +13,7 @@ impl<'src, T: Copy + Unpin> ReadBufferRect2D<'src, T> {
     #[inline]
     pub unsafe fn new (
         src: &'src RawBuffer, max_width: usize, max_height: usize, slice: impl IntoSlice2D,
-        buffer_row_pitch: Option<usize>, buffer_slice_pitch: Option<usize>, queue: &CommandQueue, wait: impl Into<WaitList>
+        buffer_row_pitch: Option<usize>, buffer_slice_pitch: Option<usize>, queue: &RawCommandQueue, wait: impl Into<WaitList>
     ) -> Result<Self> {
 
         if let Some(slice) = slice.into_slice(max_width, max_height) {
@@ -52,7 +52,7 @@ impl<T: Copy + Unpin, Src: Deref<Target = BufferRect2D<T, C>>, Dst: DerefMut<Tar
     #[inline]
     pub unsafe fn new  (
         src: Src, offset_src: [usize; 2], mut dst: Dst, offset_dst: [usize; 2], region: [usize; 2],
-        buffer_row_pitch: Option<usize>, buffer_slice_pitch: Option<usize>, queue: &CommandQueue, wait: impl Into<WaitList>
+        buffer_row_pitch: Option<usize>, buffer_slice_pitch: Option<usize>, queue: &RawCommandQueue, wait: impl Into<WaitList>
     ) -> Result<Self> {
 
         let host_row_pitch = dst.width() * core::mem::size_of::<T>();

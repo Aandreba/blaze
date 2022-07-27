@@ -1,5 +1,5 @@
 [package]
-name = "rscl"
+name = "blaze"
 version = "0.1.0"
 edition = "2021"
 
@@ -25,7 +25,7 @@ futures = ["cl1_1", "dep:futures"]
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
-rscl-proc = { path = "rscl-proc", version = "0.1.0" }
+blaze-proc = { path = "rscl-proc", version = "0.1.0" }
 opencl-sys = { version = "0.2.1", default-features = false }
 futures = { version = "0.3.21", optional = true }
 ffmpeg-sys-next = { version = "5.0.1", optional = true }

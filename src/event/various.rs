@@ -1,4 +1,4 @@
-use rscl_proc::docfg;
+use blaze_proc::docfg;
 use crate::prelude::*;
 use super::{Event};
 

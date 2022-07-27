@@ -1,7 +1,7 @@
 use core::{mem::MaybeUninit, num::{NonZeroUsize, NonZeroU32, NonZeroU64, IntErrorKind}, fmt::{Debug, Display}, str::FromStr};
 use std::{ptr::{NonNull}, ffi::c_void};
 use opencl_sys::*;
-use rscl_proc::docfg;
+use blaze_proc::docfg;
 use crate::buffer::flags::MemAccess;
 use super::*;
 
@@ -845,7 +845,7 @@ impl Device {
     /// Replaces the default command queue on the device.
     #[docfg(feature = "cl2_1")]
     #[inline(always)]
-    pub fn set_default_command_queue (&self, ctx: crate::context::RawContext, queue: CommandQueue) -> Result<()> {
+    pub fn set_default_command_queue (&self, ctx: crate::context::RawContext, queue: RawCommandQueue) -> Result<()> {
         unsafe {
             tri!(opencl_sys::clSetDefaultDeviceCommandQueue(ctx.id(), self.id(), queue.id()));
         }

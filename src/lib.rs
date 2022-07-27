@@ -59,9 +59,9 @@ pub mod prelude {
 #[doc(hidden)]
 pub extern crate once_cell;
 
-extern crate rscl_proc;
+extern crate blaze_proc;
 pub mod macros {
-    pub use rscl_proc::{global_context, rscl};
+    pub use blaze_proc::{global_context, blaze};
 }
 
 /// Core OpenCL types

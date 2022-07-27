@@ -2,7 +2,7 @@ use crate::core::*;
 use std::ffi::c_void;
 use std::{mem::MaybeUninit, ptr::{addr_of, NonNull}};
 use opencl_sys::{cl_event, clRetainEvent, clReleaseEvent, clGetEventInfo, cl_event_info, clWaitForEvents};
-use rscl_proc::docfg;
+use blaze_proc::docfg;
 use super::{Event};
 
 /// A raw OpenCL event

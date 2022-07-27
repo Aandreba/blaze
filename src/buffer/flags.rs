@@ -1,5 +1,5 @@
 use opencl_sys::*;
-use rscl_proc::docfg;
+use blaze_proc::docfg;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 #[non_exhaustive]

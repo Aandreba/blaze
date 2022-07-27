@@ -1,7 +1,9 @@
 use std::{ptr::{NonNull, addr_of}, num::NonZeroUsize, mem::{MaybeUninit, ManuallyDrop}, alloc::{Allocator, Global, Layout}, ops::{Index, IndexMut}, fmt::Debug};
-use crate::{svm::{Svm, SvmPointer}, prelude::Context};
+use blaze_proc::docfg;
+use crate::{prelude::Context};
 
-pub type SvmRect2D<T, C = crate::prelude::Global> = Rect2D<T, Svm<C>>;
+#[docfg(feature = "svm")]
+pub type SvmRect2D<T, C = crate::prelude::Global> = Rect2D<T, crate::svm::Svm<C>>;
 
 /// A 2D rectangle stored in host memory in [row-major order](https://en.wikipedia.org/wiki/Row-_and_column-major_order)
 pub struct Rect2D<T, A: Allocator = Global> {
@@ -359,12 +361,13 @@ impl<T, A: Allocator> Rect2D<MaybeUninit<T>, A> {
     }
 }
 
-unsafe impl<T, C: Context> SvmPointer for SvmRect2D<T, C> {
+#[docfg(feature = "svm")]
+unsafe impl<T, C: Context> crate::svm::SvmPointer for SvmRect2D<T, C> {
     type Type = T;
     type Context = C;
 
     #[inline(always)]
-    fn allocator (&self) -> &Svm<C> {
+    fn allocator (&self) -> &crate::svm::Svm<C> {
         &self.alloc
     }
 

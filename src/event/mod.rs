@@ -1,6 +1,6 @@
 use std::{mem::ManuallyDrop, time::{SystemTime, Duration}, ops::Deref, alloc::Allocator, panic::AssertUnwindSafe};
 use opencl_sys::{CL_COMMAND_NDRANGE_KERNEL, CL_COMMAND_TASK, CL_COMMAND_NATIVE_KERNEL, CL_COMMAND_READ_BUFFER, CL_COMMAND_WRITE_BUFFER, CL_COMMAND_COPY_BUFFER, CL_COMMAND_READ_IMAGE, CL_COMMAND_WRITE_IMAGE, CL_COMMAND_COPY_IMAGE, CL_COMMAND_COPY_IMAGE_TO_BUFFER, CL_COMMAND_COPY_BUFFER_TO_IMAGE, CL_COMMAND_MAP_BUFFER, CL_COMMAND_MAP_IMAGE, CL_COMMAND_UNMAP_MEM_OBJECT, CL_COMMAND_MARKER, CL_COMMAND_ACQUIRE_GL_OBJECTS, CL_COMMAND_RELEASE_GL_OBJECTS, CL_EVENT_COMMAND_TYPE, CL_EVENT_COMMAND_EXECUTION_STATUS, CL_EVENT_COMMAND_QUEUE, cl_event};
-use rscl_proc::docfg;
+use blaze_proc::docfg;
 use crate::{core::*, prelude::RawContext};
 
 flat_mod!(status, raw, various, info);
@@ -100,8 +100,8 @@ pub trait Event {
 
     /// Returns the event's underlying command queue
     #[inline(always)]
-    fn command_queue (&self) -> Result<Option<CommandQueue>> {
-        self.as_raw().get_info(CL_EVENT_COMMAND_QUEUE).map(CommandQueue::from_id)
+    fn command_queue (&self) -> Result<Option<RawCommandQueue>> {
+        self.as_raw().get_info(CL_EVENT_COMMAND_QUEUE).map(RawCommandQueue::from_id)
     }
 
     /// Return the context associated with event.

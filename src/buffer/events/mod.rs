@@ -1,4 +1,4 @@
-use rscl_proc::docfg;
+use blaze_proc::docfg;
 flat_mod!(read, write, copy);
 
 #[docfg(feature = "cl1_2")]

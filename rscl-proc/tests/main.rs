@@ -4,9 +4,9 @@ use core::f32;
 use std::{f32::consts::{PI, E, TAU}, mem::MaybeUninit};
 
 use rscl::{context::SimpleContext, prelude::{Result, Event}, event::WaitList, buffer::{Buffer, flags::MemAccess}, svm::{Svm, SvmBox}};
-use rscl_proc::{global_context, rscl};
+use blaze_proc::{global_context, rscl};
 
-#[rscl(Arith)]
+#[blaze(Arith)]
 #[link(include_str!("arith.cl"))]
 pub extern "C" {
     #[link_name = "sum"]

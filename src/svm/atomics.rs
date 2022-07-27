@@ -3,7 +3,7 @@ use crate::context::{Context, Global};
 use super::{SvmBox, Svm, SvmUtilsFlags};
 use crate::buffer::flags::MemAccess;
 use crate::svm::SvmFlags;
-use rscl_proc::docfg;
+use blaze_proc::docfg;
 
 macro_rules! impl_atomic {
     ($($len:literal in $ty:ty => $atomic:ty as $svm:ident),+) => {

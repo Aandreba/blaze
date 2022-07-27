@@ -1,7 +1,8 @@
 use core::{mem::MaybeUninit, num::NonZeroUsize};
-use std::{borrow::Cow, ptr::NonNull, ffi::c_void};
+use std::{borrow::Cow, ptr::{NonNull, addr_of_mut}, ffi::{c_void, CString}};
 use opencl_sys::*;
-use crate::{context::{Context, Global}, core::kernel::Kernel};
+use blaze_proc::docfg;
+use crate::{context::{Context, Global}, core::kernel::Kernel, prelude::RawContext};
 use super::*;
 
 /// OpenCL program
@@ -42,15 +43,39 @@ impl Program {
         self.0.as_ptr()
     }
 
-    #[inline]
-    fn kernels (&self) -> Result<Box<[cl_kernel]>> {
-        let mut len = 0;
-        unsafe {
-            tri!(clCreateKernelsInProgram(self.id(), 0, core::ptr::null_mut(), &mut len));
-            let mut kernels = Box::new_uninit_slice(len as usize);
-            tri!(clCreateKernelsInProgram(self.id(), len, kernels.as_mut_ptr().cast(), core::ptr::null_mut()));
-            Ok(kernels.assume_init())
-        }
+    /// Links a set of compiled program objects and libraries for all the devices or a specific device(s) in the OpenCL context and creates an executable.
+    #[docfg(feature = "cl2")]
+    pub fn link<'a> (ctx: &RawContext, input: &[Program], devices: Option<&[Device]>, options: impl Into<Option<&'a str>>) -> Result<Self> {
+        let (num_devices, device_list) = match devices {
+            Some(x) => (u32::try_from(x.len()).unwrap(), x.as_ptr().cast()),
+            None => (0, core::ptr::null())
+        };
+
+        let options = match options.into() {
+            Some(x) => {
+                let v = CString::new(x).map_err(|e| Error::new(ErrorType::InvalidBuildOptions, e))?;
+                Some(v)
+            },
+            None => None
+        };
+
+        let options = match options {
+            Some(x) => x.as_ptr(),
+            None => core::ptr::null()
+        };
+        
+        let mut err = 0;
+        let id = unsafe {
+            clLinkProgram (
+                ctx.id(), 
+                num_devices, device_list, options, 
+                u32::try_from(input.len()).unwrap(), input.as_ptr().cast(),
+                None, core::ptr::null_mut(), addr_of_mut!(err)
+            )
+        };
+
+        if err != 0 { return Err(Error::from(err)) }
+        Ok(NonNull::new(id).map(Self).unwrap())
     }
 
     /// Return the program reference count.
@@ -149,7 +174,7 @@ impl Program {
 
         let build_result = ErrorType::from(build_result);
 
-        for device in ctx.queues().into_iter().map(CommandQueue::device) {
+        for device in ctx.queues().into_iter().map(RawCommandQueue::device) {
             let device = device?;
             
             let mut len = 0;
@@ -192,6 +217,17 @@ impl Program {
         unsafe {
             tri!(clGetProgramInfo(self.id(), ty, core::mem::size_of::<T>(), value.as_mut_ptr().cast(), core::ptr::null_mut()));
             Ok(value.assume_init())
+        }
+    }
+
+    #[inline]
+    fn kernels (&self) -> Result<Box<[cl_kernel]>> {
+        let mut len = 0;
+        unsafe {
+            tri!(clCreateKernelsInProgram(self.id(), 0, core::ptr::null_mut(), &mut len));
+            let mut kernels = Box::new_uninit_slice(len as usize);
+            tri!(clCreateKernelsInProgram(self.id(), len, kernels.as_mut_ptr().cast(), core::ptr::null_mut()));
+            Ok(kernels.assume_init())
         }
     }
 }

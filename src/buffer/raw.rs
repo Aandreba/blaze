@@ -1,6 +1,6 @@
 use std::{ptr::{NonNull, addr_of_mut}, ops::{RangeBounds, Bound, Deref, DerefMut}};
 use opencl_sys::*;
-use rscl_proc::docfg;
+use blaze_proc::docfg;
 use crate::{core::*, context::RawContext, event::{WaitList, RawEvent}, buffer::BufferRange, memobj::{MemObject}, prelude::Global};
 use super::{flags::{MemFlags}, IntoRange};
 
@@ -65,7 +65,7 @@ impl RawBuffer {
 
 impl RawBuffer {
     /// Reads the contents of this 
-    pub unsafe fn read_to_ptr<T: Copy> (&self, range: impl IntoRange, dst: *mut T, queue: &CommandQueue, wait: impl Into<WaitList>) -> Result<RawEvent> {
+    pub unsafe fn read_to_ptr<T: Copy> (&self, range: impl IntoRange, dst: *mut T, queue: &RawCommandQueue, wait: impl Into<WaitList>) -> Result<RawEvent> {
         let BufferRange { offset, cb } = range.into_range::<T>(self)?; 
         let wait : WaitList = wait.into();
         let (num_events_in_wait_list, event_wait_list) = wait.raw_parts();
@@ -79,7 +79,7 @@ impl RawBuffer {
     pub unsafe fn read_rect_to_ptr<T: Copy> (
         &self, buffer_origin: [usize; 3], host_origin: [usize;3], region: [usize;3], 
         buffer_row_pitch: Option<usize>, buffer_slice_pitch: Option<usize>, host_row_pitch: Option<usize>,
-        host_slice_pitch: Option<usize>, dst: *mut T, queue: &CommandQueue, wait: impl Into<WaitList>
+        host_slice_pitch: Option<usize>, dst: *mut T, queue: &RawCommandQueue, wait: impl Into<WaitList>
     ) -> Result<RawEvent> {
         let wait : WaitList = wait.into();
         let (num_events_in_wait_list, event_wait_list) = wait.raw_parts();
@@ -89,7 +89,7 @@ impl RawBuffer {
         Ok(RawEvent::from_id(evt).unwrap())
     }
     
-    pub unsafe fn write_from_ptr<T: Copy> (&mut self, range: impl IntoRange, src: *const T, queue: &CommandQueue, wait: impl Into<WaitList>) -> Result<RawEvent> {
+    pub unsafe fn write_from_ptr<T: Copy> (&mut self, range: impl IntoRange, src: *const T, queue: &RawCommandQueue, wait: impl Into<WaitList>) -> Result<RawEvent> {
         let BufferRange { offset, cb } = range.into_range::<T>(self)?; 
         let wait : WaitList = wait.into();
         let (num_events_in_wait_list, event_wait_list) = wait.raw_parts();
@@ -104,7 +104,7 @@ impl RawBuffer {
     pub unsafe fn write_rect_from_ptr<T: Copy> (
         &mut self, buffer_origin: [usize; 3], host_origin: [usize;3], region: [usize;3], 
         buffer_row_pitch: Option<usize>, buffer_slice_pitch: Option<usize>, host_row_pitch: Option<usize>,
-        host_slice_pitch: Option<usize>, src: *const T, queue: &CommandQueue, wait: impl Into<WaitList>
+        host_slice_pitch: Option<usize>, src: *const T, queue: &RawCommandQueue, wait: impl Into<WaitList>
     ) -> Result<RawEvent> {
         let wait : WaitList = wait.into();
         let (num_events_in_wait_list, event_wait_list) = wait.raw_parts();
@@ -114,7 +114,7 @@ impl RawBuffer {
         Ok(RawEvent::from_id(evt).unwrap())
     }
 
-    pub unsafe fn copy_from (&mut self, dst_offset: usize, src: &RawBuffer, src_offset: usize, size: usize, queue: &CommandQueue, wait: impl Into<WaitList>) -> Result<RawEvent> {
+    pub unsafe fn copy_from (&mut self, dst_offset: usize, src: &RawBuffer, src_offset: usize, size: usize, queue: &RawCommandQueue, wait: impl Into<WaitList>) -> Result<RawEvent> {
         let wait : WaitList = wait.into();
         let (num_events_in_wait_list, event_wait_list) = wait.raw_parts();
     
@@ -125,7 +125,7 @@ impl RawBuffer {
     }
 
     #[docfg(feature = "cl1_2")]
-    pub unsafe fn fill_raw<T: Copy> (&mut self, v: T, range: impl IntoRange, queue: &CommandQueue, wait: impl Into<WaitList>) -> Result<RawEvent> {
+    pub unsafe fn fill_raw<T: Copy> (&mut self, v: T, range: impl IntoRange, queue: &RawCommandQueue, wait: impl Into<WaitList>) -> Result<RawEvent> {
         let BufferRange { offset, cb } = range.into_range::<T>(self)?;
         let wait : WaitList = wait.into();
         let (num_events_in_wait_list, event_wait_list) = wait.raw_parts();
@@ -137,22 +137,22 @@ impl RawBuffer {
     }
 
     #[inline(always)]
-    pub unsafe fn map_read<T, R: IntoRange, W: Into<WaitList>> (&self, range: R, queue: &CommandQueue, wait: W) -> Result<(*const T, RawEvent)> {
+    pub unsafe fn map_read<T, R: IntoRange, W: Into<WaitList>> (&self, range: R, queue: &RawCommandQueue, wait: W) -> Result<(*const T, RawEvent)> {
         let (ptr, evt) = self.__map_inner::<T, R, W, CL_MAP_READ>(range, queue, wait)?;
         Ok((ptr as *const _, evt))
     }
 
     #[inline(always)]
-    pub unsafe fn map_write<T, R: IntoRange, W: Into<WaitList>> (&self, range: R, queue: &CommandQueue, wait: W) -> Result<(*mut T, RawEvent)> {
+    pub unsafe fn map_write<T, R: IntoRange, W: Into<WaitList>> (&self, range: R, queue: &RawCommandQueue, wait: W) -> Result<(*mut T, RawEvent)> {
         self.__map_inner::<T, R, W, CL_MAP_WRITE>(range, queue, wait)
     }
 
     #[inline(always)]
-    pub unsafe fn map_read_write<T, R: IntoRange, W: Into<WaitList>> (&self, range: R, queue: &CommandQueue, wait: W) -> Result<(*mut T, RawEvent)> {
+    pub unsafe fn map_read_write<T, R: IntoRange, W: Into<WaitList>> (&self, range: R, queue: &RawCommandQueue, wait: W) -> Result<(*mut T, RawEvent)> {
         self.__map_inner::<T, R, W, {CL_MAP_READ | CL_MAP_WRITE}>(range, queue, wait)
     }
 
-    unsafe fn __map_inner<T, R: IntoRange, W: Into<WaitList>, const FLAGS : cl_mem_flags> (&self, range: R, queue: &CommandQueue, wait: W) -> Result<(*mut T, RawEvent)> {
+    unsafe fn __map_inner<T, R: IntoRange, W: Into<WaitList>, const FLAGS : cl_mem_flags> (&self, range: R, queue: &RawCommandQueue, wait: W) -> Result<(*mut T, RawEvent)> {
         let BufferRange { offset, cb } = range.into_range::<T>(self)?;
         let wait : WaitList = wait.into();
         let (num_events_in_wait_list, event_wait_list) = wait.raw_parts();

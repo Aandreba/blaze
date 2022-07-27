@@ -1,9 +1,9 @@
 #![feature(new_uninit)]
 
 use std::{mem::MaybeUninit, f32::consts::{PI, E}};
-use rscl::{prelude::{Device}, buffer::rect::{BufferRect2D, SvmRect2D}, svm::Svm};
-use rscl::{context::SimpleContext, prelude::Result, buffer::{flags::MemAccess}, event::WaitList};
-use rscl_proc::{global_context, rscl};
+use blaze::{prelude::{Device}, buffer::rect::{BufferRect2D, SvmRect2D}, svm::Svm};
+use blaze::{context::SimpleContext, prelude::Result, buffer::{flags::MemAccess}, event::WaitList};
+use blaze::prelude::global_context;
 
 #[global_context]
 static CONTEXT : SimpleContext = SimpleContext::default();
@@ -25,9 +25,9 @@ kernel void mmul (const uint k, __constant float* lhs, __constant float* rhs, __
 }
 ";
 
-#[rscl(MatrixOps)]
+#[blaze(MatrixOps)]
 #[link(CODE)]
-extern {
+extern "C" {
     fn mmul (k: u32, lhs: *const f32, rhs: *const f32, out: *mut MaybeUninit<f32>);
 }
 

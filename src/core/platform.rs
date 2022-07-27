@@ -1,7 +1,7 @@
 use core::{mem::MaybeUninit};
 use std::{ptr::NonNull, ffi::c_void};
 use opencl_sys::{cl_platform_id, clGetPlatformInfo, cl_platform_info, CL_PLATFORM_PROFILE, CL_PLATFORM_VERSION, CL_PLATFORM_NAME, CL_PLATFORM_VENDOR, CL_PLATFORM_EXTENSIONS, cl_uchar, clGetPlatformIDs};
-use rscl_proc::docfg;
+use blaze_proc::docfg;
 use super::*;
 
 lazy_static! {

@@ -1,5 +1,5 @@
 use std::{backtrace::Backtrace, sync::Arc, fmt::{Display, Debug}};
-use rscl_proc::error;
+use blaze_proc::error;
 pub type Result<T> = ::core::result::Result<T, Error>;
 
 #[derive(Clone)]

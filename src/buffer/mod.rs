@@ -1,7 +1,7 @@
 flat_mod!(raw, complex, range);
 use opencl_sys::{CL_MAP_READ, CL_MAP_WRITE};
 
-use rscl_proc::docfg;
+use blaze_proc::docfg;
 use crate::{prelude::{Context, Kernel, Result, RawEvent}, event::WaitList, svm::Svm};
 
 #[cfg(feature = "svm")]

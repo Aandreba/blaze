@@ -1,5 +1,5 @@
 use opencl_sys::*;
-use rscl_proc::docfg;
+use blaze_proc::docfg;
 use std::{ptr::{NonNull, addr_of_mut}, ffi::c_void, ops::{Deref, DerefMut}, mem::MaybeUninit};
 use crate::{core::*, context::RawContext, buffer::{flags::MemFlags}, event::WaitList, prelude::RawEvent, memobj::MemObject};
 use super::{ImageFormat, ImageDesc};

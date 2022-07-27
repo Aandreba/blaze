@@ -9,11 +9,13 @@ macro_rules! flat_mod {
     }
 }
 
-use cl::{Rscl, Link};
+use cl::{Link};
 use error::Error;
 use proc_macro2::{TokenStream, Ident};
 use quote::{ToTokens, quote, format_ident};
 use syn::{parse_macro_input, ItemStatic, Meta, DeriveInput};
+
+use crate::cl::Blaze;
 
 mod context;
 mod error;
@@ -46,9 +48,9 @@ pub fn error (items: proc_macro::TokenStream) -> proc_macro::TokenStream {
 }
 
 #[proc_macro_attribute]
-pub fn rscl (attrs: proc_macro::TokenStream, items: proc_macro::TokenStream) -> proc_macro::TokenStream {
+pub fn blaze (attrs: proc_macro::TokenStream, items: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let ident = parse_macro_input!(attrs as Ident);
-    let items = parse_macro_input!(items as Rscl);
+    let items = parse_macro_input!(items as Blaze);
 
     let mut inner = None;
     for attr in &items.attrs {
@@ -61,7 +63,7 @@ pub fn rscl (attrs: proc_macro::TokenStream, items: proc_macro::TokenStream) -> 
     }
 
     if let Some(inner) = inner {
-        return cl::rscl_c(ident, items, inner).into()
+        return cl::blaze_c(ident, items, inner).into()
     }
 
     panic!("No source code specified");

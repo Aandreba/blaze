@@ -1,7 +1,7 @@
 use std::ops::*;
 use bytemuck::Zeroable;
 use num_traits::{NumOps, NumAssignOps, AsPrimitive, Zero, One};
-use rscl_proc::{docfg, NumOps, NumOpsAssign};
+use blaze_proc::{docfg, NumOps, NumOpsAssign};
 use crate::{prelude::{RawContext, Result}, buffer::flags::MemAccess, memobj::MemObjectType};
 use super::{ChannelType, ChannelOrder, ImageFormat, encdec::pixel::Pixel};
 use std::{fmt::Debug, hash::{Hash, Hasher}, mem::MaybeUninit};
@@ -401,7 +401,7 @@ pub unsafe trait RawChannel: Copy + Zero + One + Zeroable + NumOps + NumAssignOp
 macro_rules! impl_channel {
     ($($(#[docfg(feature = $feat:literal)])? $ty:ty as $v:ident $(($two:expr))? $(: $min:expr => $max:expr)?),+) => {
         $(
-            $(#[rscl_proc::docfg(feature = $feat)])?
+            $(#[blaze_proc::docfg(feature = $feat)])?
             unsafe impl RawChannel for $ty {
                 const TYPE : ChannelType = ChannelType::$v;
                 const MIN : f32 = impl_channel!(@min $($min)?);

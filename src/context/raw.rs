@@ -1,7 +1,7 @@
 use std::{ops::Deref};
 use std::{ptr::{addr_of_mut, NonNull}, ffi::c_void, mem::MaybeUninit};
 use opencl_sys::*;
-use rscl_proc::docfg;
+use blaze_proc::docfg;
 use crate::{core::{*, device::DeviceType}, prelude::device::Version};
 use super::ContextProperties;
 
@@ -16,7 +16,7 @@ impl RawContext {
 
     #[docfg(feature = "cl3")]
     #[inline(always)]
-    pub fn with_loger<F: 'static + Fn(&str) + Send> (props: ContextProperties, devices: &[Device], loger: F) -> Result<Self> {
+    pub fn with_logger<F: 'static + Fn(&str) + Send> (props: ContextProperties, devices: &[Device], loger: F) -> Result<Self> {
         Self::inner_new(props, devices, Some(loger))
     }
 

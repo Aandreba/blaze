@@ -1,5 +1,5 @@
 use std::{marker::PhantomData, ptr::{NonNull}, ops::{Deref, DerefMut}, fmt::Debug, mem::MaybeUninit, sync::Arc};
-use rscl_proc::docfg;
+use blaze_proc::docfg;
 
 use crate::{context::{Context, Global}, event::{WaitList}, prelude::{Event}};
 use crate::core::*;

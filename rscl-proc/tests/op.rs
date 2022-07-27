@@ -1,5 +1,5 @@
 use std::mem::MaybeUninit;
-use rscl_proc::NumOps;
+use blaze_proc::NumOps;
 
 #[derive(Clone, NumOps)]
 #[repr(transparent)]

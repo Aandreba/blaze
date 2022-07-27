@@ -1,5 +1,5 @@
 use std::ops::Deref;
-use rscl_proc::docfg;
+use blaze_proc::docfg;
 
 use crate::{core::*};
 use super::{Context, RawContext, ContextProperties};
@@ -8,20 +8,20 @@ use super::{Context, RawContext, ContextProperties};
 #[derive(Clone)]
 pub struct SimpleContext {
     ctx: RawContext,
-    queue: CommandQueue
+    queue: RawCommandQueue
 }
 
 impl SimpleContext {
     pub fn new (device: &Device, ctx_props: ContextProperties, props: impl Into<QueueProperties>) -> Result<Self> {
         let ctx = RawContext::new(ctx_props, core::slice::from_ref(device))?;
-        let queue = CommandQueue::new(&ctx, props.into(), device)?;
+        let queue = RawCommandQueue::new(&ctx, props.into(), device)?;
         Ok(Self { ctx, queue })
     }
 
     #[docfg(feature = "cl3")]
-    pub fn with_loger (device: &Device, ctx_props: ContextProperties, props: impl Into<QueueProperties>, loger: impl 'static + Fn(&str) + Send) -> Result<Self> {
-        let ctx = RawContext::with_loger(ctx_props, core::slice::from_ref(device), loger)?;
-        let queue = CommandQueue::new(&ctx, props.into(), device)?;
+    pub fn with_logger (device: &Device, ctx_props: ContextProperties, props: impl Into<QueueProperties>, loger: impl 'static + Fn(&str) + Send) -> Result<Self> {
+        let ctx = RawContext::with_logger(ctx_props, core::slice::from_ref(device), loger)?;
+        let queue = RawCommandQueue::new(&ctx, props.into(), device)?;
         Ok(Self { ctx, queue })
     }
 
@@ -31,7 +31,7 @@ impl SimpleContext {
 
         cfg_if::cfg_if! {
             if #[cfg(all(debug_assertions, feature = "cl3"))] {
-                Self::with_loger(device, ContextProperties::default(), QueueProperties::default(), |x| println!("{x}"))
+                Self::with_logger(device, ContextProperties::default(), QueueProperties::default(), |x| println!("{x}"))
             } else {
                 Self::new(device, ContextProperties::default(), QueueProperties::default())
             }
@@ -41,12 +41,12 @@ impl SimpleContext {
 
 impl Context for SimpleContext {
     #[inline(always)]
-    fn queues (&self) -> &[CommandQueue] {
+    fn queues (&self) -> &[RawCommandQueue] {
         core::slice::from_ref(&self.queue)
     }
 
     #[inline(always)]
-    fn next_queue (&self) -> &CommandQueue {
+    fn next_queue (&self) -> &RawCommandQueue {
         &self.queue
     }
 }
