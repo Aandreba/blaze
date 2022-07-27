@@ -3,7 +3,7 @@
 use std::{mem::MaybeUninit, f32::consts::{PI, E}};
 use blaze::{prelude::{Device}, buffer::rect::{BufferRect2D, SvmRect2D}, svm::Svm};
 use blaze::{context::SimpleContext, prelude::Result, buffer::{flags::MemAccess}, event::WaitList};
-use blaze::prelude::global_context;
+use blaze::prelude::{global_context, blaze};
 
 #[global_context]
 static CONTEXT : SimpleContext = SimpleContext::default();

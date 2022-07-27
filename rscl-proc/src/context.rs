@@ -8,24 +8,24 @@ pub fn global_context (input: ItemStatic) -> TokenStream {
 
     quote! {
         #(#attrs)*
-        #vis #static_token #mutability #ident #colon_token ::rscl::once_cell::sync::Lazy<#ty> #eq_token ::rscl::once_cell::sync::Lazy::new(|| #expr.unwrap()) #semi_token
+        #vis #static_token #mutability #ident #colon_token ::blaze::once_cell::sync::Lazy<#ty> #eq_token ::blaze::once_cell::sync::Lazy::new(|| #expr.unwrap()) #semi_token
 
         #[doc(hidden)]
         #[no_mangle]
-        extern "Rust" fn __rscl__global__as_raw () -> &'static ::rscl::context::RawContext {
-            ::rscl::context::Context::as_raw(::rscl::once_cell::sync::Lazy::force(&#ident))
+        extern "Rust" fn __blaze__global__as_raw () -> &'static ::blaze::context::RawContext {
+            ::blaze::context::Context::as_raw(::blaze::once_cell::sync::Lazy::force(&#ident))
         }
 
         #[doc(hidden)]
         #[no_mangle]
-        extern "Rust" fn __rscl__global__queues () -> &'static [::rscl::core::RawCommandQueue] {
-            ::rscl::context::Context::queues(::rscl::once_cell::sync::Lazy::force(&#ident))
+        extern "Rust" fn __blaze__global__queues () -> &'static [::blaze::core::RawCommandQueue] {
+            ::blaze::context::Context::queues(::blaze::once_cell::sync::Lazy::force(&#ident))
         }
 
         #[doc(hidden)]
         #[no_mangle]
-        extern "Rust" fn __rscl__global__next_queue () -> &'static ::rscl::core::RawCommandQueue {
-            ::rscl::context::Context::next_queue(::rscl::once_cell::sync::Lazy::force(&#ident))
+        extern "Rust" fn __blaze__global__next_queue () -> &'static ::blaze::core::RawCommandQueue {
+            ::blaze::context::Context::next_queue(::blaze::once_cell::sync::Lazy::force(&#ident))
         }
     }
 }
