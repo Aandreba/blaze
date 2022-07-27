@@ -6,7 +6,7 @@ use crate::{core::*, prelude::RawContext};
 flat_mod!(status, raw, various, info);
 
 #[cfg(feature = "cl1_1")]
-flat_mod!(flag, join, abort);
+flat_mod!(flag, join);
 
 #[cfg(feature = "futures")]
 flat_mod!(wait);
@@ -166,12 +166,6 @@ impl<T: Event> Event for AssertUnwindSafe<T> {
 }
 
 pub trait EventExt: Sized + Event {
-    #[docfg(feature = "cl1_1")]
-    #[inline(always)]
-    fn abortable (self) -> Result<(Abortable<Self>, AbortHandle)> {
-        Abortable::new(self)
-    }
-
     /// Executes the specified function after the parent event has completed. 
     #[inline]
     fn map<T, F: FnOnce(Self::Output) -> T> (self, f: F) -> Result<Map<Self, F>> {
@@ -208,6 +202,26 @@ pub trait EventExt: Sized + Event {
     #[inline(always)]
     fn join<I: IntoIterator<Item = Self>> (iter: I) -> Result<EventJoin<Self>> where Self: 'static + Send, Self::Output: Unpin + Send + Sync, I::IntoIter: ExactSizeIterator {
         EventJoin::new(iter)
+    }
+
+    /// BLocks the current thread until all the events inside `iter` have completed.\
+    /// Unlike [`join`](EventExt::join) and [`join_ordered`](EventExt::join_ordered), this method does not require it's types to implement `'static`, [`Send`], [`Sync`] or [`Unpin`], nor does it require `iter` to be [`ExactSizeIterator`] \
+    /// The return vector maintains the same order as `iter`.
+    #[inline]
+    fn join_blocking<I: IntoIterator<Item = Self>> (iter: I) -> Result<Vec<Self::Output>> {
+        let (raw, iter) : (Vec<_>, Vec<_>) = iter.into_iter()
+            .map(|x| (x.to_raw(), x))
+            .unzip();
+
+        let err = RawEvent::wait_all(&raw).err();
+        let mut result = Vec::with_capacity(iter.len());
+        
+        for evt in iter {
+            let v = evt.consume(err.clone())?;
+            result.push(v);
+        }
+        
+        Ok(result)
     }
 
     /// Returns an event that completes when all the events inside `iter` have completed, ensuring that the order of the outputs is the same as the inputs 

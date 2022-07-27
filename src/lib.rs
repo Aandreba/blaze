@@ -50,10 +50,15 @@ macro_rules! tri_panic {
 }
 
 pub mod prelude {
+    pub const EMPTY : WaitList = WaitList::EMPTY;
+
     pub use crate::core::*;
     pub use crate::macros::*;
+    pub use crate::buffer::{RawBuffer, Buffer, flags::*};
     pub use crate::context::{Context, Global, RawContext};
-    pub use crate::event::{RawEvent, Event, EventExt};
+    pub use crate::event::{RawEvent, Event, EventExt, WaitList};
+    #[blaze_proc::docfg(feature = "cl1_1")]
+    pub use crate::event::FlagEvent;
 }
 
 #[doc(hidden)]

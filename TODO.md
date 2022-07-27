@@ -1,5 +1,6 @@
 - [x] Semi-rework of buffers
 - [ ] Check `core` items have `new` and `new_in` methods
 - [ ] `strict` feature
+- [ ] buffered queues
 - [ ] rework `image` feature
     - [ ] Swap lifetimes by generic `Deref` and `DerefMut` trait

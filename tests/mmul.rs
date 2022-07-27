@@ -2,11 +2,11 @@
 
 use std::{mem::MaybeUninit, f32::consts::{PI, E}};
 use blaze::{prelude::{Device}, buffer::rect::{BufferRect2D, SvmRect2D}, svm::Svm};
-use blaze::{context::SimpleContext, prelude::Result, buffer::{flags::MemAccess}, event::WaitList};
+use blaze::{prelude::Result, buffer::{flags::MemAccess}, event::WaitList};
 use blaze::prelude::{global_context, blaze};
 
-#[global_context]
-static CONTEXT : SimpleContext = SimpleContext::default();
+//#[global_context]
+//static CONTEXT : SimpleContext = SimpleContext::default();
 
 static CODE : &str = "
 #define IDX (x, y, width) y * width + x  
@@ -65,4 +65,33 @@ fn svm_mul () -> Result<()> {
     println!("{:?}", result);
     
     Ok(())
+}
+
+mod test {
+    use blaze::{prelude::*, context::SimpleContext, buffer::events::ReadBuffer};
+
+    #[global_context]
+    static CONTEXT : SimpleContext = SimpleContext::default();
+
+    #[test]
+    fn main () -> Result<()> {
+        let buffer = Buffer::new(&[1, 2, 3, 4, 5], MemAccess::READ_ONLY, false)?;
+        let buffer2 = Buffer::new(&[5, 4, 3, 2, 1], MemAccess::WRITE_ONLY, false)?;
+
+        let read = buffer.read_all(EMPTY)?;
+        let read2 = buffer2.read_all(&read)?;
+        let join = ReadBuffer::join([read2, read])?.wait()?;
+
+        assert_eq!(join[0].as_slice(), &[1, 2, 3, 4, 5]);
+        assert_eq!(join[1].as_slice(), &[1, 2, 3, 4, 5]);
+        Ok(())
+    }
+
+    fn without_global () -> Result<()> {
+        let ctx = SimpleContext::default()?;
+        let buffer = Buffer::new_in(ctx, &[1, 2, 3, 4, 5], MemAccess::READ_ONLY, false)?;
+        let read = buffer.read_all(EMPTY)?.wait()?;
+        assert_eq!(&read, &[1, 2, 3, 4, 5]);
+        Ok(())
+    }
 }
