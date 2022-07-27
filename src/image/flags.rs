@@ -1,4 +1,6 @@
-use ffmpeg_next::format::Pixel;
+use std::mem::MaybeUninit;
+
+use ffmpeg_sys_next::*;
 use num_enum::{IntoPrimitive, TryFromPrimitive, TryFromPrimitiveError};
 use opencl_sys::{CL_R, CL_A, CL_LUMINANCE, CL_INTENSITY, CL_RG, CL_RA, CL_RGB, CL_RGBA, CL_ARGB, CL_BGRA, cl_channel_type, CL_UNSIGNED_INT8, CL_UNSIGNED_INT16, CL_UNSIGNED_INT32, CL_SIGNED_INT8, CL_SIGNED_INT16, CL_SIGNED_INT32, CL_FLOAT, CL_SNORM_INT8, CL_SNORM_INT16, CL_UNORM_INT8, CL_UNORM_INT16, cl_image_format, CL_HALF_FLOAT, CL_UNORM_SHORT_565, CL_UNORM_SHORT_555, CL_UNORM_INT_101010, cl_channel_order};
 
@@ -31,30 +33,297 @@ impl ImageFormat {
     }
 
     #[inline(always)]
-    pub fn from_ffmpeg (pixel: Pixel) -> Option<Self> {
-        let v = match pixel {
-            // Luma
-            Pixel::GRAY8 => Luma::<u8>::FORMAT,
+    pub const fn unzip (self) -> (ChannelOrder, ChannelType) {
+        (self.order, self.ty)
+    }
+}
 
-            // RGB
-            Pixel::RGB48 => Rgb::<u16>::FORMAT,
-            Pixel::RGB24 => Rgb::<u8>::FORMAT,
+impl ImageFormat {
+    #[inline(always)]
+    pub const fn ffmpeg_pixel (&self) -> Option<Pixel> {
+        macro_rules! trii {
+            ($e:expr) => {{
+                match $e {
+                    Some(x) => x,
+                    None => return None
+                }
+            }};
+        }
 
-            // RGB + Alpha
-            Pixel::ARGB => Argb::<u8>::FORMAT,
-            Pixel::RGBA => Rgba::<u8>::FORMAT,
-            Pixel::BGRA => Bgra::<u8>::FORMAT,
-            #[cfg(feature = "cl2")]
-            Pixel::ABGR => super::channel::Abgr::<u8>::FORMAT,
+        let step = match self.ty.is_packed() {
+            true => self.ty.size(),
+            false => self.ty.size() * self.order.channel_count()
+        } as i32;
+
+        let comp = match self.order.channel_count() {
+            1 => [
+                trii!(self.luma_component(step)), 
+                zero_component(), zero_component(), zero_component()
+            ],
+
+            3 => [
+                trii!(self.red_component(step)), 
+                trii!(self.green_component(step)), 
+                trii!(self.blue_component(step)),
+                zero_component()
+            ],
+
+            4 => [
+                trii!(self.red_component(step)), 
+                trii!(self.green_component(step)), 
+                trii!(self.blue_component(step)),
+                trii!(self.alpha_component(step)),
+            ],
+
             _ => return None
         };
 
-        Some(v)
+        #[cfg(target_endian = "little")]
+        let mut flags = 0;
+        #[cfg(target_endian = "big")]
+        let mut flags = AV_PIX_FMT_FLAG_BE as u64;
+
+        if self.order.is_rgb() { flags |= AV_PIX_FMT_FLAG_RGB as u64 };
+        if self.order.has_alpha() { flags |= AV_PIX_FMT_FLAG_ALPHA as u64 };
+        if self.ty.is_float() { flags |= AV_PIX_FMT_FLAG_FLOAT as u64 };
+        if self.ty.is_packed() { flags |= AV_PIX_FMT_FLAG_BITSTREAM as u64 };
+
+        let desc = AVPixFmtDescriptor {
+            name: core::ptr::null(),
+            nb_components: self.order.channel_count() as u8,
+            log2_chroma_w: 0,
+            log2_chroma_h: 0,
+            flags,
+            comp,
+            alias: core::ptr::null(),
+        };
+
+        Some(Pixel::new(AVPixelFormat::AV_PIX_FMT_NONE, desc))
     }
 
-    #[inline(always)]
-    pub const fn unzip (self) -> (ChannelOrder, ChannelType) {
-        (self.order, self.ty)
+    const fn red_component (&self, step: i32) -> Option<AVComponentDescriptor> {
+        use ChannelOrder::*;
+        use ChannelType::*;
+
+        let depth = match self.ty {
+            U16_565 | U16_555 => 5,
+            U32_10_10_10 => 10,
+            #[cfg(feature = "cl2_1")]
+            U32_10_10_10_2 => 10,
+            other => other.size() as i32
+        };
+
+        let offset = match self.ty {
+            U16_565 | U16_555 | U32_10_10_10 => 0,
+            #[cfg(feature = "cl2_1")]
+            U32_10_10_10_2 => 0,
+            _ => {
+                let v = match self.order {
+                    Alpha | Depth | Luminance | Intensity => return None,
+                    Red | RedAlpha | RedGreen | RGB | RGBA => 0,
+                    ARGB => 1,
+                    BGRA => 2,
+                    #[cfg(feature = "cl2")]
+                    ABGR => 3,
+        
+                    #[cfg(feature = "cl1_1")]
+                    Rx | RGx | RGBx => 0,
+                    #[cfg(feature = "cl2")]
+                    sRGB | sRGBA | sRGBx => 0,
+                    #[cfg(feature = "cl2")]
+                    sBGRA => 2,
+                };
+
+                v * self.ty.size() as i32
+            }
+        };
+
+        Some(AVComponentDescriptor {
+            plane: 0,
+            step,
+            offset,
+            shift: 0,
+            depth,
+            step_minus1: step - 1,
+            depth_minus1: depth - 1,
+            offset_plus1: offset + 1,
+        })
+    }
+
+    const fn green_component (&self, step: i32) -> Option<AVComponentDescriptor> {
+        use ChannelOrder::*;
+        use ChannelType::*;
+
+        let depth = match self.ty {
+            U16_555 => 5,
+            U16_565 => 6,
+            U32_10_10_10 => 10,
+            #[cfg(feature = "cl2_1")]
+            U32_10_10_10_2 => 10,
+            other => other.size() as i32
+        };
+
+        let offset = match self.ty {
+            U16_565 | U16_555 => 5,
+            U32_10_10_10 => 10,
+            #[cfg(feature = "cl2_1")]
+            U32_10_10_10_2 => 10,
+            _ => {
+                let v = match self.order {
+                    Alpha | Depth | Luminance | Intensity | Red | RedAlpha => return None,
+                    RedGreen | RGB | RGBA => 1,
+                    BGRA => 1,
+                    ARGB => 2,
+                    #[cfg(feature = "cl2")]
+                    ABGR => 2,
+        
+                    #[cfg(feature = "cl1_1")]
+                    Rx => return None,
+                    #[cfg(feature = "cl1_1")]
+                    RGx | RGBx => 1,
+                    #[cfg(feature = "cl2")]
+                    sRGB | sRGBA | sRGBx | sBGRA => 1
+                };
+
+                v * self.ty.size() as i32
+            }
+        };
+
+        Some(AVComponentDescriptor {
+            plane: 0,
+            step,
+            offset,
+            shift: 0,
+            depth,
+            step_minus1: step - 1,
+            depth_minus1: depth - 1,
+            offset_plus1: offset + 1,
+        })
+    }
+
+    const fn blue_component (&self, step: i32) -> Option<AVComponentDescriptor> {
+        use ChannelOrder::*;
+        use ChannelType::*;
+
+        let depth = match self.ty {
+            U16_555 | U16_565 => 5,
+            U32_10_10_10 => 10,
+            #[cfg(feature = "cl2_1")]
+            U32_10_10_10_2 => 10,
+            other => other.size() as i32
+        };
+
+        let offset = match self.ty {
+            U16_555 => 10,
+            U16_565 => 11,
+            U32_10_10_10 => 20,
+            #[cfg(feature = "cl2_1")]
+            U32_10_10_10_2 => 20,
+            _ => {
+                let v = match self.order {
+                    Alpha | Depth | Luminance | Intensity | Red | RedAlpha | RedGreen => return None,
+                    RGB | RGBA => 2,
+                    BGRA => 0,
+                    ARGB => 3,
+                    #[cfg(feature = "cl2")]
+                    ABGR => 1,
+        
+                    #[cfg(feature = "cl1_1")]
+                    Rx | RGx => return None,
+                    #[cfg(feature = "cl1_1")]
+                    RGBx => 2,
+                    #[cfg(feature = "cl2")]
+                    sRGB | sRGBA | sRGBx => 2,
+                    #[cfg(feature = "cl2")]
+                    sBGRA => 0
+                };
+
+                v * self.ty.size() as i32
+            }
+        };
+
+        Some(AVComponentDescriptor {
+            plane: 0,
+            step,
+            offset,
+            shift: 0,
+            depth,
+            step_minus1: step - 1,
+            depth_minus1: depth - 1,
+            offset_plus1: offset + 1,
+        })
+    }
+
+    const fn alpha_component (&self, step: i32) -> Option<AVComponentDescriptor> {
+        use ChannelOrder::*;
+        use ChannelType::*;
+
+        let depth = match self.ty {
+            U16_565 | U16_555 | U32_10_10_10 => return None,
+            #[cfg(feature = "cl2_1")]
+            U32_10_10_10_2 => 2,
+            other => other.size() as i32
+        };
+
+        let offset = match self.ty {
+            U16_565 | U16_555 | U32_10_10_10 => return None,
+            #[cfg(feature = "cl2_1")]
+            U32_10_10_10_2 => 30,
+            _ => {
+                let v = match self.order {
+                    Depth | Luminance | Intensity | Red | RedGreen | RGB => return None,
+                    Alpha => 0,
+                    ARGB => 0,
+                    RedAlpha => 1,
+                    RGBA | BGRA => 3,
+                    #[cfg(feature = "cl2")]
+                    ABGR => 0,
+        
+                    #[cfg(feature = "cl1_1")]
+                    Rx | RGx | RGBx => return None,
+                    #[cfg(feature = "cl2")]
+                    sRGB | sRGBx => return None,
+                    #[cfg(feature = "cl2")]
+                    sRGBA | sBGRA => 2,
+                };
+
+                v * self.ty.size() as i32
+            }
+        };
+
+        Some(AVComponentDescriptor {
+            plane: 0,
+            step,
+            offset,
+            shift: 0,
+            depth,
+            step_minus1: step - 1,
+            depth_minus1: depth - 1,
+            offset_plus1: offset + 1,
+        })
+    }
+
+    const fn luma_component (&self, step: i32) -> Option<AVComponentDescriptor> {
+        use ChannelOrder::*;
+        use ChannelType::*;
+
+        match self.order {
+            Luminance | Intensity => {
+                let depth = self.ty.size() as i32;
+
+                Some(AVComponentDescriptor {
+                    plane: 0,
+                    step,
+                    offset: 0,
+                    shift: 0,
+                    depth,
+                    step_minus1: step - 1,
+                    depth_minus1: depth - 1,
+                    offset_plus1: 1,
+                })
+            },
+            _ => None
+        }
     }
 }
 
@@ -156,6 +425,26 @@ impl ChannelOrder {
             sRGBA | sRGBx | sBGRA | ABGR | RGBx => 4
         }
     }
+
+    #[inline(always)]
+    pub const fn is_rgb (&self) -> bool {
+        use ChannelOrder::*;
+
+        match self {
+            RedGreen | RedAlpha | RGB | RGBA | ARGB | BGRA | sRGB | sRGBA | sBGRA | sRGBx | ABGR | RGBx => true,
+            _ => false
+        }
+    }
+
+    #[inline(always)]
+    pub const fn has_alpha (&self) -> bool {
+        use ChannelOrder::*;
+
+        match self {
+            RedAlpha | RGBA | ARGB | BGRA | sRGBA | sBGRA | sRGBx | ABGR | RGBx => true,
+            _ => false
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, IntoPrimitive, TryFromPrimitive)]
@@ -202,7 +491,42 @@ impl ChannelType {
     pub const fn is_norm (&self) -> bool {
         match self {
             Self::I8 | Self::U8 | Self::I16 | Self::U16 | Self::I32 | Self::U32 | Self::F16 | Self::F32 => false,
+            Self::U16_565 | Self::U16_555 | Self::U32_10_10_10 => true,
+            #[cfg(feature = "cl2_1")]
+            Self::U32_10_10_10_2 => true,
             _ => true
+        }
+    }
+
+    #[inline(always)]
+    pub const fn is_packed (&self) -> bool {
+        match self {
+            Self::U16_565 | Self::U16_555 | Self::U32_10_10_10 => true,
+            #[cfg(feature = "cl2_1")]
+            Self::U32_10_10_10_2 => true,
+            _ => false
+        }
+    }
+
+    #[inline(always)]
+    pub const fn is_float (&self) -> bool {
+        match self {
+            Self::F16 | Self::F32 => true,
+            _ => false
+        }
+    }
+
+    #[inline(always)]
+    pub const fn size (&self) -> usize {
+        use ChannelType::*;
+
+        match self {
+            U8 | I8 | NormI8 | NormU8 => core::mem::size_of::<u8>(),
+            U16 | I16 | NormI16 | NormU16 | F16 | U16_565 | U16_555 => core::mem::size_of::<u16>(),
+            U32 | I32 | U32_10_10_10 => core::mem::size_of::<u32>(),
+            F32 => core::mem::size_of::<f32>(),
+            #[cfg(feature = "cl2_1")]
+            U32_10_10_10_2 => core::mem::size_of::<u32>()
         }
     }
 }
@@ -230,7 +554,7 @@ impl From<TryFromPrimitiveError<ChannelType>> for FromRawError {
 use opencl_sys::{cl_image_desc, cl_mem_object_type};
 use crate::{memobj::{MemObjectType, MemObject}};
 
-use super::channel::{Argb, RawPixel, Rgba, Bgra, Rgb, Luma};
+use super::{channel::{Argb, RawPixel, Rgba, Bgra, Rgb, Luma, Red}, encdec::pixel::Pixel};
 
 #[derive(Clone)]
 #[non_exhaustive]
@@ -294,4 +618,9 @@ impl ImageDesc {
             buffer
         }
     }
+}
+
+#[inline(always)]
+const fn zero_component () -> AVComponentDescriptor {
+    unsafe { MaybeUninit::zeroed().assume_init() }
 }

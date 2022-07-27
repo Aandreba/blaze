@@ -45,7 +45,7 @@ impl Kernel {
     }
 
     #[docfg(feature = "svm")]
-    pub unsafe fn set_svm_argument<C: Context> (&mut self, idx: u32, v: &impl crate::svm::SvmPointer<C>) -> Result<()> {
+    pub unsafe fn set_svm_argument (&mut self, idx: u32, v: &impl crate::svm::SvmPointer) -> Result<()> {
         tri!(opencl_sys::clSetKernelArgSVMPointer(self.id(), idx, v.as_ptr().cast()));
         Ok(())
     }

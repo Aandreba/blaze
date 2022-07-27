@@ -4,7 +4,6 @@ flat_mod!(read, write);
 
 use std::{ptr::NonNull, ops::{Deref, DerefMut}, num::NonZeroUsize, mem::MaybeUninit, fmt::Debug};
 use rscl_proc::docfg;
-
 use crate::{prelude::*, event::WaitList, memobj::IntoSlice2D};
 use super::{Buffer, flags::{MemFlags, MemAccess, HostPtr}};
 

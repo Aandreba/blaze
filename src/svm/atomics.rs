@@ -78,8 +78,9 @@ macro_rules! impl_atomic {
             }
 
             impl<C: Context> crate::svm::sealed::Sealed for $svm<C> {}
-            unsafe impl<C: Context> super::SvmPointer<C> for $svm<C> {
+            unsafe impl<C: Context> super::SvmPointer for $svm<C> {
                 type Type = $ty;
+                type Context = C;
 
                 #[inline(always)]
                 fn allocator (&self) -> &Svm<C> {

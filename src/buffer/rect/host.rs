@@ -1,4 +1,7 @@
 use std::{ptr::{NonNull, addr_of}, num::NonZeroUsize, mem::{MaybeUninit, ManuallyDrop}, alloc::{Allocator, Global, Layout}, ops::{Index, IndexMut}, fmt::Debug};
+use crate::{svm::{Svm, SvmPointer}, prelude::Context};
+
+pub type SvmRect2D<T, C = crate::prelude::Global> = Rect2D<T, Svm<C>>;
 
 /// A 2D rectangle stored in host memory in [row-major order](https://en.wikipedia.org/wiki/Row-_and_column-major_order)
 pub struct Rect2D<T, A: Allocator = Global> {
@@ -353,6 +356,31 @@ impl<T, A: Allocator> Rect2D<MaybeUninit<T>, A> {
             height: this.height,
             alloc
         }
+    }
+}
+
+unsafe impl<T, C: Context> SvmPointer for SvmRect2D<T, C> {
+    type Type = T;
+    type Context = C;
+
+    #[inline(always)]
+    fn allocator (&self) -> &Svm<C> {
+        &self.alloc
+    }
+
+    #[inline(always)]
+    fn as_ptr (&self) -> *const Self::Type {
+        self.ptr.as_ptr()
+    }
+
+    #[inline(always)]
+    fn as_mut_ptr (&mut self) -> *mut Self::Type {
+        self.ptr.as_ptr()
+    }
+
+    #[inline(always)]
+    fn len (&self) -> usize {
+        self.width() * self.height()
     }
 }
 

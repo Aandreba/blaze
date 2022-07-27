@@ -3,7 +3,7 @@ use bytemuck::Zeroable;
 use num_traits::{NumOps, NumAssignOps, AsPrimitive, Zero, One};
 use rscl_proc::{docfg, NumOps, NumOpsAssign};
 use crate::{prelude::{RawContext, Result}, buffer::flags::MemAccess, memobj::MemObjectType};
-use super::{ChannelType, ChannelOrder, ImageFormat};
+use super::{ChannelType, ChannelOrder, ImageFormat, encdec::pixel::Pixel};
 use std::{fmt::Debug, hash::{Hash, Hasher}, mem::MaybeUninit};
 
 /// # Safety
@@ -14,6 +14,7 @@ pub unsafe trait RawPixel: Copy + NumOps + NumAssignOps + bytemuck::Zeroable {
 
     const ORDER : ChannelOrder;
     const FORMAT : ImageFormat = ImageFormat::new(Self::ORDER, <Self::Channel as RawChannel>::TYPE);
+    const FFMPEG : Option<Pixel> = Self::FORMAT.ffmpeg_pixel();
     const CHANNEL_COUNT : usize = Self::ORDER.channel_count();
 
     fn channels (&self) -> &[Self::Channel];

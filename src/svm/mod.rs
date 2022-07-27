@@ -64,20 +64,27 @@ impl<C: Context> Svm<C> {
         let align = u32::try_from(layout.align()).unwrap();
         let ptr = clSVMAlloc(self.ctx.id(), flags.to_bits(), layout.size(), align);
 
-        if self.coarse { self.map_blocking::<{CL_MAP_READ | CL_MAP_WRITE}>(ptr, layout.size())?; }
+        if self.coarse { self.map_blocking::<WaitList, {CL_MAP_READ | CL_MAP_WRITE}>(ptr, layout.size(), WaitList::EMPTY)?; }
         Ok(ptr.cast())
     }
 
     #[inline(always)]
-    pub(crate) unsafe fn map<const MASK: cl_map_flags> (&self, ptr: *mut c_void, size: usize) -> Result<RawEvent> {
+    pub(crate) unsafe fn map<W: Into<WaitList>, const MASK: cl_map_flags> (&self, ptr: *mut c_void, size: usize, wait: W) -> Result<RawEvent> {
+        let wait : WaitList = wait.into();
+        let (num_events_in_wait_list, event_wait_list) = wait.raw_parts();
+
         let mut evt = core::ptr::null_mut();
-        tri!(clEnqueueSVMMap(self.ctx.next_queue().id(), CL_FALSE, MASK, ptr, size, 0, core::ptr::null(), addr_of_mut!(evt)));
+        tri!(clEnqueueSVMMap(self.ctx.next_queue().id(), CL_FALSE, MASK, ptr, size, num_events_in_wait_list, event_wait_list, addr_of_mut!(evt)));
+
         Ok(RawEvent::from_id(evt).unwrap())
     }
 
     #[inline(always)]
-    pub(crate) unsafe fn map_blocking<const MASK: cl_map_flags> (&self, ptr: *mut c_void, size: usize) -> Result<()> {
-        tri!(clEnqueueSVMMap(self.ctx.next_queue().id(), CL_TRUE, MASK, ptr, size, 0, core::ptr::null(), core::ptr::null_mut()));
+    pub(crate) unsafe fn map_blocking<W: Into<WaitList>, const MASK: cl_map_flags> (&self, ptr: *mut c_void, size: usize, wait: W) -> Result<()> {
+        let wait : WaitList = wait.into();
+        let (num_events_in_wait_list, event_wait_list) = wait.raw_parts();
+
+        tri!(clEnqueueSVMMap(self.ctx.next_queue().id(), CL_TRUE, MASK, ptr, size, num_events_in_wait_list, event_wait_list, core::ptr::null_mut()));
         Ok(())
     }
 

@@ -1,7 +1,7 @@
 #![feature(new_uninit)]
 
 use std::{mem::MaybeUninit, f32::consts::{PI, E}};
-use rscl::{prelude::{Device}, buffer::BufferRect2D};
+use rscl::{prelude::{Device}, buffer::rect::{BufferRect2D, SvmRect2D}, svm::Svm};
 use rscl::{context::SimpleContext, prelude::Result, buffer::{flags::MemAccess}, event::WaitList};
 use rscl_proc::{global_context, rscl};
 
@@ -39,6 +39,24 @@ fn matrix_mul () -> Result<()> {
     let lhs = BufferRect2D::<f32>::new(&[PI,2.,4.,5.,7.,8.], 2, MemAccess::READ_ONLY, false)?; // 3 x 2
     let rhs = BufferRect2D::<f32>::new(&[1.,E,3.,4.,5.,6.], 3, MemAccess::READ_ONLY, false)?; // 2 x 3
     let mut result = BufferRect2D::<f32>::uninit(3, 3, MemAccess::WRITE_ONLY, false)?; // 3 x 3
+
+    let evt = unsafe { ops.mmul(2, &lhs, &rhs, &mut result, [3, 3], None, WaitList::EMPTY)? };
+    //evt.wait()?;
+
+    let result = unsafe { result.assume_init() };
+    println!("{:?}", result);
+    
+    Ok(())
+}
+
+#[test]
+fn svm_mul () -> Result<()> {
+    println!("{:?}", Device::all());
+    let ops = MatrixOps::new(None)?;
+
+    let lhs = BufferRect2D::<f32>::new(&[PI,2.,4.,5.,7.,8.], 2, MemAccess::READ_ONLY, false)?; // 3 x 2
+    let rhs = BufferRect2D::<f32>::new(&[1.,E,3.,4.,5.,6.], 3, MemAccess::READ_ONLY, false)?; // 2 x 3
+    let mut result = SvmRect2D::<f32, _>::new_uninit_in(3, 3, Svm::new(true)).unwrap();
 
     let evt = unsafe { ops.mmul(2, &lhs, &rhs, &mut result, [3, 3], None, WaitList::EMPTY)? };
     //evt.wait()?;

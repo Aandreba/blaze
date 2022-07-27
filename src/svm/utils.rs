@@ -8,11 +8,12 @@ pub(super) mod sealed {
 }
 
 /// Object that wraps, in some way, a pointer to SVM memory
-pub unsafe trait SvmPointer<C: Context = Global> {
+pub unsafe trait SvmPointer {
     type Type: ?Sized;
+    type Context: Context;
 
     /// Returns a reference to the underlying [`Svm`] allocator
-    fn allocator (&self) -> &Svm<C>;
+    fn allocator (&self) -> &Svm<Self::Context>;
     /// Returns the SVM pointer
     fn as_ptr (&self) -> *const Self::Type;
     /// Returns the mutable SVM pointer
@@ -32,8 +33,9 @@ impl<T: ?Sized, C: Context> Sealed for SvmBox<T, C> {}
 impl<T, C: Context> Sealed for SvmVec<T, C> {}
 impl<T, C: Context> Sealed for SvmVecDeque<T, C> {}
 
-unsafe impl<T: ?Sized, C: Context> SvmPointer<C> for SvmBox<T, C> {
+unsafe impl<T: ?Sized, C: Context> SvmPointer for SvmBox<T, C> {
     type Type = T;
+    type Context = C;
 
     #[inline(always)]
     fn allocator (&self) -> &Svm<C> {
@@ -56,8 +58,9 @@ unsafe impl<T: ?Sized, C: Context> SvmPointer<C> for SvmBox<T, C> {
     }
 }
 
-unsafe impl<T, C: Context> SvmPointer<C> for SvmVec<T, C> {
+unsafe impl<T, C: Context> SvmPointer for SvmVec<T, C> {
     type Type = T;
+    type Context = C;
 
     #[inline(always)]
     fn allocator (&self) -> &Svm<C> {
