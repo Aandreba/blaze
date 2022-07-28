@@ -8,9 +8,9 @@ use super::MemObjectType;
 /// A raw OpenCL memory object
 #[derive(Debug)]
 #[repr(transparent)]
-pub struct MemObject (NonNull<c_void>);
+pub struct RawMemObject (NonNull<c_void>);
 
-impl MemObject {
+impl RawMemObject {
     #[inline(always)]
     pub const unsafe fn from_id_unchecked (id: cl_mem) -> Self {
         Self(NonNull::new_unchecked(id))
@@ -45,7 +45,7 @@ impl MemObject {
     /// Return memory object from which memobj is created.
     #[docfg(feature = "cl1_1")]
     #[inline(always)]
-    pub fn associated_memobject (&self) -> Result<Option<MemObject>> {
+    pub fn associated_memobject (&self) -> Result<Option<RawMemObject>> {
         let v = self.get_info::<cl_mem>(opencl_sys::CL_MEM_ASSOCIATED_MEMOBJECT)?;
         Ok(Self::from_id(v))
     }
@@ -114,7 +114,7 @@ impl MemObject {
 }
 
 #[docfg(feature = "cl1_1")]
-impl MemObject {
+impl RawMemObject {
     /// Adds a callback to be executed when the memory object is destructed by OpenCL.
     #[inline(always)]
     pub fn on_destruct (&self, f: impl 'static + FnOnce() + Send) -> Result<()> {
@@ -135,7 +135,7 @@ impl MemObject {
     }
 }
 
-impl Clone for MemObject {
+impl Clone for RawMemObject {
     #[inline(always)]
     fn clone(&self) -> Self {
         unsafe {
@@ -146,7 +146,7 @@ impl Clone for MemObject {
     }
 }
 
-impl Drop for MemObject {
+impl Drop for RawMemObject {
     #[inline(always)]
     fn drop(&mut self) {
         unsafe {
@@ -155,8 +155,8 @@ impl Drop for MemObject {
     }
 }
 
-unsafe impl Send for MemObject {}
-unsafe impl Sync for MemObject {}
+unsafe impl Send for RawMemObject {}
+unsafe impl Sync for RawMemObject {}
 
 #[cfg(feature = "cl1_1")]
 unsafe extern "C" fn destructor_callback (_memobj: cl_mem, user_data: *mut c_void) {

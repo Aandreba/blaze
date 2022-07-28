@@ -1,13 +1,13 @@
 use std::{ptr::{NonNull, addr_of_mut}, ops::{RangeBounds, Bound, Deref, DerefMut}};
 use opencl_sys::*;
 use blaze_proc::docfg;
-use crate::{core::*, context::RawContext, event::{WaitList, RawEvent}, buffer::BufferRange, memobj::{MemObject}, prelude::Global};
+use crate::{core::*, context::RawContext, event::{WaitList, RawEvent}, buffer::BufferRange, memobj::{RawMemObject}, prelude::Global};
 use super::{flags::{MemFlags}, IntoRange};
 
 /// A raw OpenCL buffer
 #[repr(transparent)]
 #[derive(Clone)]
-pub struct RawBuffer (MemObject);
+pub struct RawBuffer (RawMemObject);
 
 impl RawBuffer {
     #[inline(always)]
@@ -36,12 +36,12 @@ impl RawBuffer {
 
     #[inline(always)]
     pub const unsafe fn from_id_unchecked (id: cl_mem) -> Self {
-        Self(MemObject::from_id_unchecked(id))
+        Self(RawMemObject::from_id_unchecked(id))
     }
 
     #[inline(always)]
     pub unsafe fn from_id (id: cl_mem) -> Option<Self> {
-        MemObject::from_id(id).map(Self)
+        RawMemObject::from_id(id).map(Self)
     }
 
     /// Creates a new buffer object (referred to as a sub-buffer object) from an existing buffer object.
@@ -167,7 +167,7 @@ impl RawBuffer {
 }
 
 impl Deref for RawBuffer {
-    type Target = MemObject;
+    type Target = RawMemObject;
 
     #[inline(always)]
     fn deref(&self) -> &Self::Target {
@@ -182,9 +182,9 @@ impl DerefMut for RawBuffer {
     }
 }
 
-impl Into<MemObject> for RawBuffer {
+impl Into<RawMemObject> for RawBuffer {
     #[inline(always)]
-    fn into(self) -> MemObject {
+    fn into(self) -> RawMemObject {
         self.0
     }
 }

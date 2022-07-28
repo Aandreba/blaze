@@ -1,13 +1,13 @@
 use std::{ops::{Deref, DerefMut}, ptr::addr_of_mut, mem::MaybeUninit, num::NonZeroU32};
 use opencl_sys::*;
-use crate::{memobj::MemObject, prelude::*, buffer::flags::{MemFlags, HostPtr, MemAccess}};
+use crate::{memobj::RawMemObject, prelude::*, buffer::flags::{MemFlags, HostPtr, MemAccess}};
 
 #[cfg_attr(docsrs, doc(cfg(feature = "cl2")))]
 #[derive(Clone)]
 #[repr(transparent)]
-pub struct Pipe (MemObject);
+pub struct RawPipe (RawMemObject);
 
-impl Pipe {
+impl RawPipe {
     #[inline(always)]
     pub fn new (access: MemAccess, host_access: bool, packet_size: u32, max_packets: u32) -> Result<Self> {
         Self::new_in(&Global, access, host_access, packet_size, max_packets)
@@ -22,7 +22,7 @@ impl Pipe {
         };
 
         if err != 0 { return Err(Error::from(err)); }
-        Ok(Self(MemObject::from_id(id).unwrap()))
+        Ok(Self(RawMemObject::from_id(id).unwrap()))
     }
 
     /// Return pipe packet size specified when pipe is created.
@@ -47,8 +47,8 @@ impl Pipe {
     }
 }
 
-impl Deref for Pipe {
-    type Target = MemObject;
+impl Deref for RawPipe {
+    type Target = RawMemObject;
 
     #[inline(always)]
     fn deref(&self) -> &Self::Target {
@@ -56,7 +56,7 @@ impl Deref for Pipe {
     }
 }
 
-impl DerefMut for Pipe {
+impl DerefMut for RawPipe {
     #[inline(always)]
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0

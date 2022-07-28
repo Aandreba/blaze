@@ -1,11 +1,11 @@
 use opencl_sys::{cl_context_properties, CL_CONTEXT_PLATFORM, cl_platform_id};
-use crate::core::Platform;
+use crate::core::RawPlatform;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub struct ContextProperties {
     /// Specifies the platform to use.
-    pub platform: Option<Platform>,
+    pub platform: Option<RawPlatform>,
     /// Specifies whether the user is responsible for synchronization between OpenCL and other APIs. Please refer to the specific sections in the OpenCL Extension Specification that describe sharing with other APIs for restrictions on using this flag. If not specified, a default of `false` is assumed.
     #[cfg_attr(docsrs, doc(cfg(feature = "cl1_2")))]
     #[cfg(feature = "cl1_2")]
@@ -22,7 +22,7 @@ impl ContextProperties {
     }
 
     #[inline(always)]
-    pub fn new (platform: impl Into<Option<Platform>>, #[cfg(feature = "cl1_2")] interop_user_sync: bool) -> Self {
+    pub fn new (platform: impl Into<Option<RawPlatform>>, #[cfg(feature = "cl1_2")] interop_user_sync: bool) -> Self {
         Self {
             platform: platform.into(),
             #[cfg(feature = "cl1_2")]
@@ -31,7 +31,7 @@ impl ContextProperties {
     }
 
     #[inline(always)]
-    pub const fn const_new (platform: Option<Platform>, #[cfg(feature = "cl1_2")] interop_user_sync: bool) -> Self {
+    pub const fn const_new (platform: Option<RawPlatform>, #[cfg(feature = "cl1_2")] interop_user_sync: bool) -> Self {
         Self {
             platform,
             #[cfg(feature = "cl1_2")]
@@ -80,7 +80,7 @@ impl ContextProperties {
 
         match bits[0] {
             CL_CONTEXT_PLATFORM => {
-                let platform = Platform::from_id(bits[1] as cl_platform_id);
+                let platform = RawPlatform::from_id(bits[1] as cl_platform_id);
                 cfg_if::cfg_if! {
                     if #[cfg(feature = "cl1_2")] {
                         match bits[2] {
@@ -118,9 +118,9 @@ impl Default for ContextProperties {
     }
 }
 
-impl From<Platform> for ContextProperties {
+impl From<RawPlatform> for ContextProperties {
     #[inline(always)]
-    fn from(v: Platform) -> Self {
+    fn from(v: RawPlatform) -> Self {
         Self { 
             platform: Some(v),
             #[cfg(feature = "cl1_2")]
@@ -129,9 +129,9 @@ impl From<Platform> for ContextProperties {
     }
 }
 
-impl From<Option<Platform>> for ContextProperties {
+impl From<Option<RawPlatform>> for ContextProperties {
     #[inline(always)]
-    fn from(platform: Option<Platform>) -> Self {
+    fn from(platform: Option<RawPlatform>) -> Self {
         Self { 
             platform,
             #[cfg(feature = "cl1_2")]

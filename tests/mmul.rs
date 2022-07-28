@@ -1,7 +1,7 @@
 #![feature(new_uninit)]
 
 use std::{mem::MaybeUninit, f32::consts::{PI, E}};
-use blaze::{prelude::{Device}, buffer::rect::{BufferRect2D, SvmRect2D}, svm::Svm};
+use blaze::{prelude::{RawDevice}, buffer::rect::{BufferRect2D, SvmRect2D}, svm::Svm};
 use blaze::{prelude::Result, buffer::{flags::MemAccess}, event::WaitList};
 use blaze::prelude::{global_context, blaze};
 
@@ -33,7 +33,7 @@ extern "C" {
 
 #[test]
 fn matrix_mul () -> Result<()> {
-    println!("{:?}", Device::all());
+    println!("{:?}", RawDevice::all());
     let ops = MatrixOps::new(None)?;
 
     let lhs = BufferRect2D::<f32>::new(&[PI,2.,4.,5.,7.,8.], 2, MemAccess::READ_ONLY, false)?; // 3 x 2
@@ -51,7 +51,7 @@ fn matrix_mul () -> Result<()> {
 
 #[test]
 fn svm_mul () -> Result<()> {
-    println!("{:?}", Device::all());
+    println!("{:?}", RawDevice::all());
     let ops = MatrixOps::new(None)?;
 
     let lhs = BufferRect2D::<f32>::new(&[PI,2.,4.,5.,7.,8.], 2, MemAccess::READ_ONLY, false)?; // 3 x 2
@@ -69,16 +69,13 @@ fn svm_mul () -> Result<()> {
 
 mod test {
     use std::{sync::Arc};
-    use blaze::{prelude::*, context::SimpleContext, buffer::events::ReadBuffer};
+    use blaze::{prelude::*, context::SimpleContext};
 
     #[global_context]
     static CONTEXT : SimpleContext = SimpleContext::default();
 
     #[test]
     fn main () -> Result<()> {
-        //without_global()?;
-
-        // TODO fix join_ordered
         let buffer = Buffer::new(&[1, 2, 3, 4, 5], MemAccess::READ_ONLY, false).map(Arc::new)?;
         let buffer2 = Buffer::new(&[5, 4, 3, 2, 1], MemAccess::WRITE_ONLY, false).map(Arc::new)?;
 
@@ -86,7 +83,6 @@ mod test {
         let read2 = buffer2.read_all_owned(&read)?;
         let join = ReadBuffer::join_ordered([read2, read])?.wait()?;
 
-        println!("{join:?}");
         assert_eq!(join[0].as_slice(), &[5, 4, 3, 2, 1]);
         assert_eq!(join[1].as_slice(), &[1, 2, 3, 4, 5]);
         Ok(())
@@ -102,7 +98,6 @@ mod test {
         let read2 = buffer2.read_all_owned(&read)?;
         let join = ReadBuffer::join_ordered_in(&ctx, [read2, read])?.wait()?;
 
-        println!("{join:?}");
         assert_eq!(join[0].as_slice(), &[5, 4, 3, 2, 1]);
         assert_eq!(join[1].as_slice(), &[1, 2, 3, 4, 5]);
         Ok(())

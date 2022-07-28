@@ -2,7 +2,7 @@ flat_mod!(raw, complex, range);
 use opencl_sys::{CL_MAP_READ, CL_MAP_WRITE};
 
 use blaze_proc::docfg;
-use crate::{prelude::{Context, Kernel, Result, RawEvent}, event::WaitList, svm::Svm};
+use crate::{prelude::{Context, RawKernel, Result, RawEvent}, event::WaitList, svm::Svm};
 
 #[cfg(feature = "svm")]
 use crate::svm::SvmPointer;
@@ -13,13 +13,13 @@ pub mod flags;
 pub mod events;
 
 pub unsafe trait KernelPointer<T: Sync> {
-    unsafe fn set_arg (&self, kernel: &mut Kernel, wait: &mut WaitList, idx: u32) -> Result<()>;
+    unsafe fn set_arg (&self, kernel: &mut RawKernel, wait: &mut WaitList, idx: u32) -> Result<()>;
     fn complete (&self, event: &RawEvent) -> Result<()>;
 }
 
 unsafe impl<T: Copy + Sync, C: Context> KernelPointer<T> for Buffer<T, C> {
     #[inline(always)]
-    unsafe fn set_arg (&self, kernel: &mut Kernel, _wait: &mut WaitList, idx: u32) -> Result<()> {
+    unsafe fn set_arg (&self, kernel: &mut RawKernel, _wait: &mut WaitList, idx: u32) -> Result<()> {
         kernel.set_argument(idx, self.id_ref())
     }
 
@@ -32,7 +32,7 @@ unsafe impl<T: Copy + Sync, C: Context> KernelPointer<T> for Buffer<T, C> {
 #[docfg(feature = "cl1_1")]
 unsafe impl<T: Copy + Sync, C: Context> KernelPointer<T> for BufferRect2D<T, C> {
     #[inline(always)]
-    unsafe fn set_arg (&self, kernel: &mut Kernel, _wait: &mut WaitList, idx: u32) -> Result<()> {
+    unsafe fn set_arg (&self, kernel: &mut RawKernel, _wait: &mut WaitList, idx: u32) -> Result<()> {
         kernel.set_argument(idx, self.id_ref())
     }
 
@@ -45,7 +45,7 @@ unsafe impl<T: Copy + Sync, C: Context> KernelPointer<T> for BufferRect2D<T, C> 
 #[docfg(feature = "svm")]
 unsafe impl<T: Sync, P: SvmPointer<Type = T>> KernelPointer<T> for P where P::Context: 'static + Send + Clone {
     #[inline]
-    unsafe fn set_arg (&self, kernel: &mut Kernel, wait: &mut WaitList, idx: u32) -> Result<()> {
+    unsafe fn set_arg (&self, kernel: &mut RawKernel, wait: &mut WaitList, idx: u32) -> Result<()> {
         kernel.set_svm_argument(idx, self)?;
 
         if self.allocator().is_coarse() {

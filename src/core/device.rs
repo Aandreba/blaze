@@ -6,10 +6,10 @@ use crate::buffer::flags::MemAccess;
 use super::*;
 
 lazy_static! {
-    static ref DEVICES : Vec<Device> = unsafe {
-        let mut result = Vec::<Device>::new();
+    static ref DEVICES : Vec<RawDevice> = unsafe {
+        let mut result = Vec::<RawDevice>::new();
 
-        for platform in Platform::all() {
+        for platform in RawPlatform::all() {
             let mut cnt = 0;
             tri_panic!(clGetDeviceIDs(platform.id(), CL_DEVICE_TYPE_ALL, 0, core::ptr::null_mut(), &mut cnt));
             let cnt_size = usize::try_from(cnt).unwrap();
@@ -26,9 +26,9 @@ lazy_static! {
 /// OpenCL device
 #[derive(PartialEq, Eq, Hash)]
 #[repr(transparent)]
-pub struct Device (NonNull<c_void>);
+pub struct RawDevice (NonNull<c_void>);
 
-impl Device {
+impl RawDevice {
     #[inline(always)]
     pub const fn id (&self) -> cl_device_id {
         self.0.as_ptr()
@@ -525,7 +525,7 @@ impl Device {
     /// Returns the parent device to which this sub-device belongs. If device is a root-level device, a ```None``` value is returned.
     #[docfg(feature = "cl1_2")]
     #[inline]
-    pub fn parent (&self) -> Result<Option<Device>> {
+    pub fn parent (&self) -> Result<Option<RawDevice>> {
         let v = self.get_info_bits::<cl_device_id>(opencl_sys::CL_DEVICE_PARENT_DEVICE)?;
         if let Some(v) = NonNull::new(v) {
             return Ok(Some(Self(v)))
@@ -593,7 +593,7 @@ impl Device {
 
     /// The platform associated with this device.
     #[inline(always)]
-    pub fn platform (&self) -> Result<Platform> {
+    pub fn platform (&self) -> Result<RawPlatform> {
         self.get_info_bits(CL_DEVICE_PLATFORM)
     }
 
@@ -825,7 +825,7 @@ impl Device {
     /// When a command-queue is created against a sub-device, the commands enqueued on the queue are executed only on the sub-device.
     #[docfg(feature = "cl1_2")]
     #[inline]
-    pub fn create_sub_devices (&self, prop: PartitionProperty) -> Result<Vec<Device>> {
+    pub fn create_sub_devices (&self, prop: PartitionProperty) -> Result<Vec<RawDevice>> {
         let prop = prop.to_bits();
         
         let mut len = 0;
@@ -910,12 +910,12 @@ impl Device {
     }
     
     #[inline(always)]
-    pub fn all () -> &'static [Device] {
+    pub fn all () -> &'static [RawDevice] {
         &once_cell::sync::Lazy::force(&DEVICES)
     }
 
     #[inline(always)]
-    pub fn first () -> Option<&'static Device> {
+    pub fn first () -> Option<&'static RawDevice> {
         DEVICES.first()
     }
 
@@ -961,7 +961,7 @@ impl Device {
     }
 }
 
-impl Debug for Device {
+impl Debug for RawDevice {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("Device")
         .field("id", &self.0)
@@ -974,7 +974,7 @@ impl Debug for Device {
 }
 
 #[docfg(feature = "cl1_2")]
-impl Clone for Device {
+impl Clone for RawDevice {
     #[inline(always)]
     fn clone(&self) -> Self {
         unsafe {
@@ -986,7 +986,7 @@ impl Clone for Device {
 }
 
 #[docfg(feature = "cl1_2")]
-impl Drop for Device {
+impl Drop for RawDevice {
     #[inline(always)]
     fn drop (&mut self) {
         unsafe {
@@ -995,8 +995,8 @@ impl Drop for Device {
     }
 }
 
-unsafe impl Send for Device {}
-unsafe impl Sync for Device {}
+unsafe impl Send for RawDevice {}
+unsafe impl Sync for RawDevice {}
 
 #[docfg(feature = "cl3")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

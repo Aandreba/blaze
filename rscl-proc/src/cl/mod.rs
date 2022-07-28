@@ -33,12 +33,12 @@ pub fn blaze_c (ident: Ident, blaze: Blaze, content: Expr) -> TokenStream {
     let kernel_structs = kernels.iter().map(|x| create_kernel(&vis, &ident, x));
     let kernel_defs = kernels.iter().map(|x| {
         let name = &x.ident;
-        quote!(#name: ::std::sync::Mutex<::blaze::core::Kernel>)
+        quote!(#name: ::std::sync::Mutex<::blaze::core::RawKernel>)
     });
 
     quote! {
         #vis struct #ident<C: ::blaze::context::Context = ::blaze::context::Global> {
-            inner: ::blaze::core::Program,
+            inner: ::blaze::core::RawProgram,
             ctx: C,
             #(#kernel_defs),*
         }
@@ -52,7 +52,7 @@ pub fn blaze_c (ident: Ident, blaze: Blaze, content: Expr) -> TokenStream {
 
         impl<C: ::blaze::context::Context> #ident<C> {
             #vis fn new_in<'a> (ctx: C, options: impl Into<Option<&'a str>>) -> ::blaze::core::Result<Self> {
-                let (inner, kernels) = ::blaze::core::Program::from_source_in(&ctx, #content, options)?;
+                let (inner, kernels) = ::blaze::core::RawProgram::from_source_in(&ctx, #content, options)?;
 
                 #(let mut #kernel_names = None);*;
                 for kernel in kernels.into_iter() {
@@ -79,7 +79,7 @@ pub fn blaze_c (ident: Ident, blaze: Blaze, content: Expr) -> TokenStream {
         }
 
         impl<C: ::blaze::context::Context> ::std::ops::Deref for #ident<C> {
-            type Target = ::blaze::core::Program;
+            type Target = ::blaze::core::RawProgram;
 
             #[inline(always)]
             fn deref (&self) -> &Self::Target {

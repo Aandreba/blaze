@@ -5,12 +5,12 @@ use blaze_proc::docfg;
 use super::*;
 
 lazy_static! {
-    static ref PLATFORMS : Vec<Platform> = unsafe {
+    static ref PLATFORMS : Vec<RawPlatform> = unsafe {
         let mut cnt = 0;
         tri_panic!(clGetPlatformIDs(0, core::ptr::null_mut(), &mut cnt));
         let cnt_size = usize::try_from(cnt).unwrap(); 
 
-        let mut result = Vec::<Platform>::with_capacity(cnt_size);
+        let mut result = Vec::<RawPlatform>::with_capacity(cnt_size);
         tri_panic!(clGetPlatformIDs(cnt, result.as_mut_ptr().cast(), core::ptr::null_mut()));
         result.set_len(cnt_size);
 
@@ -21,9 +21,9 @@ lazy_static! {
 /// OpenCL platform
 #[repr(transparent)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct Platform (NonNull<c_void>);
+pub struct RawPlatform (NonNull<c_void>);
 
-impl Platform {
+impl RawPlatform {
     #[inline(always)]
     pub const fn id (&self) -> cl_platform_id {
         self.0.as_ptr()
@@ -79,7 +79,7 @@ impl Platform {
     }
 
     #[inline(always)]
-    pub fn all () -> &'static [Platform] {
+    pub fn all () -> &'static [RawPlatform] {
         &PLATFORMS
     }
 
@@ -109,5 +109,5 @@ impl Platform {
     }
 }
 
-unsafe impl Send for Platform {}
-unsafe impl Sync for Platform {}
+unsafe impl Send for RawPlatform {}
+unsafe impl Sync for RawPlatform {}

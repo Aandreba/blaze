@@ -2,22 +2,22 @@ use core::{mem::MaybeUninit, num::NonZeroUsize};
 use std::{borrow::Cow, ptr::{NonNull, addr_of_mut}, ffi::{c_void, CString}};
 use opencl_sys::*;
 use blaze_proc::docfg;
-use crate::{context::{Context, Global}, core::kernel::Kernel, prelude::RawContext};
+use crate::{context::{Context, Global}, core::kernel::RawKernel, prelude::RawContext};
 use super::*;
 
 /// OpenCL program
 #[derive(PartialEq, Eq, Hash)]
 #[repr(transparent)]
-pub struct Program (NonNull<c_void>);
+pub struct RawProgram (NonNull<c_void>);
 
-impl Program {
+impl RawProgram {
     #[inline(always)]
-    pub fn from_source<'a> (source: impl AsRef<str>, options: impl Into<Option<&'a str>>) -> Result<(Self, Box<[Kernel]>)> {
+    pub fn from_source<'a> (source: impl AsRef<str>, options: impl Into<Option<&'a str>>) -> Result<(Self, Box<[RawKernel]>)> {
         Self::from_source_in(&Global, source, options)
     }
 
     #[inline]
-    pub fn from_source_in<'a, C: Context> (ctx: &C, source: impl AsRef<str>, options: impl Into<Option<&'a str>>) -> Result<(Self, Box<[Kernel]>)> {
+    pub fn from_source_in<'a, C: Context> (ctx: &C, source: impl AsRef<str>, options: impl Into<Option<&'a str>>) -> Result<(Self, Box<[RawKernel]>)> {
         let source = source.as_ref();
         let len = [source.len()].as_ptr();
         let strings = [source.as_ptr().cast()].as_ptr();
@@ -34,7 +34,7 @@ impl Program {
         let this = NonNull::new(id).map(Self).unwrap();
         this.build(options.into(), ctx)?;
 
-        let kernels = this.kernels()?.into_iter().map(|id| Kernel::from_id(*id).unwrap()).collect::<Box<[_]>>();
+        let kernels = this.kernels()?.into_iter().map(|id| RawKernel::from_id(*id).unwrap()).collect::<Box<[_]>>();
         Ok((this, kernels))
     }
 
@@ -45,7 +45,7 @@ impl Program {
 
     /// Links a set of compiled program objects and libraries for all the devices or a specific device(s) in the OpenCL context and creates an executable.
     #[docfg(feature = "cl2")]
-    pub fn link<'a> (ctx: &RawContext, input: &[Program], devices: Option<&[Device]>, options: impl Into<Option<&'a str>>) -> Result<Self> {
+    pub fn link<'a> (ctx: &RawContext, input: &[RawProgram], devices: Option<&[RawDevice]>, options: impl Into<Option<&'a str>>) -> Result<Self> {
         let (num_devices, device_list) = match devices {
             Some(x) => (u32::try_from(x.len()).unwrap(), x.as_ptr().cast()),
             None => (0, core::ptr::null())
@@ -99,10 +99,10 @@ impl Program {
 
     /// Return the list of devices associated with the program object. This can be the devices associated with context on which the program object has been created or can be a subset of devices that are specified when a progam object is created using clCreateProgramWithBinary.
     #[inline]
-    pub fn devices (&self) -> Result<Vec<Device>> {
+    pub fn devices (&self) -> Result<Vec<RawDevice>> {
         let count = self.device_count()?;
-        let mut result = Vec::<Device>::with_capacity(count as usize);
-        let size = result.capacity().checked_mul(core::mem::size_of::<Device>()).expect("Too many devices");
+        let mut result = Vec::<RawDevice>::with_capacity(count as usize);
+        let size = result.capacity().checked_mul(core::mem::size_of::<RawDevice>()).expect("Too many devices");
 
         unsafe {
             tri!(clGetProgramInfo(self.id(), CL_PROGRAM_DEVICES, size, result.as_mut_ptr().cast(), core::ptr::null_mut()))
@@ -232,7 +232,7 @@ impl Program {
     }
 }
 
-impl Clone for Program {
+impl Clone for RawProgram {
     #[inline(always)]
     fn clone(&self) -> Self {
         unsafe {
@@ -243,7 +243,7 @@ impl Clone for Program {
     }
 }
 
-impl Drop for Program {
+impl Drop for RawProgram {
     #[inline(always)]
     fn drop(&mut self) {
         unsafe {
@@ -252,5 +252,5 @@ impl Drop for Program {
     }
 }
 
-unsafe impl Send for Program {}
-unsafe impl Sync for Program {}
+unsafe impl Send for RawProgram {}
+unsafe impl Sync for RawProgram {}

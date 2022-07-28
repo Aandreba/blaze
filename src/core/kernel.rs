@@ -4,9 +4,9 @@ use blaze_proc::docfg;
 use crate::{core::*, context::{RawContext, Context, Global}, event::{RawEvent, WaitList}};
 
 #[repr(transparent)]
-pub struct Kernel (NonNull<c_void>);
+pub struct RawKernel (NonNull<c_void>);
 
-impl Kernel {
+impl RawKernel {
     #[inline(always)]
     pub const fn id (&self) -> cl_kernel {
         self.0.as_ptr()
@@ -105,8 +105,8 @@ impl Kernel {
 
     /// Return the program object associated with _kernel_.
     #[inline(always)]
-    pub fn program (&self) -> Result<Program> {
-        let prog : Program = self.get_info(CL_KERNEL_PROGRAM)?;
+    pub fn program (&self) -> Result<RawProgram> {
+        let prog : RawProgram = self.get_info(CL_KERNEL_PROGRAM)?;
         unsafe { tri_panic!(clRetainProgram(prog.id())); }
         Ok(prog)
     }
@@ -142,7 +142,7 @@ impl Kernel {
     }
 }
 
-impl Drop for Kernel {
+impl Drop for RawKernel {
     #[inline(always)]
     fn drop(&mut self) {
         unsafe {
@@ -151,14 +151,14 @@ impl Drop for Kernel {
     }
 }
 
-unsafe impl Send for Kernel {}
-unsafe impl Sync for Kernel {}
+unsafe impl Send for RawKernel {}
+unsafe impl Sync for RawKernel {}
 
 #[cfg(feature = "cl1_2")]
 use {crate::buffer::flags::MemAccess, opencl_sys::{CL_KERNEL_ARG_NAME, CL_KERNEL_ARG_ADDRESS_QUALIFIER, CL_KERNEL_ARG_ACCESS_QUALIFIER, CL_KERNEL_ARG_TYPE_QUALIFIER, CL_KERNEL_ARG_TYPE_NAME, cl_kernel_arg_info, clGetKernelArgInfo}};
 
 #[docfg(feature = "cl1_2")]
-impl Kernel {
+impl RawKernel {
     /// Returns the address qualifier specified for the argument given by ```idx```.
     #[inline(always)]
     pub fn arg_address_qualifier (&self, idx: u32) -> Result<AddrQualifier> {

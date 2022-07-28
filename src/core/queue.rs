@@ -10,7 +10,7 @@ pub struct RawCommandQueue (NonNull<c_void>);
 
 impl RawCommandQueue {
     #[cfg(not(feature = "cl2"))]
-    pub fn new (ctx: &RawContext, props: CommandQueueProperties, device: &Device) -> Result<Self> {
+    pub fn new (ctx: &RawContext, props: CommandQueueProperties, device: &RawDevice) -> Result<Self> {
         let props = props.to_bits();
         let mut err = 0;
 
@@ -26,7 +26,7 @@ impl RawCommandQueue {
     }
 
     #[cfg(feature = "cl2")]
-    pub fn new (ctx: &RawContext, props: impl Into<QueueProperties>, device: &Device) -> Result<Self> {
+    pub fn new (ctx: &RawContext, props: impl Into<QueueProperties>, device: &RawDevice) -> Result<Self> {
         let props : QueueProperties = props.into();
         let mut err = 0;
         let id;
@@ -84,7 +84,7 @@ impl RawCommandQueue {
 
     /// Return the device specified when the command-queue is created.
     #[inline(always)]
-    pub fn device (&self) -> Result<Device> {
+    pub fn device (&self) -> Result<RawDevice> {
         self.get_info(CL_QUEUE_DEVICE)
     }
     

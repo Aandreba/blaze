@@ -1,7 +1,7 @@
 use std::ops::{RangeBounds, Bound};
 use opencl_sys::*;
 use crate::prelude::*;
-use super::MemObject;
+use super::RawMemObject;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u32)]
@@ -25,7 +25,7 @@ impl Into<u32> for MemObjectType {
 
 #[allow(unused)]
 #[inline]
-pub(crate) fn offset_cb_plain (buffer: &MemObject, range: impl RangeBounds<usize>) -> Result<(usize, usize)> {
+pub(crate) fn offset_cb_plain (buffer: &RawMemObject, range: impl RangeBounds<usize>) -> Result<(usize, usize)> {
     let start = match range.start_bound() {
         Bound::Excluded(x) => x.checked_add(1).unwrap(),
         Bound::Included(x) => *x,

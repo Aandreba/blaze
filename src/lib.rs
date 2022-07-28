@@ -54,7 +54,7 @@ pub mod prelude {
 
     pub use crate::core::*;
     pub use crate::macros::*;
-    pub use crate::buffer::{RawBuffer, Buffer, flags::*};
+    pub use crate::buffer::{RawBuffer, Buffer, flags::*, events::{ReadBuffer, WriteBuffer, CopyBuffer}};
     pub use crate::context::{Context, Global, RawContext};
     pub use crate::event::{RawEvent, Event, EventExt, WaitList};
     #[blaze_proc::docfg(feature = "cl1_1")]

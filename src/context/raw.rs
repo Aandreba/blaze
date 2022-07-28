@@ -10,17 +10,17 @@ pub struct RawContext (NonNull<c_void>);
 
 impl RawContext {
     #[inline(always)]
-    pub fn new (props: ContextProperties, devices: &[Device]) -> Result<Self> {
+    pub fn new (props: ContextProperties, devices: &[RawDevice]) -> Result<Self> {
         Self::inner_new::<fn(&str)>(props, devices, #[cfg(feature = "cl3")] None)
     }
 
     #[docfg(feature = "cl3")]
     #[inline(always)]
-    pub fn with_logger<F: 'static + Fn(&str) + Send> (props: ContextProperties, devices: &[Device], loger: F) -> Result<Self> {
+    pub fn with_logger<F: 'static + Fn(&str) + Send> (props: ContextProperties, devices: &[RawDevice], loger: F) -> Result<Self> {
         Self::inner_new(props, devices, Some(loger))
     }
 
-    fn inner_new<F: 'static + Fn(&str) + Send> (props: ContextProperties, devices: &[Device], #[cfg(feature = "cl3")] loger: Option<F>) -> Result<Self> {
+    fn inner_new<F: 'static + Fn(&str) + Send> (props: ContextProperties, devices: &[RawDevice], #[cfg(feature = "cl3")] loger: Option<F>) -> Result<Self> {
         let num_devices = u32::try_from(devices.len()).unwrap();
         let props = props.to_bits();
         let props = match props {
@@ -60,10 +60,7 @@ impl RawContext {
         let this = Self::from_id(id).unwrap();
 
         #[cfg(feature = "cl3")]
-        this.on_destruct(move || {
-            println!("dropping logger");
-            drop(user_data)
-        })?;
+        this.on_destruct(move || drop(user_data))?;
 
         Ok(this)
     }
@@ -133,7 +130,7 @@ impl RawContext {
 
     /// Return the list of devices and sub-devices in context.
     #[inline(always)]
-    pub fn devices (&self) -> Result<Box<[Device]>> {
+    pub fn devices (&self) -> Result<Box<[RawDevice]>> {
         self.get_info_array(CL_CONTEXT_DEVICES)
     }
 
