@@ -23,7 +23,7 @@ struct JoinList<E: Event> where E::Output: Unpin {
 
 // Error
 struct JoinError {
-    desc: Option<String>,
+    desc: Arc<str>,
     #[cfg(debug_assertions)]
     backtrace: Arc<Backtrace>
 }
@@ -198,7 +198,7 @@ impl<E: Event> EventJoinOrdered<E> where E: 'static + Send, E::Output: Send + Sy
 
         for (idx, event) in events.enumerate() {
             let data = data.clone();
-            let raw = event.as_raw().clone();
+            let raw = event.to_raw();
 
             raw.on_complete(move |_, status| {
                 match event.consume(status.err()) {
@@ -281,10 +281,10 @@ impl<E: Event> JoinOrderedList<E> where E::Output: Unpin {
         let box_ptr = self.inner.as_ptr() as *mut MaybeUninit<E::Output>;
         let bit_ptr = addr_of!(self.has_init) as *mut BitBox;
 
-        // SAFETY: This private code is guaranteed to not write to the some pointer on multiple ocasions in the implementation of `EventJoinOrdered`
+        // SAFETY: This private code is guaranteed to not write to the same pointer on multiple ocasions in the implementation of `EventJoinOrdered`
         unsafe {
-            (&mut *box_ptr).write(v);
-            (&mut *bit_ptr).as_mut_bitptr().add(idx).write(true);
+            (&mut *box_ptr.add(idx)).write(v);
+            (&mut *bit_ptr).set(idx, true);
         }
 
         self.has_init.iter().all(|x| *x)

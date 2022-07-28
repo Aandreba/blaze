@@ -84,7 +84,7 @@ mod test {
 
         let read = buffer.read_all_owned(EMPTY)?;
         let read2 = buffer2.read_all_owned(&read)?;
-        let join = ReadBuffer::join([read2, read])?.wait()?;
+        let join = ReadBuffer::join_ordered([read2, read])?.wait()?;
 
         println!("{join:?}");
         assert_eq!(join[0].as_slice(), &[5, 4, 3, 2, 1]);
