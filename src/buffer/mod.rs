@@ -2,10 +2,10 @@ flat_mod!(raw, complex, range);
 use opencl_sys::{CL_MAP_READ, CL_MAP_WRITE};
 
 use blaze_proc::docfg;
-use crate::{prelude::{Context, RawKernel, Result, RawEvent}, event::WaitList, svm::Svm};
+use crate::{prelude::{Context, RawKernel, Result, RawEvent}, event::WaitList};
 
 #[cfg(feature = "svm")]
-use crate::svm::SvmPointer;
+use crate::svm::{Svm, SvmBox, SvmVec, SvmPointer};
 use self::rect::BufferRect2D;
 
 pub mod rect;
@@ -43,7 +43,99 @@ unsafe impl<T: Copy + Sync, C: Context> KernelPointer<T> for BufferRect2D<T, C> 
 }
 
 #[docfg(feature = "svm")]
-unsafe impl<T: Sync, P: SvmPointer<Type = T>> KernelPointer<T> for P where P::Context: 'static + Send + Clone {
+unsafe impl<T: Sync, C: Context> KernelPointer<T> for SvmBox<[T], C> where C: 'static + Send + Clone {
+    #[inline]
+    unsafe fn set_arg (&self, kernel: &mut RawKernel, wait: &mut WaitList, idx: u32) -> Result<()> {
+        kernel.set_svm_argument::<T, Self>(idx, self)?;
+
+        if Box::allocator(self).is_coarse() {
+            let evt = Box::allocator(self).unmap(SvmPointer::<T>::as_ptr(self) as *mut _, WaitList::EMPTY)?;
+            wait.push(evt)
+        }
+
+        Ok(())
+    }
+
+    #[inline]
+    fn complete (&self, event: &RawEvent) -> Result<()> {
+        if Box::allocator(self).is_coarse() {
+            let alloc = Svm::clone(Box::allocator(self));
+            let size = core::mem::size_of::<T>() * SvmPointer::<T>::len(self);
+            let ptr = self.as_ptr() as *const T as usize;
+            
+            unsafe {
+                let _ = alloc.map::<&RawEvent, {CL_MAP_READ | CL_MAP_WRITE}>(ptr as *mut _, size, event)?;
+            }
+        }
+
+        Ok(())
+    }
+}
+
+#[docfg(feature = "svm")]
+unsafe impl<T: Sync, C: Context> KernelPointer<T> for SvmBox<T, C> where C: 'static + Send + Clone {
+    #[inline]
+    unsafe fn set_arg (&self, kernel: &mut RawKernel, wait: &mut WaitList, idx: u32) -> Result<()> {
+        kernel.set_svm_argument::<T, Self>(idx, self)?;
+
+        if Box::allocator(self).is_coarse() {
+            let evt = Box::allocator(self).unmap(SvmPointer::<T>::as_ptr(self) as *mut _, WaitList::EMPTY)?;
+            wait.push(evt)
+        }
+
+        Ok(())
+    }
+
+    #[inline]
+    fn complete (&self, event: &RawEvent) -> Result<()> {
+        if Box::allocator(self).is_coarse() {
+            let alloc = Svm::clone(Box::allocator(self));
+            let size = core::mem::size_of::<T>();
+            let ptr = self.as_ptr() as *const T as usize;
+            
+            unsafe {
+                let _ = alloc.map::<&RawEvent, {CL_MAP_READ | CL_MAP_WRITE}>(ptr as *mut _, size, event)?;
+            }
+        }
+
+        Ok(())
+    }
+}
+
+#[docfg(feature = "svm")]
+unsafe impl<T: Sync, C: Context> KernelPointer<T> for SvmVec<T, C> where C: 'static + Send + Clone {
+    #[inline]
+    unsafe fn set_arg (&self, kernel: &mut RawKernel, wait: &mut WaitList, idx: u32) -> Result<()> {
+        kernel.set_svm_argument::<T, Self>(idx, self)?;
+
+        if Vec::allocator(self).is_coarse() {
+            let evt = Vec::allocator(self).unmap(SvmPointer::<T>::as_ptr(self) as *mut _, WaitList::EMPTY)?;
+            wait.push(evt)
+        }
+
+        Ok(())
+    }
+
+    #[inline]
+    fn complete (&self, event: &RawEvent) -> Result<()> {
+        if Vec::allocator(self).is_coarse() {
+            let alloc = Svm::clone(Vec::allocator(self));
+            let size = core::mem::size_of::<T>() * SvmPointer::<T>::len(self);
+            let ptr = self.as_ptr() as *const T as usize;
+            
+            unsafe {
+                let _ = alloc.map::<&RawEvent, {CL_MAP_READ | CL_MAP_WRITE}>(ptr as *mut _, size, event)?;
+            }
+        }
+
+        Ok(())
+    }
+}
+
+// Whenever [this](https://github.com/rust-lang/rust/issues/48869) is fixed, this will be the generic implementation
+
+/*#[docfg(feature = "svm")]
+unsafe impl<T: Sync, P: SvmPointer<T>> KernelPointer<T> for P where P::Context: 'static + Send + Clone {
     #[inline]
     unsafe fn set_arg (&self, kernel: &mut RawKernel, wait: &mut WaitList, idx: u32) -> Result<()> {
         kernel.set_svm_argument(idx, self)?;
@@ -59,15 +151,13 @@ unsafe impl<T: Sync, P: SvmPointer<Type = T>> KernelPointer<T> for P where P::Co
     #[inline]
     fn complete (&self, event: &RawEvent) -> Result<()> {
         if self.allocator().is_coarse() {
-            let alloc = Svm::clone(self.allocator());
             let size = core::mem::size_of::<T>() * self.len();
-            let ptr = self.as_ptr() as *const T as usize;
             
             unsafe {
-                let _ = alloc.map::<&RawEvent, {CL_MAP_READ | CL_MAP_WRITE}>(ptr as *mut _, size, event)?;
+                let _ = self.allocator().map::<&RawEvent, {CL_MAP_READ | CL_MAP_WRITE}>(self.as_ptr(), size, event)?;
             }
         }
 
         Ok(())
     }
-}
+}*/

@@ -13,7 +13,7 @@ impl<T: 'static + Copy, D: Deref<Target = Buffer<T, C>>, C: 'static + Context> M
     #[inline(always)]
     pub unsafe fn new (ctx: C, src: D, range: impl IntoRange, wait: impl Into<WaitList>) -> Result<Self> {
         let range = range.into_range::<T>(&src)?;
-        let (ptr, event) : (*const T, _) = src.map_read(range, ctx.next_queue(), wait)?;
+        let (ptr, event) : (*const T, _) = src.map_read_in(range, ctx.next_queue(), wait)?;
         let ptr = NonNull::new(ptr as *mut _).unwrap();
 
         Ok(Self { 
@@ -54,7 +54,7 @@ impl<T: 'static + Copy, D: DerefMut<Target = Buffer<T, C>>, C: 'static + Context
     #[inline(always)]
     pub unsafe fn new (ctx: C, src: D, range: impl IntoRange, wait: impl Into<WaitList>) -> Result<Self> {
         let range = range.into_range::<T>(&src)?;
-        let (ptr, event) = src.map_read_write(range, ctx.next_queue(), wait)?;
+        let (ptr, event) = src.map_read_write_in(range, ctx.next_queue(), wait)?;
         let ptr : NonNull<T> = NonNull::new(ptr).unwrap();
 
         Ok(Self { 

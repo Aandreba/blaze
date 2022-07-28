@@ -1,4 +1,6 @@
 flat_mod!(raw,flags, global, single);
+pub mod queue;
+pub use queue::CommandQueue;
 
 use std::ops::Deref;
 use crate::core::*;

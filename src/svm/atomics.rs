@@ -77,31 +77,53 @@ macro_rules! impl_atomic {
                 }
             }
 
-            impl<C: Context> crate::svm::sealed::Sealed for $svm<C> {}
-            unsafe impl<C: Context> super::SvmPointer for $svm<C> {
-                type Type = $ty;
+            unsafe impl<C: Context> super::SvmPointer<$ty> for $svm<C> {
                 type Context = C;
 
                 #[inline(always)]
                 fn allocator (&self) -> &Svm<C> {
-                    self.0.allocator()
+                    SvmBox::allocator(&self.0)
                 }
 
                 #[inline(always)]
                 fn as_ptr (&self) -> *const $ty {
-                    self.0.deref() as *const _ as *const _
+                    self.0.as_ptr()
                 }
 
                 #[inline(always)]
                 fn as_mut_ptr (&mut self) -> *mut $ty {
-                    self.0.deref_mut() as *mut _ as *mut _
+                    self.0.as_mut_ptr()
                 }
 
                 #[inline(always)]
                 fn len (&self) -> usize {
-                    self.0.len()
+                    <[$ty]>::len(&self.0)
                 }
-            } 
+            }
+
+            unsafe impl<C: Context> super::SvmPointer<[$ty]> for $svm<C> {
+                type Context = C;
+
+                #[inline(always)]
+                fn allocator (&self) -> &Svm<C> {
+                    SvmBox::allocator(&self.0)
+                }
+
+                #[inline(always)]
+                fn as_ptr (&self) -> *const [$ty] {
+                    self.0.as_ptr()
+                }
+
+                #[inline(always)]
+                fn as_mut_ptr (&mut self) -> *mut [$ty] {
+                    self.0.as_mut_ptr()
+                }
+
+                #[inline(always)]
+                fn len (&self) -> usize {
+                    1
+                }
+            }
         )+
     };
 }

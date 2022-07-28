@@ -13,7 +13,7 @@ impl<T: Copy + Unpin, Src: Deref<Target = Buffer<T, C>>, C: Context> ReadBuffer<
         let range = range.into_range::<T>(&src)?;
         let mut result = Pin::new(Vec::with_capacity(range.cb / core::mem::size_of::<T>()));
 
-        let event = src.read_to_ptr(range, result.as_mut_ptr(), queue, wait)?;
+        let event = src.read_to_ptr_in(range, result.as_mut_ptr(), queue, wait)?;
         Ok(Self { event, dst: result, src })
     }
 }
@@ -46,7 +46,7 @@ impl<T: Copy + Unpin, Src: Deref<Target = Buffer<T, C>>, Dst: DerefMut<Target = 
         let mut dst = Pin::new(dst);
         let range = BufferRange::from_parts::<T>(offset, dst.len()).unwrap();
 
-        let event = src.read_to_ptr(range, dst.as_mut_ptr(), queue, wait)?;
+        let event = src.read_to_ptr_in(range, dst.as_mut_ptr(), queue, wait)?;
         Ok(Self { event, src, dst })
     }
 }

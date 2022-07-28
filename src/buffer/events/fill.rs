@@ -10,7 +10,7 @@ pub struct FillBuffer<Dst> {
 impl<T: Copy + Unpin, Dst: DerefMut<Target = Buffer<T, C>>, C: Context> FillBuffer<Dst> {
     #[inline(always)]
     pub unsafe fn new (src: T, mut dst: Dst, range: impl IntoRange, queue: &RawCommandQueue, wait: impl Into<WaitList>) -> Result<Self> {
-        let event = (&mut dst as &mut RawBuffer).fill_raw(src, range, queue, wait)?;
+        let event = (&mut dst as &mut RawBuffer).fill_raw_in(src, range, queue, wait)?;
         Ok(Self { event, dst })
     }
 }

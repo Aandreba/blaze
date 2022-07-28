@@ -45,7 +45,7 @@ impl RawKernel {
     }
 
     #[docfg(feature = "svm")]
-    pub unsafe fn set_svm_argument (&mut self, idx: u32, v: &impl crate::svm::SvmPointer) -> Result<()> {
+    pub unsafe fn set_svm_argument<T: ?Sized, S: crate::svm::SvmPointer<T>> (&mut self, idx: u32, v: &S) -> Result<()> {
         tri!(opencl_sys::clSetKernelArgSVMPointer(self.id(), idx, v.as_ptr().cast()));
         Ok(())
     }

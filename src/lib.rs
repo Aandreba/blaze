@@ -59,6 +59,8 @@ pub mod prelude {
     pub use crate::event::{RawEvent, Event, EventExt, WaitList};
     #[blaze_proc::docfg(feature = "cl1_1")]
     pub use crate::event::FlagEvent;
+    #[blaze_proc::docfg(feature = "cl1_1")]
+    pub use crate::buffer::rect::{BufferRect2D, Rect2D, ReadBufferRect2D, WriteBufferRect2D};
 }
 
 #[doc(hidden)]

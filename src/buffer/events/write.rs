@@ -12,7 +12,7 @@ impl<T: Copy + Unpin, Src: Deref<Target = [T]>, Dst: DerefMut<Target = Buffer<T,
     pub unsafe fn new (src: Src, offset: usize, mut dst: Dst, queue: &RawCommandQueue, wait: impl Into<WaitList>) -> Result<Self> {
         let src = Pin::new(src);
         let range = BufferRange::from_parts::<T>(offset, dst.size()?).unwrap();
-        let event = dst.write_from_ptr(range, src.as_ptr(), queue, wait)?;
+        let event = dst.write_from_ptr_in(range, src.as_ptr(), queue, wait)?;
         Ok(Self { event, src, dst })
     }
 }

@@ -22,7 +22,7 @@ impl<T: Copy + Unpin, Src: Deref<Target = Rect2D<T>>, Dst: DerefMut<Target = Buf
         let host_origin = [offset_dst[0] * core::mem::size_of::<T>(), offset_dst[1], 0];
         let region = [region[0] * core::mem::size_of::<T>(), region[1], 1];
 
-        let event = dst.write_rect_from_ptr(buffer_origin, host_origin, region, buffer_row_pitch, buffer_slice_pitch, Some(host_row_pitch), Some(0), src.as_ptr(), queue, wait)?;
+        let event = dst.write_rect_from_ptr_in(buffer_origin, host_origin, region, buffer_row_pitch, buffer_slice_pitch, Some(host_row_pitch), Some(0), src.as_ptr(), queue, wait)?;
         return Ok(Self { event, dst, src })
     }
 }

@@ -19,7 +19,7 @@ impl<'src, T: Copy + Unpin> ReadBufferRect2D<'src, T> {
         if let Some(slice) = slice.into_slice(max_width, max_height) {
             let [buffer_origin, region] = slice.raw_parts_buffer::<T>();
             let mut dst = Rect2D::<T>::new_uninit(slice.width(), slice.height()).unwrap();
-            let event = src.read_rect_to_ptr(buffer_origin, [0; 3], region, buffer_row_pitch, buffer_slice_pitch, Some(0), Some(0), dst.as_mut_ptr() as *mut T, queue, wait)?;
+            let event = src.read_rect_to_ptr_in(buffer_origin, [0; 3], region, buffer_row_pitch, buffer_slice_pitch, Some(0), Some(0), dst.as_mut_ptr() as *mut T, queue, wait)?;
             return Ok(Self { event, dst, src: PhantomData })
         }
 
@@ -60,7 +60,7 @@ impl<T: Copy + Unpin, Src: Deref<Target = BufferRect2D<T, C>>, Dst: DerefMut<Tar
         let host_origin = [offset_dst[0] * core::mem::size_of::<T>(), offset_dst[1], 0];
         let region = [region[0] * core::mem::size_of::<T>(), region[1], 1];
 
-        let event = src.read_rect_to_ptr(buffer_origin, host_origin, region, buffer_row_pitch, buffer_slice_pitch, Some(host_row_pitch), Some(0), dst.as_mut_ptr(), queue, wait)?;
+        let event = src.read_rect_to_ptr_in(buffer_origin, host_origin, region, buffer_row_pitch, buffer_slice_pitch, Some(host_row_pitch), Some(0), dst.as_mut_ptr(), queue, wait)?;
         return Ok(Self { event, dst, src })
     }
 }

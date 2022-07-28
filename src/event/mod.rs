@@ -330,6 +330,16 @@ impl WaitList {
             None => Ok(())
         }
     }
+
+    #[inline(always)]
+    pub fn iter (&self) -> core::slice::Iter<'_, RawEvent> {
+        match self.0 {
+            Some(x) => x.iter(),
+            None => unsafe { 
+                let slice = core::slice::from_raw_parts(NonNull::dangling(), 0);
+            }
+        }
+    }
 }
 
 impl Extend<RawEvent> for WaitList {

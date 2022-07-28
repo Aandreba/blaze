@@ -1,6 +1,6 @@
 use std::{ptr::{NonNull, addr_of}, num::NonZeroUsize, mem::{MaybeUninit, ManuallyDrop}, alloc::{Allocator, Global, Layout}, ops::{Index, IndexMut}, fmt::Debug};
 use blaze_proc::docfg;
-use crate::{prelude::Context};
+use crate::{prelude::Context, buffer::KernelPointer};
 
 #[docfg(feature = "svm")]
 pub type SvmRect2D<T, C = crate::prelude::Global> = Rect2D<T, crate::svm::Svm<C>>;
@@ -55,6 +55,11 @@ impl<T, A: Allocator> Rect2D<T, A> {
     #[inline(always)]
     pub fn as_mut_ptr (&mut self) -> *mut T {
         self.ptr.as_ptr()
+    }
+
+    #[inline(always)]
+    pub fn allocator (&self) -> &A {
+        &self.alloc
     }
 
     #[inline(always)]
@@ -362,8 +367,7 @@ impl<T, A: Allocator> Rect2D<MaybeUninit<T>, A> {
 }
 
 #[docfg(feature = "svm")]
-unsafe impl<T, C: Context> crate::svm::SvmPointer for SvmRect2D<T, C> {
-    type Type = T;
+unsafe impl<T, C: Context> crate::svm::SvmPointer<T> for SvmRect2D<T, C> {
     type Context = C;
 
     #[inline(always)]
@@ -372,18 +376,47 @@ unsafe impl<T, C: Context> crate::svm::SvmPointer for SvmRect2D<T, C> {
     }
 
     #[inline(always)]
-    fn as_ptr (&self) -> *const Self::Type {
+    fn as_ptr (&self) -> *const T {
         self.ptr.as_ptr()
     }
 
     #[inline(always)]
-    fn as_mut_ptr (&mut self) -> *mut Self::Type {
+    fn as_mut_ptr (&mut self) -> *mut T {
         self.ptr.as_ptr()
     }
 
     #[inline(always)]
     fn len (&self) -> usize {
         self.width() * self.height()
+    }
+}
+
+#[docfg(feature = "svm")]
+unsafe impl<T: Sync, C: Context> KernelPointer<T> for SvmRect2D<T, C> where C: 'static + Send + Clone {
+    #[inline]
+    unsafe fn set_arg (&self, kernel: &mut crate::prelude::RawKernel, wait: &mut crate::prelude::WaitList, idx: u32) -> crate::prelude::Result<()> {
+        kernel.set_svm_argument::<T, Self>(idx, self)?;
+
+        if SvmRect2D::allocator(self).is_coarse() {
+            let evt = SvmRect2D::allocator(self).unmap(crate::svm::SvmPointer::<T>::as_ptr(self) as *mut _, crate::prelude::WaitList::EMPTY)?;
+            wait.push(evt)
+        }
+
+        Ok(())
+    }
+
+    #[inline]
+    fn complete (&self, event: &crate::prelude::RawEvent) -> crate::prelude::Result<()> {
+        if SvmRect2D::allocator(self).is_coarse() {
+            let alloc = SvmRect2D::allocator(self);
+            let size = core::mem::size_of::<T>() * crate::svm::SvmPointer::<T>::len(self);
+            
+            unsafe {
+                let _ = alloc.map::<&crate::prelude::RawEvent, {opencl_sys::CL_MAP_READ | opencl_sys::CL_MAP_WRITE}>(self.as_ptr() as *mut _, size, event)?;
+            }
+        }
+
+        Ok(())
     }
 }
 

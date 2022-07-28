@@ -14,7 +14,7 @@ impl<T: Copy + Unpin, Src: Deref<Target = Buffer<T, C>>, Dst: DerefMut<Target = 
         let src_offset = offset_src.checked_mul(core::mem::size_of::<T>()).unwrap();
         let size = len.checked_mul(core::mem::size_of::<T>()).unwrap();
 
-        let event = (&mut dst as &mut RawBuffer).copy_from(dst_offset, &src, src_offset, size, &queue, wait)?;
+        let event = (&mut dst as &mut RawBuffer).copy_from_in(dst_offset, &src, src_offset, size, &queue, wait)?;
         Ok(Self { event, src, dst })
     }   
 }

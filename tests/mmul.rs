@@ -4,6 +4,7 @@ use std::{mem::MaybeUninit, f32::consts::{PI, E}};
 use blaze::{prelude::{RawDevice}, buffer::rect::{BufferRect2D, SvmRect2D}, svm::Svm};
 use blaze::{prelude::Result, buffer::{flags::MemAccess}, event::WaitList};
 use blaze::prelude::{global_context, blaze};
+use blaze::prelude::Event;
 
 //#[global_context]
 //static CONTEXT : SimpleContext = SimpleContext::default();
@@ -41,7 +42,7 @@ fn matrix_mul () -> Result<()> {
     let mut result = BufferRect2D::<f32>::uninit(3, 3, MemAccess::WRITE_ONLY, false)?; // 3 x 3
 
     let evt = unsafe { ops.mmul(2, &lhs, &rhs, &mut result, [3, 3], None, WaitList::EMPTY)? };
-    //evt.wait()?;
+    evt.wait()?;
 
     let result = unsafe { result.assume_init() };
     println!("{:?}", result);
@@ -59,7 +60,7 @@ fn svm_mul () -> Result<()> {
     let mut result = SvmRect2D::<f32, _>::new_uninit_in(3, 3, Svm::new(true)).unwrap();
 
     let evt = unsafe { ops.mmul(2, &lhs, &rhs, &mut result, [3, 3], None, WaitList::EMPTY)? };
-    //evt.wait()?;
+    evt.wait()?;
 
     let result = unsafe { result.assume_init() };
     println!("{:?}", result);
@@ -68,7 +69,6 @@ fn svm_mul () -> Result<()> {
 }
 
 mod test {
-    use std::{sync::Arc};
     use blaze::{prelude::*, context::SimpleContext};
 
     #[global_context]
@@ -76,30 +76,24 @@ mod test {
 
     #[test]
     fn main () -> Result<()> {
-        let buffer = Buffer::new(&[1, 2, 3, 4, 5], MemAccess::READ_ONLY, false).map(Arc::new)?;
-        let buffer2 = Buffer::new(&[5, 4, 3, 2, 1], MemAccess::WRITE_ONLY, false).map(Arc::new)?;
+        /*
+            [
+                1, 2, 3,
+                4, 5, 6,
+                7, 8, 9,
+            ]
+        */
+        let buffer = BufferRect2D::new(&[1, 2, 3, 4, 5, 6, 7, 8, 9], 3, MemAccess::READ_ONLY, false)?;
+        let evt = buffer.read((1.., 1..), EMPTY)?;
+        let segment = evt.wait()?;
 
-        let read = buffer.read_all_owned(EMPTY)?;
-        let read2 = buffer2.read_all_owned(&read)?;
-        let join = ReadBuffer::join_ordered([read2, read])?.wait()?;
-
-        assert_eq!(join[0].as_slice(), &[5, 4, 3, 2, 1]);
-        assert_eq!(join[1].as_slice(), &[1, 2, 3, 4, 5]);
-        Ok(())
-    }
-
-    fn without_global () -> Result<()> {
-        let ctx = SimpleContext::default()?;
-        
-        let buffer = Buffer::new_in(ctx.clone(), &[1, 2, 3, 4, 5], MemAccess::READ_ONLY, false).map(Arc::new)?;
-        let buffer2 = Buffer::new_in(ctx.clone(), &[5, 4, 3, 2, 1], MemAccess::WRITE_ONLY, false).map(Arc::new)?;
-
-        let read = buffer.read_all_owned(EMPTY)?;
-        let read2 = buffer2.read_all_owned(&read)?;
-        let join = ReadBuffer::join_ordered_in(&ctx, [read2, read])?.wait()?;
-
-        assert_eq!(join[0].as_slice(), &[5, 4, 3, 2, 1]);
-        assert_eq!(join[1].as_slice(), &[1, 2, 3, 4, 5]);
+        /*
+            [
+                5, 6,
+                8, 9
+            ]
+        */
+        assert_eq!(segment.as_slice(), &[5, 6, 8, 9]);
         Ok(())
     }
 }
