@@ -63,7 +63,7 @@ impl<T: Copy, C: Context> Buffer<T, C> {
     #[inline]
     pub unsafe fn create_in (ctx: C, len: usize, flags: MemFlags, host_ptr: Option<NonNull<T>>) -> Result<Self> {
         let size = len.checked_mul(core::mem::size_of::<T>()).unwrap();
-        let inner = RawBuffer::new_in(&ctx, size, flags, host_ptr)?;
+        let inner = RawBuffer::new_in(&ctx, size, flags, host_ptr.map(NonNull::cast))?;
 
         Ok(Self {
             inner,
@@ -74,7 +74,7 @@ impl<T: Copy, C: Context> Buffer<T, C> {
 
     #[inline(always)]
     pub unsafe fn transmute<U: Copy> (self) -> Buffer<U, C> {
-        assert_eq!(core::mem::size_of::<T>(), core::mem::size_of::<U>());
+        debug_assert_eq!(core::mem::size_of::<T>(), core::mem::size_of::<U>());
         Buffer { inner: self.inner, ctx: self.ctx, phtm: PhantomData }
     }
 }
@@ -87,7 +87,7 @@ impl<T: Copy, C: Context> Buffer<MaybeUninit<T>, C> {
 
     #[inline(always)]
     pub fn write_init<'src, 'dst> (&'dst mut self, offset: usize, src: &'src [T], wait: impl Into<WaitList>) -> Result<WriteBuffer<&'src [MaybeUninit<T>], &'dst mut Self>> where T: Unpin {
-        assert_eq!(core::mem::size_of::<T>(), core::mem::size_of::<MaybeUninit<T>>());
+        debug_assert_eq!(core::mem::size_of::<T>(), core::mem::size_of::<MaybeUninit<T>>());
         let src = unsafe { core::slice::from_raw_parts(src.as_ptr().cast(), src.len()) };
         Self::write_by_deref(self, offset, src, wait)
     }

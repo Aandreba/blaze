@@ -22,6 +22,12 @@ impl RawMemObject {
     }
 
     #[inline(always)]
+    pub unsafe fn retain (&self) -> Result<()> {
+        tri!(clRetainMemObject(self.id()));
+        Ok(())
+    }
+
+    #[inline(always)]
     pub const fn id (&self) -> cl_mem {
         self.0.as_ptr()
     }

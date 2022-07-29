@@ -55,12 +55,12 @@ impl<T, E: Event, F: FnOnce(E::Output) -> T> Event for Then<E, F> {
         match self.parent.consume(err) {
             Ok(x) => {
                 let v = (self.f)(x);
-                self.flag.set_complete(None)?;
+                self.flag.complete(None)?;
                 Ok(v)
             },
 
             Err(err) => {
-                self.flag.set_complete(Some(err.ty))?;
+                self.flag.complete(Some(err.ty))?;
                 Err(err)
             }
         }

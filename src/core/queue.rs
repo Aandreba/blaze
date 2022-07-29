@@ -76,6 +76,12 @@ impl RawCommandQueue {
         self.0.as_ptr()
     }
 
+    #[inline(always)]
+    pub unsafe fn retain (&self) -> Result<()> {
+        tri!(clRetainCommandQueue(self.id()));
+        Ok(())
+    }
+
     /// Return the context specified when the command-queue is created.
     #[inline(always)]
     pub fn context (&self) -> Result<RawContext> {
@@ -154,7 +160,6 @@ impl RawCommandQueue {
     pub fn barrier (&self, wait: impl Into<crate::event::WaitList>) -> Result<crate::prelude::RawEvent> {
         let wait : crate::event::WaitList = wait.into();
         let (num_events_in_wait_list, event_wait_list) = wait.raw_parts();
-
 
         let mut evt = core::ptr::null_mut();
         unsafe {

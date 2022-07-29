@@ -44,7 +44,7 @@ impl FlagEvent {
     }
 
     #[inline(always)]
-    pub fn set_complete (&self, error: Option<ErrorType>) -> Result<()> {
+    pub fn complete (&self, error: Option<ErrorType>) -> Result<()> {
         #[cfg(debug_assertions)]
         {
             let end = SystemTime::now();

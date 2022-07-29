@@ -26,6 +26,12 @@ impl RawEvent {
         self.0.as_ptr()
     }
 
+    #[inline(always)]
+    pub unsafe fn retain (&self) -> Result<()> {
+        tri!(clRetainEvent(self.id()));
+        Ok(())
+    }
+
     /// Blocks the current thread until all the events have completed
     #[inline(always)]
     pub fn wait_all (v: &[RawEvent]) -> Result<()> {

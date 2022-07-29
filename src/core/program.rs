@@ -42,6 +42,12 @@ impl RawProgram {
     pub const fn id (&self) -> cl_kernel {
         self.0.as_ptr()
     }
+    
+    #[inline(always)]
+    pub unsafe fn retain (&self) -> Result<()> {
+        tri!(clRetainProgram(self.id()));
+        Ok(())
+    }
 
     /// Links a set of compiled program objects and libraries for all the devices or a specific device(s) in the OpenCL context and creates an executable.
     #[docfg(feature = "cl2")]

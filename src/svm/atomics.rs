@@ -8,7 +8,7 @@ use blaze_proc::docfg;
 macro_rules! impl_atomic {
     ($($len:literal in $ty:ty => $atomic:ty as $svm:ident),+) => {
         $(
-            #[docfg(target_has_atomic_load_store = $len)]
+            #[docfg(target_has_atomic = $len)]
             #[repr(transparent)]
             pub struct $svm<C: Context = Global> (SvmBox<[$ty], C>);
 

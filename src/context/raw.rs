@@ -99,6 +99,12 @@ impl RawContext {
         self.0.as_ptr()
     }
 
+    #[inline(always)]
+    pub unsafe fn retain (&self) -> Result<()> {
+        tri!(clRetainContext(self.id()));
+        Ok(())
+    }
+
     /// Return the context reference count.
     #[inline(always)]
     pub fn reference_count (&self) -> Result<u32> {

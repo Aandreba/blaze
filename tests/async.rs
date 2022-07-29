@@ -1,25 +1,24 @@
-use blaze::{prelude::*, context::SimpleContext};
-use tokio::select;
+use std::time::Duration;
+use blaze::prelude::*;
 
 #[global_context]
 static CONTEXT : SimpleContext = SimpleContext::default();
 
 #[tokio::test]
 async fn test () -> Result<()> {
-    let mut big_buffer = Buffer::<i32>::new_uninit(u16::MAX as usize, MemAccess::READ_WRITE, false)?;
-    let evt = big_buffer.fill_init(2, .., EMPTY)?;
-    let fut = evt.wait_async()?;
+    const SIZE : usize = u16::MAX as usize;
+    let values = vec![1234; SIZE];
 
-    let checker = tokio::spawn(async move {
-        loop {
-            println!("Still waiting");
-        }
+    let mut big_buffer = Buffer::<i32>::new_uninit(SIZE, MemAccess::READ_WRITE, false)?;
+    let flag = FlagEvent::new()?;
+
+    let read = big_buffer.write_init(0, &values, &flag)?;
+    tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        flag.complete(None)
     });
 
-    select! {
-        _ = checker => panic!("Something has gone wrong!"),
-        _ = fut => println!("Done")
-    };
+    let _ = read.wait_async()?.await;
 
     Ok(())
 }

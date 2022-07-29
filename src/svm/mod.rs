@@ -1,7 +1,4 @@
 flat_mod!(flags, utils);
-
-#[cfg_attr(docsrs, doc(cfg(feature = "atomics")))]
-#[cfg(feature = "atomics")]
 pub mod atomics;
 
 use std::{alloc::{Layout, Allocator, GlobalAlloc}, ptr::{NonNull, addr_of_mut}, ffi::c_void};

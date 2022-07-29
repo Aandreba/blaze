@@ -919,6 +919,13 @@ impl RawDevice {
         DEVICES.first()
     }
 
+    #[docfg(feature = "cl1_2")]
+    #[inline(always)]
+    pub unsafe fn retain (&self) -> Result<()> {
+        tri!(clRetainDevice(self.id()));
+        Ok(())
+    }
+
     #[inline]
     fn get_info_string (&self, ty: cl_device_info) -> Result<String> {
         unsafe {

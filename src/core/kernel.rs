@@ -23,6 +23,12 @@ impl RawKernel {
     }
 
     #[inline(always)]
+    pub unsafe fn retain (&self) -> Result<()> {
+        tri!(clRetainKernel(self.id()));
+        Ok(())
+    }
+
+    #[inline(always)]
     pub fn set_argument<T: ?Sized> (&mut self, idx: u32, v: &T) -> Result<()> {
         let ptr = v as *const _ as *const _;
 

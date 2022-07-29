@@ -2,16 +2,11 @@ use std::{backtrace::Backtrace, sync::Arc, fmt::{Display, Debug}};
 use blaze_proc::error;
 pub type Result<T> = ::core::result::Result<T, Error>;
 
-// Since `ArcInner` has always a minimum size of 2 `usize`s, we can use this to reduce the number of allocations when creating a new `Error` without description
-lazy_static! {
-    static ref EMPTY_DESC : Arc<str> = Arc::from("");
-}
-
 #[derive(Clone)]
 #[non_exhaustive]
 pub struct Error {
     pub ty: ErrorType,
-    pub desc: Arc<str>,
+    pub desc: Option<Arc<str>>,
     #[cfg_attr(docsrs, doc(cfg(debug_assertions)))]
     #[cfg(debug_assertions)]
     pub backtrace: Arc<Backtrace>
@@ -20,11 +15,11 @@ pub struct Error {
 impl Error {
     #[inline(always)]
     pub fn new (ty: ErrorType, desc: impl ToString) -> Self {
-        Self::from_parts(ty, Arc::from(desc.to_string()), Arc::new(Backtrace::capture()))
+        Self::from_parts(ty, Some(Arc::from(desc.to_string())), Arc::new(Backtrace::capture()))
     }
 
     #[inline(always)]
-    pub fn from_parts (ty: ErrorType, desc: Arc<str>, #[cfg(debug_assertions)] backtrace: Arc<Backtrace>) -> Self {
+    pub fn from_parts (ty: ErrorType, desc: Option<Arc<str>>, #[cfg(debug_assertions)] backtrace: Arc<Backtrace>) -> Self {
         Self { 
             ty,
             desc,
@@ -37,7 +32,7 @@ impl Error {
     pub fn from_type (ty: ErrorType) -> Self {
         Self { 
             ty,
-            desc: EMPTY_DESC.clone(),
+            desc: None,
             #[cfg(debug_assertions)]
             backtrace: Arc::new(Backtrace::capture())
         }
@@ -70,8 +65,8 @@ impl Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         Debug::fmt(&self.ty, f)?;
         
-        if !self.desc.is_empty() {
-            write!(f, ": {}", self.desc)?;
+        if let Some(ref desc) = self.desc {
+            write!(f, ": {desc}")?;
         }
 
         #[cfg(debug_assertions)]

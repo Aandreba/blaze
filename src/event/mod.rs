@@ -1,18 +1,27 @@
 use std::{mem::ManuallyDrop, time::{SystemTime, Duration}, ops::Deref, alloc::Allocator, panic::AssertUnwindSafe};
 use opencl_sys::{CL_COMMAND_NDRANGE_KERNEL, CL_COMMAND_TASK, CL_COMMAND_NATIVE_KERNEL, CL_COMMAND_READ_BUFFER, CL_COMMAND_WRITE_BUFFER, CL_COMMAND_COPY_BUFFER, CL_COMMAND_READ_IMAGE, CL_COMMAND_WRITE_IMAGE, CL_COMMAND_COPY_IMAGE, CL_COMMAND_COPY_IMAGE_TO_BUFFER, CL_COMMAND_COPY_BUFFER_TO_IMAGE, CL_COMMAND_MAP_BUFFER, CL_COMMAND_MAP_IMAGE, CL_COMMAND_UNMAP_MEM_OBJECT, CL_COMMAND_MARKER, CL_COMMAND_ACQUIRE_GL_OBJECTS, CL_COMMAND_RELEASE_GL_OBJECTS, CL_EVENT_COMMAND_TYPE, CL_EVENT_COMMAND_EXECUTION_STATUS, CL_EVENT_COMMAND_QUEUE, cl_event};
 use blaze_proc::docfg;
-use crate::{core::*, prelude::RawContext};
+use crate::{core::*, prelude::{Global, Context}};
 
-flat_mod!(status, raw, various, info);
+#[path = "various.rs"]
+mod extra;
+#[cfg(feature = "cl1_1")]
+mod join;
+
+pub mod various {
+    pub use super::extra::*;
+    #[cfg(feature = "cl1_1")]
+    pub use super::join::*;
+}
+
+
+flat_mod!(status, raw, info);
 
 #[cfg(feature = "cl1_1")]
-flat_mod!(flag, join);
+flat_mod!(flag);
 
 #[cfg(feature = "futures")]
 flat_mod!(wait);
-
-#[cfg(all(feature = "cl1_1", feature = "futures"))]
-flat_mod!(future);
 
 /// An complex OpenCL event, with a syntax simillar to Rust's [`Future`](std::future::Future).\
 /// [`Event`] is designed to be able to safely return a value after the underlying [`RawEvent`] has completed
@@ -104,6 +113,11 @@ pub trait Event {
         self.as_raw().get_info(CL_EVENT_COMMAND_QUEUE).map(RawCommandQueue::from_id)
     }
 
+    #[inline(always)]
+    fn reference_count (&self) -> Result<u32> {
+        self.as_raw().get_info(opencl_sys::CL_EVENT_REFERENCE_COUNT)
+    }
+
     /// Return the context associated with event.
     #[docfg(feature = "cl1_1")]
     #[inline(always)]
@@ -165,6 +179,8 @@ impl<T: Event> Event for AssertUnwindSafe<T> {
     }
 }
 
+use various::*;
+
 pub trait EventExt: Sized + Event {
     /// Executes the specified function after the parent event has completed. 
     #[inline]
@@ -198,14 +214,20 @@ pub trait EventExt: Sized + Event {
     }
 
     /// Returns an event that completes when all the events inside `iter` have completed.
-    #[docfg(feature = "cl1_1")]
+    /// The return vector maintains the same order as `iter`.
+    #[docfg(feature = "cl1_2")]
     #[inline(always)]
-    fn join<I: IntoIterator<Item = Self>> (iter: I) -> Result<EventJoin<Self>> where Self: 'static + Send, Self::Output: Unpin + Send + Sync, I::IntoIter: ExactSizeIterator {
-        EventJoin::new(iter)
+    fn join<I: Iterator<Item = Self>> (iter: I) -> Result<Join<Self>> {
+        Self::join_in(iter, Global.next_queue())
+    }
+
+    #[docfg(feature = "cl1_2")]
+    #[inline(always)]
+    fn join_in<I: Iterator<Item = Self>> (iter: I, queue: &RawCommandQueue) -> Result<Join<Self>> {
+        Join::new_in(iter, queue)
     }
 
     /// Blocks the current thread until all the events inside `iter` have completed.\
-    /// Unlike [`join`](EventExt::join) and [`join_ordered`](EventExt::join_ordered), this method does not require it's types to implement `'static`, [`Send`], [`Sync`] or [`Unpin`], nor does it require `iter` to be [`ExactSizeIterator`]. \
     /// The return vector maintains the same order as `iter`.
     #[inline]
     fn join_blocking<I: IntoIterator<Item = Self>> (iter: I) -> Result<Vec<Self::Output>> {
@@ -223,26 +245,6 @@ pub trait EventExt: Sized + Event {
         
         Ok(result)
     }
-
-    /// Returns an event that completes when all the events inside `iter` have completed, ensuring that the order of the outputs is the same as the inputs 
-    /// (first output is the result of the first event in the iterator, second output is from second event, etc.)
-    #[docfg(feature = "cl1_1")]
-    #[inline(always)]
-    fn join_ordered<I: IntoIterator<Item = Self>> (iter: I) -> Result<EventJoinOrdered<Self>> where Self: 'static + Send, Self::Output: Unpin + Send + Sync, I::IntoIter: ExactSizeIterator {
-        EventJoinOrdered::new(iter)
-    }
-
-    #[docfg(feature = "cl1_1")]
-    #[inline(always)]
-    fn join_in<I: IntoIterator<Item = Self>> (ctx: &RawContext, iter: I) -> Result<EventJoin<Self>> where Self: 'static + Send, Self::Output: Unpin + Send + Sync, I::IntoIter: ExactSizeIterator {
-        EventJoin::new_in(ctx, iter)
-    }
-
-    #[docfg(feature = "cl1_1")]
-    #[inline(always)]
-    fn join_ordered_in<I: IntoIterator<Item = Self>> (ctx: &RawContext, iter: I) -> Result<EventJoinOrdered<Self>> where Self: 'static + Send, Self::Output: Unpin + Send + Sync, I::IntoIter: ExactSizeIterator {
-        EventJoinOrdered::new_in(ctx, iter)
-    }
 }
 
 impl<T: Event> EventExt for T {}
@@ -255,6 +257,11 @@ pub struct WaitList (pub(crate) Option<Vec<RawEvent>>);
 impl WaitList {
     /// An empty wait list
     pub const EMPTY : Self = WaitList(None);
+
+    #[inline(always)]
+    pub fn is_empty (&self) -> bool {
+        self.0.is_none()
+    }
 
     /// Creates a new wait list
     #[inline(always)]
@@ -334,9 +341,29 @@ impl WaitList {
     #[inline(always)]
     pub fn iter (&self) -> core::slice::Iter<'_, RawEvent> {
         match self.0 {
-            Some(x) => x.iter(),
+            Some(ref x) => x.iter(),
             None => unsafe { 
-                let slice = core::slice::from_raw_parts(NonNull::dangling(), 0);
+                let slice = core::slice::from_raw_parts (
+                    std::ptr::NonNull::dangling().as_ptr(),
+                    0
+                );
+
+                slice.iter()
+            }
+        }
+    }
+
+    #[inline(always)]
+    pub fn iter_mut (&mut self) -> core::slice::IterMut<'_, RawEvent> {
+        match self.0 {
+            Some(ref mut x) => x.iter_mut(),
+            None => unsafe { 
+                let slice = core::slice::from_raw_parts_mut (
+                    std::ptr::NonNull::dangling().as_ptr(),
+                    0
+                );
+
+                slice.iter_mut()
             }
         }
     }

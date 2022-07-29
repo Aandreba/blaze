@@ -1,310 +1,45 @@
-use std::{sync::{atomic::{AtomicUsize}, Arc}, pin::Pin, mem::{MaybeUninit, ManuallyDrop}, backtrace::Backtrace, ptr::{addr_of, addr_of_mut}};
-use bitvec::{prelude::BitBox, bitbox};
-use once_cell::sync::OnceCell;
+use box_iter::BoxIntoIter;
 
-use crate::{prelude::{RawContext, Result, Global, Error}};
-use super::{RawEvent, Event, FlagEvent};
+use crate::prelude::{Result, RawCommandQueue, Global, Context};
+use super::{RawEvent, Event, WaitList};
 
-/// Event for [`EventExt::join`](super::EventExt::join)
-pub struct EventJoin<E: Event> where E::Output: Unpin  {
-    data: Pin<Arc<JoinEventInner<E>>>
+#[derive(Debug, Clone)]
+pub struct Join<E> {
+    marker: RawEvent,
+    evts: Box<[E]>
 }
 
-struct JoinEventInner<E: Event> where E::Output: Unpin  {
-    flag: FlagEvent,
-    results: JoinList<E>,
-    error: OnceCell<JoinError>
-}
-
-struct JoinList<E: Event> where E::Output: Unpin {
-    inner: Pin<Box<[MaybeUninit<E::Output>]>>,
-    idx: AtomicUsize
-}
-
-// Error
-struct JoinError {
-    desc: Arc<str>,
-    #[cfg(debug_assertions)]
-    backtrace: Arc<Backtrace>
-}
-
-impl<E: Event> EventJoin<E> where E: 'static + Send, E::Output: Send + Sync + Unpin {
+impl<E: Event> Join<E> {
     #[inline(always)]
-    pub fn new<I: IntoIterator<Item = E>> (events: I) -> Result<Self> where I::IntoIter: ExactSizeIterator {
-        Self::new_in(&Global, events)
+    pub fn new<I: IntoIterator<Item = E>> (iter: I) -> Result<Self> {
+        Self::new_in(iter, Global.next_queue())
     }
 
-    pub fn new_in<I: IntoIterator<Item = E>> (ctx: &RawContext, events: I) -> Result<Self> where I::IntoIter: ExactSizeIterator {
-        let events = events.into_iter();
-        
-        let results = JoinList {
-            inner: Pin::new(Box::new_uninit_slice(events.len())),
-            idx: AtomicUsize::new(0),
-        };
-
-        let data = Arc::pin(JoinEventInner {
-            flag: FlagEvent::new_in(ctx)?,
-            error: OnceCell::new(),
-            results
-        });
-
-        for event in events {
-            let data = data.clone();
-            let raw = event.as_raw().clone();
-
-            raw.on_complete(move |_, status| {
-                match event.consume(status.err()) {
-                    Ok(v) => if data.results.push(v) {
-                        data.flag.set_complete(None).unwrap();
-                    },
-
-                    Err(err) => {
-                        let set = data.error.set(JoinError {
-                            desc: err.desc,
-                            #[cfg(debug_assertions)]
-                            backtrace: err.backtrace
-                        });
-
-                        if set.is_ok() {
-                            data.flag.set_complete(Some(err.ty)).unwrap();
-                        }
-                    }
-                }
-            })?;
-        }
-
-        Ok(Self { data })
+    #[inline]
+    pub fn new_in<I: IntoIterator<Item = E>> (iter: I, queue: &RawCommandQueue) -> Result<Self> {
+        let (raw, evts) : (Vec<_>, Vec<_>) = iter.into_iter().map(|x| (x.to_raw(), x)).unzip();
+        let marker = queue.marker(WaitList::new(raw))?;
+        Ok(Self { marker, evts: evts.into_boxed_slice() })
     }
 }
 
-impl<E: Event> Event for EventJoin<E> where E::Output: Unpin {
+impl<E: Event> Event for Join<E> {
     type Output = Vec<E::Output>;
 
     #[inline(always)]
     fn as_raw (&self) -> &RawEvent {
-        self.data.flag.as_raw()
+        &self.marker
     }
 
-    fn consume (self, err: Option<crate::prelude::Error>) -> crate::prelude::Result<Self::Output> {
-        let mut unpined = Pin::into_inner(self.data);
-        let data;
-
-        loop {
-            match Arc::try_unwrap(unpined) {
-                Ok(x) => {
-                    data = x;
-                    break
-                },
-
-                Err(x) => {
-                    unpined = x;
-                    core::hint::spin_loop()
-                }
-            }
-        }
-
-        if let Some(err) = err {
-            let data = data.error.into_inner().unwrap();
-            return Err(Error::from_parts(err.ty, data.desc, #[cfg(debug_assertions)] data.backtrace));
-        }
-
-        unsafe { Ok(data.results.assume_init()) }
-    }
-
-    #[inline(always)]
-    fn profiling_nanos (&self) -> Result<super::ProfilingInfo<u64>> {
-        self.data.flag.profiling_nanos()
-    }
-
-    #[inline(always)]
-    fn profiling_time (&self) -> Result<super::ProfilingInfo<std::time::SystemTime>> {
-        self.data.flag.profiling_time()
-    }
-
-    #[inline(always)]
-    fn duration (&self) -> Result<std::time::Duration> {
-        self.data.flag.duration()
-    }
-}
-
-impl<E: Event> JoinList<E> where E::Output: Unpin {
-    fn push (&self, v: E::Output) -> bool {
-        let idx = self.idx.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
-        debug_assert!(idx < self.inner.len());
-
-        // SAFETY: Atomically increased index ensures we are the only thread with access to this index.
-        unsafe {
-            let ptr = self.inner.as_ptr().add(idx) as *mut MaybeUninit<E::Output>;
-            (&mut *ptr).write(v) 
-        };
-
-        idx == self.inner.len() - 1
-    }
-
-    unsafe fn assume_init (self) -> Vec<E::Output> {
-        let this = ManuallyDrop::new(self);
-        let inner = core::ptr::read(addr_of!(this.inner));
-
-        let results = Pin::into_inner(inner);
-        results.assume_init().into_vec()
-    }
-}
-
-impl<E: Event> Drop for JoinList<E> where E::Output: Unpin {
     #[inline]
-    fn drop(&mut self) {
-        let ptr = self.inner.as_mut_ptr();
-        for i in 0..*self.idx.get_mut() {
-            unsafe { (&mut *ptr.add(i)).assume_init_drop() }
-        }
-    }
-}
+    fn consume (self, err: Option<crate::prelude::Error>) -> Result<Self::Output> {
+        let mut result = Vec::with_capacity(self.evts.len());
 
-/// Event for [`EventExt::join_ordered`](super::EventExt::join_ordered)
-pub struct EventJoinOrdered<E: Event> where E::Output: Unpin  {
-    data: Pin<Arc<JoinOrderedInner<E>>>
-}
-
-struct JoinOrderedInner<E: Event> where E::Output: Unpin {
-    flag: FlagEvent,
-    results: JoinOrderedList<E>,
-    error: OnceCell<JoinError>
-}
-
-struct JoinOrderedList<E: Event> where E::Output: Unpin {
-    inner: Pin<Box<[MaybeUninit<E::Output>]>>,
-    has_init: BitBox<u8>
-}
-
-impl<E: Event> EventJoinOrdered<E> where E: 'static + Send, E::Output: Send + Sync + Unpin {
-    #[inline(always)]
-    pub fn new<I: IntoIterator<Item = E>> (events: I) -> Result<Self> where I::IntoIter: ExactSizeIterator {
-        Self::new_in(&Global, events)
-    }
-
-    pub fn new_in<I: IntoIterator<Item = E>> (ctx: &RawContext, events: I) -> Result<Self> where I::IntoIter: ExactSizeIterator {
-        let events = events.into_iter();
-
-        let results = JoinOrderedList {
-            inner: Pin::new(Box::new_uninit_slice(events.len())),
-            has_init: bitbox![u8, _; 0; events.len()]
-        };
-
-        let data = Arc::pin(JoinOrderedInner {
-            flag: FlagEvent::new_in(ctx)?,
-            error: OnceCell::new(),
-            results
-        });
-
-        for (idx, event) in events.enumerate() {
-            let data = data.clone();
-            let raw = event.to_raw();
-
-            raw.on_complete(move |_, status| {
-                match event.consume(status.err()) {
-                    Ok(v) => if data.results.set(idx, v) {
-                        data.flag.set_complete(None).unwrap();
-                    },
-
-                    Err(err) => {
-                        let set = data.error.set(JoinError {
-                            desc: err.desc,
-                            #[cfg(debug_assertions)]
-                            backtrace: err.backtrace
-                        });
-
-                        if set.is_ok() {
-                            data.flag.set_complete(Some(err.ty)).unwrap();
-                        }
-                    }
-                }
-            })?;
+        for evt in self.evts.into_iter() {
+            let v = evt.consume(err.clone())?;
+            result.push(v)
         }
 
-        Ok(Self { data })
-    }
-}
-
-impl<E: Event> Event for EventJoinOrdered<E> where E::Output: Unpin {
-    type Output = Vec<E::Output>;
-
-    #[inline(always)]
-    fn as_raw (&self) -> &RawEvent {
-        self.data.flag.as_raw()
-    }
-
-    fn consume (self, err: Option<crate::prelude::Error>) -> crate::prelude::Result<Self::Output> {
-        let mut unpined = Pin::into_inner(self.data);
-        let data;
-
-        loop {
-            match Arc::try_unwrap(unpined) {
-                Ok(x) => {
-                    data = x;
-                    break
-                },
-
-                Err(x) => {
-                    unpined = x;
-                    core::hint::spin_loop()
-                }
-            }
-        }
-
-        if let Some(err) = err {
-            let data = data.error.into_inner().unwrap();
-            return Err(Error::from_parts(err.ty, data.desc, #[cfg(debug_assertions)] data.backtrace));
-        }
-
-        unsafe { Ok(data.results.assume_init()) }
-    }
-
-    #[inline(always)]
-    fn profiling_nanos (&self) -> Result<super::ProfilingInfo<u64>> {
-        self.data.flag.profiling_nanos()
-    }
-
-    #[inline(always)]
-    fn profiling_time (&self) -> Result<super::ProfilingInfo<std::time::SystemTime>> {
-        self.data.flag.profiling_time()
-    }
-
-    #[inline(always)]
-    fn duration (&self) -> Result<std::time::Duration> {
-        self.data.flag.duration()
-    }
-}
-
-impl<E: Event> JoinOrderedList<E> where E::Output: Unpin {
-    #[inline]
-    fn set (&self, idx: usize, v: E::Output) -> bool {
-        let box_ptr = self.inner.as_ptr() as *mut MaybeUninit<E::Output>;
-        let bit_ptr = addr_of!(self.has_init) as *mut BitBox;
-
-        // SAFETY: This private code is guaranteed to not write to the same pointer on multiple ocasions in the implementation of `EventJoinOrdered`
-        unsafe {
-            (&mut *box_ptr.add(idx)).write(v);
-            (&mut *bit_ptr).set(idx, true);
-        }
-
-        self.has_init.iter().all(|x| *x)
-    }
-
-    unsafe fn assume_init (self) -> Vec<E::Output> {
-        let mut this = ManuallyDrop::new(self);
-        let inner = core::ptr::read(addr_of!(this.inner));
-        core::ptr::drop_in_place(addr_of_mut!(this.has_init));
-        Pin::into_inner(inner).assume_init().into_vec()
-    }
-}
-
-impl<E: Event> Drop for JoinOrderedList<E> where E::Output: Unpin {
-    #[inline]
-    fn drop(&mut self) {
-        unsafe {
-            for (init, inner) in self.has_init.iter().zip(self.inner.iter_mut()) {
-                if *init { inner.assume_init_drop(); }
-            }
-        }
+        Ok(result)
     }
 }

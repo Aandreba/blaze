@@ -1,4 +1,4 @@
-use std::{ptr::{NonNull, addr_of_mut}, ops::{RangeBounds, Bound, Deref, DerefMut}};
+use std::{ptr::{NonNull, addr_of_mut}, ops::{RangeBounds, Bound, Deref, DerefMut}, ffi::c_void};
 use opencl_sys::*;
 use blaze_proc::docfg;
 use crate::{core::*, context::RawContext, event::{WaitList, RawEvent}, buffer::BufferRange, memobj::{RawMemObject}, prelude::{Global, Context}};
@@ -11,12 +11,12 @@ pub struct RawBuffer (RawMemObject);
 
 impl RawBuffer {
     #[inline(always)]
-    pub fn new<T> (size: usize, flags: MemFlags, host_ptr: Option<NonNull<T>>) -> Result<Self> {
+    pub fn new (size: usize, flags: MemFlags, host_ptr: Option<NonNull<c_void>>) -> Result<Self> {
         Self::new_in(&Global, size, flags, host_ptr)
     }
 
     #[inline]
-    pub fn new_in<T> (ctx: &RawContext, size: usize, flags: MemFlags, host_ptr: Option<NonNull<T>>) -> Result<Self> {
+    pub fn new_in (ctx: &RawContext, size: usize, flags: MemFlags, host_ptr: Option<NonNull<c_void>>) -> Result<Self> {
         let host_ptr = match host_ptr {
             Some(x) => x.as_ptr().cast(),
             None => core::ptr::null_mut()

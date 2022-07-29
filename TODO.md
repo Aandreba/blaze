@@ -2,5 +2,6 @@
 - [ ] Check `core` items have `new` and `new_in` methods
 - [ ] `strict` feature
 - [ ] buffered queues
+- [ ] join streams
 - [ ] rework `image` feature
     - [ ] Swap lifetimes by generic `Deref` and `DerefMut` trait
