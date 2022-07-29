@@ -27,8 +27,8 @@ impl<T: Copy> BufferRect2D<T> {
     }
 
     #[inline(always)]
-    pub fn uninit (width: usize, height: usize, access: MemAccess, alloc: bool) -> Result<BufferRect2D<MaybeUninit<T>>> {
-        Self::uninit_in(Global, width, height, access, alloc)
+    pub fn new_uninit (width: usize, height: usize, access: MemAccess, alloc: bool) -> Result<BufferRect2D<MaybeUninit<T>>> {
+        Self::new_uninit_in(Global, width, height, access, alloc)
     }
     
     #[inline]
@@ -54,7 +54,7 @@ impl<T: Copy, C: Context> BufferRect2D<T, C> {
     }
 
     #[inline]
-    pub fn uninit_in (ctx: C, width: usize, height: usize, access: MemAccess, alloc: bool) -> Result<BufferRect2D<MaybeUninit<T>, C>> {
+    pub fn new_uninit_in (ctx: C, width: usize, height: usize, access: MemAccess, alloc: bool) -> Result<BufferRect2D<MaybeUninit<T>, C>> {
         let host = MemFlags::new(access, HostPtr::new(alloc, false));
         unsafe { BufferRect2D::create_in(ctx, width, height, host, None) }
     }

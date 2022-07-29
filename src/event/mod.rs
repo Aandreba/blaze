@@ -217,13 +217,13 @@ pub trait EventExt: Sized + Event {
     /// The return vector maintains the same order as `iter`.
     #[docfg(feature = "cl1_2")]
     #[inline(always)]
-    fn join<I: Iterator<Item = Self>> (iter: I) -> Result<Join<Self>> {
+    fn join<I: IntoIterator<Item = Self>> (iter: I) -> Result<Join<Self>> {
         Self::join_in(iter, Global.next_queue())
     }
 
     #[docfg(feature = "cl1_2")]
     #[inline(always)]
-    fn join_in<I: Iterator<Item = Self>> (iter: I, queue: &RawCommandQueue) -> Result<Join<Self>> {
+    fn join_in<I: IntoIterator<Item = Self>> (iter: I, queue: &RawCommandQueue) -> Result<Join<Self>> {
         Join::new_in(iter, queue)
     }
 

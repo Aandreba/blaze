@@ -14,7 +14,7 @@ cl3 = ["cl2_2", "opencl-sys/CL_VERSION_3_0"]
 
 # Rscl features
 strict = []
-half = ["dep:half"]
+# half = ["dep:half"]
 # image = ["dep:ffmpeg-sys-next"]
 map = []
 svm = ["cl2"]
@@ -28,7 +28,7 @@ blaze-proc = { path = "rscl-proc", version = "0.1.0" }
 opencl-sys = { version = "0.2.1", default-features = false }
 futures = { version = "0.3.21", optional = true }
 # ffmpeg-sys-next = { version = "5.0.1", optional = true }
-half = { version = "2", features = ["num-traits", "bytemuck"], optional = true }
+# half = { version = "2", features = ["num-traits", "bytemuck"], optional = true }
 box-iter = "0.1.0"
 bytemuck = "1.10.0"
 bytemuck_derive = "1.1.1"
