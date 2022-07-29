@@ -1,8 +1,10 @@
 use std::{alloc::Layout, sync::atomic::*, ops::{Deref, DerefMut}};
 use crate::context::{Context, Global};
 use super::{SvmBox, Svm, SvmUtilsFlags};
+use crate::prelude::*;
 use crate::buffer::flags::MemAccess;
 use crate::svm::SvmFlags;
+use crate::buffer::KernelPointer;
 use blaze_proc::docfg;
 
 macro_rules! impl_atomic {
@@ -77,7 +79,7 @@ macro_rules! impl_atomic {
                 }
             }
 
-            unsafe impl<C: Context> super::SvmPointer<$ty> for $svm<C> {
+            unsafe impl<C: Context> super::SvmPointer<$atomic> for $svm<C> {
                 type Context = C;
 
                 #[inline(always)]
@@ -86,13 +88,13 @@ macro_rules! impl_atomic {
                 }
 
                 #[inline(always)]
-                fn as_ptr (&self) -> *const $ty {
-                    self.0.as_ptr()
+                fn as_ptr (&self) -> *const $atomic {
+                    <SvmBox<[$ty], C> as super::SvmPointer::<$ty>>::as_ptr(&self.0).cast()
                 }
 
                 #[inline(always)]
-                fn as_mut_ptr (&mut self) -> *mut $ty {
-                    self.0.as_mut_ptr()
+                fn as_mut_ptr (&mut self) -> *mut $atomic {
+                    <SvmBox<[$ty], C> as super::SvmPointer::<$ty>>::as_mut_ptr(&mut self.0).cast()
                 }
 
                 #[inline(always)]
@@ -101,27 +103,18 @@ macro_rules! impl_atomic {
                 }
             }
 
-            unsafe impl<C: Context> super::SvmPointer<[$ty]> for $svm<C> {
-                type Context = C;
-
+            unsafe impl<C: Context> KernelPointer<$atomic> for $svm<C> where C: 'static + Send + Clone {
                 #[inline(always)]
-                fn allocator (&self) -> &Svm<C> {
-                    SvmBox::allocator(&self.0)
+                unsafe fn set_arg (&self, kernel: &mut RawKernel, _wait: &mut WaitList, idx: u32) -> Result<()> {
+                    kernel.set_svm_argument::<$atomic, Self>(idx, self)?;
+                    // SVM atomic pointers are allways fine grained
+                    Ok(())
                 }
 
                 #[inline(always)]
-                fn as_ptr (&self) -> *const [$ty] {
-                    self.0.as_ptr()
-                }
-
-                #[inline(always)]
-                fn as_mut_ptr (&mut self) -> *mut [$ty] {
-                    self.0.as_mut_ptr()
-                }
-
-                #[inline(always)]
-                fn len (&self) -> usize {
-                    1
+                fn complete (&self, _event: &RawEvent) -> Result<()> {
+                    // SVM atomic pointers are allways fine grained
+                    Ok(())
                 }
             }
         )+
@@ -129,7 +122,7 @@ macro_rules! impl_atomic {
 }
 
 impl_atomic! {
-    "8" in bool => AtomicBool as SvmAtomicFlag,
+    "8" in bool => AtomicBool as SvmAtomicBool,
     "32" in i32 => AtomicU32 as SvmAtomicI32,
     "32" in u32 => AtomicU32 as SvmAtomicU32,
     "64" in i64 => AtomicI64 as SvmAtomicI64,
