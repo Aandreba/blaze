@@ -11,7 +11,7 @@ fn rng_code () -> String {
 }
 
 #[blaze(Rng)]
-#[link(rng_code())]
+#[link = rng_code()]
 pub extern "C" {
     fn next_bytes (n: u32, out: *mut MaybeUninit<u8>);
 }

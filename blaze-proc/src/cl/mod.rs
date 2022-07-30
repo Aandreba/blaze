@@ -212,8 +212,6 @@ pub struct Blaze {
 
 #[derive(Parse)]
 pub struct Link {
-    #[paren]
-    pub paren_token: syn::token::Paren,
-    #[inside(paren_token)]
+    pub eq_token: Token![=],
     pub meta: Expr
 }

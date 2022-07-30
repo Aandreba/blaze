@@ -22,7 +22,7 @@ static CODE : &str = "
 ";
 
 #[blaze(MatrixOps)]
-#[link(CODE)]
+#[link = CODE]
 extern "C" {
     #[link_name = "mul"]
     fn matrix_mul (k: u32, lhs: *const f32, rhs: *const f32, out: *mut MaybeUninit<f32>);
