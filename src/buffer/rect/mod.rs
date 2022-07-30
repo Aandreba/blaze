@@ -131,11 +131,6 @@ impl<T: Copy, C: Context> BufferRect2D<T, C> {
 #[docfg(feature = "cl1_1")]
 impl<T: Copy + Unpin, C: Context> BufferRect2D<T, C> {
     #[inline(always)]
-    pub fn read_all<'src> (&'src self, wait: impl Into<WaitList>) -> Result<ReadBufferRect2D<'src, T>> {
-        self.read((.., ..), wait)
-    }
-
-    #[inline(always)]
     pub fn read<'src> (&'src self, slice: impl crate::memobj::IntoSlice2D, wait: impl Into<WaitList>) -> Result<ReadBufferRect2D<'src, T>> {
         let (buffer_row_pitch, buffer_slice_pitch) = self.row_and_slice_pitch();
         unsafe { ReadBufferRect2D::new(self, self.width.get(), self.height.get(), slice, Some(buffer_row_pitch), Some(buffer_slice_pitch), self.inner.ctx.next_queue(), wait) }
@@ -185,7 +180,7 @@ impl<T: Copy, C: Context> DerefMut for BufferRect2D<T, C> {
 impl<T: Copy + Unpin + Debug, C: Context> Debug for BufferRect2D<T, C> {
     #[inline(always)]
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let all = self.read_all(WaitList::EMPTY).unwrap().wait().unwrap();
+        let all = self.read((.., ..), WaitList::EMPTY).unwrap().wait().unwrap();
         Debug::fmt(&all, f)
     }
 }

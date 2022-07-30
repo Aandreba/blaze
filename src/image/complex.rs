@@ -113,11 +113,6 @@ impl<P: RawPixel, C: Context> Image2D<P, C> {
 
 impl<P: RawPixel + Unpin, C: Context> Image2D<P, C> {
     #[inline(always)]
-    pub fn read_all (&self, wait: impl Into<WaitList>) -> Result<ReadImage2D<P>> {
-        self.read((.., ..), wait)
-    }
-
-    #[inline(always)]
     pub fn read (&self, slice: impl IntoSlice2D, wait: impl Into<WaitList>) -> Result<ReadImage2D<P>> {
         self.read_with_pitch(slice, None, None, wait)
     }

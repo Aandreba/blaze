@@ -132,11 +132,6 @@ impl<T: Copy + Unpin, C: Context> Buffer<T, C> {
     }
 
     #[inline(always)]
-    pub fn map_all<'a> (&'a self, wait: impl Into<WaitList>) -> Result<super::events::MapBuffer<T, &'a Self>> where T: 'static, C: 'static + Clone {
-        self.map(.., wait)
-    }
-
-    #[inline(always)]
     pub fn map<'a> (&'a self, range: impl IntoRange, wait: impl Into<WaitList>) -> Result<super::events::MapBuffer<T, &'a Self>> where T: 'static, C: 'static + Clone {
         Self::map_by_deref(self, range, wait)
     }

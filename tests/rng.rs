@@ -28,7 +28,7 @@ fn main () -> Result<()> {
         random.assume_init()  
     };
 
-    let read = random.read_all(EMPTY)?.wait()?;
+    let read = random.read(.., EMPTY)?.wait()?;
     println!("{random:?}");
     Ok(())
 }
