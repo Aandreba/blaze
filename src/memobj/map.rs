@@ -1,19 +1,5 @@
-use std::{ptr::NonNull};
 use opencl_sys::*;
-use crate::prelude::MemAccess;
-use super::AsMem;
-
-/// Guard for mapped memory object region
-pub struct MapGuard<T, M: AsMem> {
-    ptr: NonNull<[T]>,
-    mem: M
-}
-
-impl<T, M: AsMem> Drop for MapGuard<T, M> {
-    fn drop(&mut self) {
-        todo!()
-    }
-}
+use crate::prelude::{MemAccess};
 
 /// Mapping flags
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

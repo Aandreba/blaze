@@ -46,6 +46,16 @@ macro_rules! tri_panic {
             panic!("{:?}", $crate::core::Error::from(err))
         }
     }};
+
+    ($($e:expr);+) => {{
+        let mut err;
+        $(
+            err = $e;
+            if err != 0 {
+                panic!("{:?}", $crate::core::Error::from(err))
+            }
+        )+
+    }};
 }
 
 pub mod prelude {
