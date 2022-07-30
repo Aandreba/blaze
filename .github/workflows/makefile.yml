@@ -13,9 +13,9 @@ jobs:
 
     steps:
     - uses: actions/checkout@v3
-      
-    - name: Install dependencies
-      run: make
+    
+    - name: Set nightly
+      run: rustup override set nightly
       
     - name: Run check
       run: make check
