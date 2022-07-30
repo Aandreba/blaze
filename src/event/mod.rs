@@ -5,15 +5,14 @@ use crate::{core::*, prelude::{Global, Context}};
 
 #[path = "various.rs"]
 mod extra;
-#[cfg(feature = "cl1_1")]
+#[cfg(feature = "cl1_2")]
 mod join;
 
 pub mod various {
     pub use super::extra::*;
-    #[cfg(feature = "cl1_1")]
+    #[cfg(feature = "cl1_2")]
     pub use super::join::*;
 }
-
 
 flat_mod!(status, raw, info);
 

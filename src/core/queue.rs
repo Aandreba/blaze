@@ -85,13 +85,18 @@ impl RawCommandQueue {
     /// Return the context specified when the command-queue is created.
     #[inline(always)]
     pub fn context (&self) -> Result<RawContext> {
-        self.get_info(CL_QUEUE_CONTEXT)
+        let ctx = self.get_info::<RawContext>(CL_QUEUE_CONTEXT)?;
+        unsafe { ctx.retain()? };
+        Ok(ctx)
     }
 
     /// Return the device specified when the command-queue is created.
     #[inline(always)]
     pub fn device (&self) -> Result<RawDevice> {
-        self.get_info(CL_QUEUE_DEVICE)
+        let dev = self.get_info::<RawDevice>(CL_QUEUE_DEVICE)?;
+        #[cfg(feature = "cl1_2")]
+        unsafe { dev.retain()? };
+        Ok(dev)
     }
     
     /// Return the command-queue reference count.
@@ -126,7 +131,9 @@ impl RawCommandQueue {
     #[docfg(feature = "cl2_1")]
     #[inline(always)]
     pub fn device_default (&self) -> Result<RawCommandQueue> {
-        self.get_info(opencl_sys::CL_QUEUE_DEVICE_DEFAULT)
+        let queue = self.get_info(opencl_sys::CL_QUEUE_DEVICE_DEFAULT)?;
+        unsafe { queue.retain()? };
+        Ok(queue)
     }
 
     /// Issues all previously queued OpenCL commands in a command-queue to the device associated with the command-queue.
@@ -196,7 +203,7 @@ impl RawCommandQueue {
 
     #[allow(unused)]
     #[inline]
-    fn get_info_array<T> (&self, ty: cl_command_queue_info) -> Result<Box<[T]>> {
+    fn get_info_array<T: Copy> (&self, ty: cl_command_queue_info) -> Result<Box<[T]>> {
         let mut size = 0;
         unsafe {
             tri!(clGetCommandQueueInfo(self.id(), ty, 0, core::ptr::null_mut(), addr_of_mut!(size)));

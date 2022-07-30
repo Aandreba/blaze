@@ -124,7 +124,7 @@ impl Sampler {
     }
 
     #[inline]
-    fn get_info_array<T> (&self, ty: cl_sampler_info) -> Result<Box<[T]>> {
+    fn get_info_array<T: Copy> (&self, ty: cl_sampler_info) -> Result<Box<[T]>> {
         let mut size = 0;
         unsafe {
             tri!(clGetSamplerInfo(self.id(), ty, 0, core::ptr::null_mut(), addr_of_mut!(size)))

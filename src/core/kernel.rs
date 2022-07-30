@@ -3,6 +3,7 @@ use opencl_sys::{cl_kernel, cl_kernel_info, clRetainProgram, CL_KERNEL_PROGRAM, 
 use blaze_proc::docfg;
 use crate::{core::*, context::{RawContext, Context, Global}, event::{RawEvent, WaitList}};
 
+#[derive(Debug)]
 #[repr(transparent)]
 pub struct RawKernel (NonNull<c_void>);
 
@@ -29,13 +30,9 @@ impl RawKernel {
     }
 
     #[inline(always)]
-    pub fn set_argument<T: ?Sized> (&mut self, idx: u32, v: &T) -> Result<()> {
+    pub unsafe fn set_argument<T: ?Sized> (&mut self, idx: u32, v: &T) -> Result<()> {
         let ptr = v as *const _ as *const _;
-
-        unsafe {
-            tri!(clSetKernelArg(self.id(), idx, core::mem::size_of_val(v), ptr))
-        }
-
+        tri!(clSetKernelArg(self.id(), idx, core::mem::size_of_val(v), ptr));
         Ok(())
     }
 
@@ -46,8 +43,8 @@ impl RawKernel {
     }
 
     #[inline(always)]
-    pub fn allocate_argument (&mut self, idx: u32, size: usize) -> Result<()> {
-        unsafe { self.set_ptr_argument(idx, size, core::ptr::null()) }
+    pub unsafe fn allocate_argument (&mut self, idx: u32, size: usize) -> Result<()> {
+        self.set_ptr_argument(idx, size, core::ptr::null())
     }
 
     #[docfg(feature = "svm")]
@@ -57,16 +54,16 @@ impl RawKernel {
     }
 
     #[inline(always)]
-    pub fn enqueue<const N: usize> (&mut self, global_work_dims: [usize; N], local_work_dims: impl Into<Option<[usize; N]>>, wait: impl Into<WaitList>) -> Result<RawEvent> {
+    pub unsafe fn enqueue<const N: usize> (&mut self, global_work_dims: [usize; N], local_work_dims: impl Into<Option<[usize; N]>>, wait: impl Into<WaitList>) -> Result<RawEvent> {
         self.enqueue_with_queue(Global.next_queue(), global_work_dims, local_work_dims, wait)
     }
 
     #[inline(always)]
-    pub fn enqueue_with_context<C: Context, const N: usize> (&mut self, ctx: &C, global_work_dims: [usize; N], local_work_dims: impl Into<Option<[usize; N]>>, wait: impl Into<WaitList>) -> Result<RawEvent> {
+    pub unsafe fn enqueue_with_context<C: Context, const N: usize> (&mut self, ctx: &C, global_work_dims: [usize; N], local_work_dims: impl Into<Option<[usize; N]>>, wait: impl Into<WaitList>) -> Result<RawEvent> {
         self.enqueue_with_queue(ctx.next_queue(), global_work_dims, local_work_dims, wait)
     }
 
-    pub fn enqueue_with_queue<const N: usize> (&mut self, queue: &RawCommandQueue, global_work_dims: [usize; N], local_work_dims: impl Into<Option<[usize; N]>>, wait: impl Into<WaitList>) -> Result<RawEvent> {
+    pub unsafe fn enqueue_with_queue<const N: usize> (&mut self, queue: &RawCommandQueue, global_work_dims: [usize; N], local_work_dims: impl Into<Option<[usize; N]>>, wait: impl Into<WaitList>) -> Result<RawEvent> {
         let work_dim = u32::try_from(N).expect("Integer overflow");
         let local_work_dims = local_work_dims.into();
         let local_work_dims = match local_work_dims {
@@ -78,9 +75,7 @@ impl RawKernel {
         let (num_events_in_wait_list, event_wait_list) = wait.raw_parts();
 
         let mut event = core::ptr::null_mut();
-        unsafe {
-            tri!(clEnqueueNDRangeKernel(queue.id(), self.id(), work_dim, core::ptr::null(), global_work_dims.as_ptr(), local_work_dims, num_events_in_wait_list, event_wait_list, addr_of_mut!(event)))
-        }
+        tri!(clEnqueueNDRangeKernel(queue.id(), self.id(), work_dim, core::ptr::null(), global_work_dims.as_ptr(), local_work_dims, num_events_in_wait_list, event_wait_list, addr_of_mut!(event)));
 
         Ok(RawEvent::from_id(event).unwrap())
     }
@@ -113,14 +108,8 @@ impl RawKernel {
     #[inline(always)]
     pub fn program (&self) -> Result<RawProgram> {
         let prog : RawProgram = self.get_info(CL_KERNEL_PROGRAM)?;
-        unsafe { tri_panic!(clRetainProgram(prog.id())); }
+        unsafe { prog.retain()? };
         Ok(prog)
-    }
-
-    #[inline(always)]
-    pub unsafe fn clone (&self) -> Self {
-        tri_panic!(clRetainKernel(self.id()));
-        Self(self.0)
     }
 
     #[inline]
@@ -145,6 +134,14 @@ impl RawKernel {
             tri!(clGetKernelInfo(self.id(), ty, core::mem::size_of::<T>(), value.as_mut_ptr().cast(), core::ptr::null_mut()));
             Ok(value.assume_init())
         }
+    }
+}
+
+impl Clone for RawKernel {
+    #[inline(always)]
+    fn clone(&self) -> Self {
+        unsafe { self.retain().unwrap() }
+        Self(self.0)
     }
 }
 

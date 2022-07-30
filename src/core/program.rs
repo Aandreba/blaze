@@ -6,7 +6,7 @@ use crate::{context::{Context, Global}, core::kernel::RawKernel, prelude::RawCon
 use super::*;
 
 /// OpenCL program
-#[derive(PartialEq, Eq, Hash)]
+#[derive(Debug, PartialEq, Eq, Hash)]
 #[repr(transparent)]
 pub struct RawProgram (NonNull<c_void>);
 
@@ -51,7 +51,14 @@ impl RawProgram {
 
     /// Links a set of compiled program objects and libraries for all the devices or a specific device(s) in the OpenCL context and creates an executable.
     #[docfg(feature = "cl2")]
-    pub fn link<'a> (ctx: &RawContext, input: &[RawProgram], devices: Option<&[RawDevice]>, options: impl Into<Option<&'a str>>) -> Result<Self> {
+    #[inline(always)]
+    pub fn link<'a> (input: &[RawProgram], devices: Option<&[RawDevice]>, options: impl Into<Option<&'a str>>) -> Result<Self> {
+        Self::link_in(&Global, input, devices, options)
+    }
+
+    /// Links a set of compiled program objects and libraries for all the devices or a specific device(s) in the OpenCL context and creates an executable.
+    #[docfg(feature = "cl2")]
+    pub fn link_in<'a> (ctx: &RawContext, input: &[RawProgram], devices: Option<&[RawDevice]>, options: impl Into<Option<&'a str>>) -> Result<Self> {
         let (num_devices, device_list) = match devices {
             Some(x) => (u32::try_from(x.len()).unwrap(), x.as_ptr().cast()),
             None => (0, core::ptr::null())
@@ -92,8 +99,9 @@ impl RawProgram {
 
     /// Return the context specified when the program object is created
     #[inline(always)]
-    pub fn context_id (&self) -> Result<cl_context> {
-        let ctx : cl_context = self.get_info(CL_PROGRAM_CONTEXT)?;
+    pub fn context (&self) -> Result<RawContext> {
+        let ctx = self.get_info::<RawContext>(CL_PROGRAM_CONTEXT)?;
+        unsafe { ctx.retain()? };
         Ok(ctx)
     }
 
@@ -106,16 +114,7 @@ impl RawProgram {
     /// Return the list of devices associated with the program object. This can be the devices associated with context on which the program object has been created or can be a subset of devices that are specified when a progam object is created using clCreateProgramWithBinary.
     #[inline]
     pub fn devices (&self) -> Result<Vec<RawDevice>> {
-        let count = self.device_count()?;
-        let mut result = Vec::<RawDevice>::with_capacity(count as usize);
-        let size = result.capacity().checked_mul(core::mem::size_of::<RawDevice>()).expect("Too many devices");
-
-        unsafe {
-            tri!(clGetProgramInfo(self.id(), CL_PROGRAM_DEVICES, size, result.as_mut_ptr().cast(), core::ptr::null_mut()))
-        }
-        
-        unsafe { result.set_len(result.capacity()) }
-        Ok(result)
+        let devs = self.get_info_array::<cl_devide_id>(ty);
     }
 
     /// Return the program source code
@@ -223,6 +222,21 @@ impl RawProgram {
         unsafe {
             tri!(clGetProgramInfo(self.id(), ty, core::mem::size_of::<T>(), value.as_mut_ptr().cast(), core::ptr::null_mut()));
             Ok(value.assume_init())
+        }
+    }
+
+    #[allow(unused)]
+    #[inline]
+    fn get_info_array<T: Copy> (&self, ty: cl_program_info) -> Result<Box<[T]>> {
+        let mut size = 0;
+        unsafe {
+            tri!(clGetProgramInfo(self.id(), ty, 0, core::ptr::null_mut(), addr_of_mut!(size)));
+        }
+
+        let mut result = Box::new_uninit_slice(size / core::mem::size_of::<T>());
+        unsafe {
+            tri!(clGetProgramInfo(self.id(), ty, size, result.as_mut_ptr().cast(), core::ptr::null_mut()));
+            Ok(result.assume_init())
         }
     }
 

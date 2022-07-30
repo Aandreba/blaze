@@ -1,17 +1,17 @@
 use std::{time::{SystemTime}, mem::MaybeUninit};
-use once_cell::sync::Lazy;
 use blaze::prelude::*;
 
 #[global_context]
 static CONTEXT : SimpleContext = SimpleContext::default();
 
-static CODE : Lazy<String> = Lazy::new(|| {
+#[inline(always)]
+fn rng_code () -> String {
     let nanos = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap();
     format!("#define TIME {}l\n{}", nanos.as_nanos(), include_str!("rng.cl"))
-});
+}
 
 #[blaze(Rng)]
-#[link(Lazy::force(&CODE))]
+#[link(rng_code())]
 pub extern "C" {
     fn next_bytes (n: u32, out: *mut MaybeUninit<u8>);
 }

@@ -1,5 +1,6 @@
 use std::{ops::Deref};
 use std::{ptr::{addr_of_mut, NonNull}, ffi::c_void, mem::MaybeUninit};
+use box_iter::BoxIntoIter;
 use opencl_sys::*;
 use blaze_proc::docfg;
 use crate::{core::{*, device::DeviceType}, prelude::device::Version};
@@ -17,7 +18,7 @@ impl RawContext {
     #[docfg(feature = "cl3")]
     #[inline(always)]
     pub fn with_logger<F: 'static + Fn(&str) + Send> (props: ContextProperties, devices: &[RawDevice], loger: F) -> Result<Self> {
-        Self::inner_new(props, devices, Some(loger))
+        Self::inner_new(props, devices, #[cfg(feature = "cl3")] Some(loger))
     }
 
     fn inner_new<F: 'static + Fn(&str) + Send> (props: ContextProperties, devices: &[RawDevice], #[cfg(feature = "cl3")] loger: Option<F>) -> Result<Self> {
@@ -136,8 +137,9 @@ impl RawContext {
 
     /// Return the list of devices and sub-devices in context.
     #[inline(always)]
-    pub fn devices (&self) -> Result<Box<[RawDevice]>> {
-        self.get_info_array(CL_CONTEXT_DEVICES)
+    pub fn devices (&self) -> Result<Vec<RawDevice>> {
+        let devices = self.get_info_array::<cl_device_id>(CL_CONTEXT_DEVICES)?;
+        Ok(devices.into_iter().map(|id| unsafe { RawDevice::from_id(id).unwrap() }).collect())
     }
 
     /// Returns the greatest common OpenCL version of this context's devices.
@@ -211,7 +213,7 @@ impl RawContext {
     }
 
     #[inline]
-    fn get_info_array<T> (&self, ty: cl_context_info) -> Result<Box<[T]>> {
+    fn get_info_array<T: Copy> (&self, ty: cl_context_info) -> Result<Box<[T]>> {
         let mut size = 0;
         unsafe {
             tri!(clGetContextInfo(self.id(), ty, 0, core::ptr::null_mut(), addr_of_mut!(size)))

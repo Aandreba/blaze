@@ -16,7 +16,6 @@ cl3 = ["cl2_2", "opencl-sys/CL_VERSION_3_0"]
 strict = []
 # half = ["dep:half"]
 # image = ["dep:ffmpeg-sys-next"]
-map = []
 svm = ["cl2"]
 futures = ["cl1_1", "dep:futures"]
 

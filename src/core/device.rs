@@ -34,6 +34,16 @@ impl RawDevice {
         self.0.as_ptr()
     }
 
+    #[inline(always)]
+    pub const unsafe fn from_id (id: cl_device_id) -> Option<Self> {
+        NonNull::new(id).map(Self)
+    }
+
+    #[inline(always)]
+    pub const unsafe fn from_id_unchecked (id: cl_device_id) -> Self {
+        Self(NonNull::new_unchecked(id))
+    }
+
     /// The default compute device address space size specified as an unsigned integer value in bits. Currently supported values are 32 or 64 bits.
     #[inline(always)]
     pub fn address_bits (&self) -> Result<u32> {
@@ -741,7 +751,7 @@ impl RawDevice {
         Ok(CommandQueueProperties::from_bits(v))
     }
 
-    #[docfg(feature = "cl2")]
+    #[docfg(feature = "cl1_2")]
     #[inline(always)]
     pub fn reference_count (&self) -> Result<u32> {
         self.get_info_bits(opencl_sys::CL_DEVICE_REFERENCE_COUNT)
