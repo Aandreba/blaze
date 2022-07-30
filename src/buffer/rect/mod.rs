@@ -102,29 +102,29 @@ impl<T: Copy, C: Context> BufferRect2D<MaybeUninit<T>, C> {
 
 impl<T: Copy, C: Context> BufferRect2D<T, C> {
     #[inline(always)]
-    pub fn width (&self) -> NonZeroUsize {
-        self.width
+    pub fn width (&self) -> usize {
+        self.width.get()
     }
 
     #[inline(always)]
-    pub fn height (&self) -> NonZeroUsize {
-        self.height
+    pub fn height (&self) -> usize {
+        self.height.get()
     }
 
     #[inline(always)]
     pub fn row_pitch (&self) -> usize {
-        self.width.get() * core::mem::size_of::<T>()
+        self.width() * core::mem::size_of::<T>()
     }
 
     #[inline(always)]
     pub fn slice_pitch (&self) -> usize {
-        self.height.get() * self.row_pitch()
+        self.height() * self.row_pitch()
     }
 
     #[inline(always)]
     pub fn row_and_slice_pitch (&self) -> (usize, usize) {
         let row = self.row_pitch();
-        (row, self.height.get() * row)
+        (row, self.height() * row)
     }
 }
 
@@ -180,7 +180,22 @@ impl<T: Copy, C: Context> DerefMut for BufferRect2D<T, C> {
 impl<T: Copy + Unpin + Debug, C: Context> Debug for BufferRect2D<T, C> {
     #[inline(always)]
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let all = self.read((.., ..), WaitList::EMPTY).unwrap().wait().unwrap();
+        let all;
+
+        cfg_if::cfg_if! {
+            if #[cfg(feature = "cl1_1")] {
+                all = self.read((.., ..), WaitList::EMPTY).unwrap().wait_unwrap();
+            } else {
+                let mut all_plain = Buffer::read(&self, .., WaitList::EMPTY).unwrap().wait_unwrap();
+                all_plain.shrink_to_fit();
+                let (ptr, _, _) = Vec::into_raw_parts(all_plain);
+
+                all = unsafe {
+                    Rect2D::from_raw_parts(NonNull::new_unchecked(ptr), self.width, self.height)
+                };
+            }
+        }
+
         Debug::fmt(&all, f)
     }
 }
