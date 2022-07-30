@@ -1,7 +1,7 @@
 use std::{mem::ManuallyDrop, time::{SystemTime, Duration}, ops::Deref, alloc::Allocator, panic::AssertUnwindSafe};
-use opencl_sys::{CL_COMMAND_NDRANGE_KERNEL, CL_COMMAND_TASK, CL_COMMAND_NATIVE_KERNEL, CL_COMMAND_READ_BUFFER, CL_COMMAND_WRITE_BUFFER, CL_COMMAND_COPY_BUFFER, CL_COMMAND_READ_IMAGE, CL_COMMAND_WRITE_IMAGE, CL_COMMAND_COPY_IMAGE, CL_COMMAND_COPY_IMAGE_TO_BUFFER, CL_COMMAND_COPY_BUFFER_TO_IMAGE, CL_COMMAND_MAP_BUFFER, CL_COMMAND_MAP_IMAGE, CL_COMMAND_UNMAP_MEM_OBJECT, CL_COMMAND_MARKER, CL_COMMAND_ACQUIRE_GL_OBJECTS, CL_COMMAND_RELEASE_GL_OBJECTS, CL_EVENT_COMMAND_TYPE, CL_EVENT_COMMAND_EXECUTION_STATUS, CL_EVENT_COMMAND_QUEUE, cl_event};
+use opencl_sys::*;
 use blaze_proc::docfg;
-use crate::{core::*, prelude::{Global, Context}};
+use crate::{core::*};
 
 #[path = "various.rs"]
 mod extra;
@@ -121,7 +121,12 @@ pub trait Event {
     #[docfg(feature = "cl1_1")]
     #[inline(always)]
     fn raw_context (&self) -> Result<crate::prelude::RawContext> {
-        self.as_raw().get_info(opencl_sys::CL_EVENT_CONTEXT)
+        let ctx = self.as_raw().get_info::<cl_context>(CL_EVENT_CONTEXT)?;
+        unsafe { 
+            tri!(clRetainContext(ctx));
+            // SAFETY: Context checked to be valid by `clRetainContext`.
+            Ok(crate::prelude::RawContext::from_id_unchecked(ctx))
+        }
     }
 
     /// Returns this event's profiling info in `u64` nanoseconds.
@@ -217,7 +222,7 @@ pub trait EventExt: Sized + Event {
     #[docfg(feature = "cl1_2")]
     #[inline(always)]
     fn join<I: IntoIterator<Item = Self>> (iter: I) -> Result<Join<Self>> {
-        Self::join_in(iter, Global.next_queue())
+        Self::join_in(iter, crate::prelude::Context::next_queue(&crate::prelude::Global))
     }
 
     #[docfg(feature = "cl1_2")]

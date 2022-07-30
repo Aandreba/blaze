@@ -1,5 +1,5 @@
 use std::{mem::MaybeUninit, ffi::c_void, ptr::{addr_of_mut, NonNull}};
-use opencl_sys::{cl_kernel, cl_kernel_info, clRetainProgram, CL_KERNEL_PROGRAM, CL_KERNEL_CONTEXT, CL_KERNEL_REFERENCE_COUNT, CL_KERNEL_NUM_ARGS, CL_KERNEL_FUNCTION_NAME, CL_KERNEL_ARG_ADDRESS_GLOBAL, CL_KERNEL_ARG_ADDRESS_LOCAL, CL_KERNEL_ARG_ADDRESS_CONSTANT, CL_KERNEL_ARG_ADDRESS_PRIVATE, cl_kernel_arg_type_qualifier, CL_KERNEL_ARG_TYPE_CONST, CL_KERNEL_ARG_TYPE_RESTRICT, CL_KERNEL_ARG_TYPE_VOLATILE, clGetKernelInfo, clSetKernelArg, clEnqueueNDRangeKernel, clRetainKernel, clReleaseKernel};
+use opencl_sys::*;
 use blaze_proc::docfg;
 use crate::{core::*, context::{RawContext, Context, Global}, event::{RawEvent, WaitList}};
 
@@ -101,15 +101,23 @@ impl RawKernel {
     /// Return the context associated with _kernel_.
     #[inline(always)]
     pub fn raw_context (&self) -> Result<RawContext> {
-        self.get_info(CL_KERNEL_CONTEXT)
+        let ctx = self.get_info::<cl_context>(CL_KERNEL_CONTEXT)?;
+        unsafe { 
+            tri!(clRetainContext(ctx));
+            // SAFETY: Context checked to be valid by `clRetainContext`.
+            Ok(RawContext::from_id_unchecked(ctx))
+        }
     }
 
     /// Return the program object associated with _kernel_.
     #[inline(always)]
     pub fn program (&self) -> Result<RawProgram> {
-        let prog : RawProgram = self.get_info(CL_KERNEL_PROGRAM)?;
-        unsafe { prog.retain()? };
-        Ok(prog)
+        let prog = self.get_info::<cl_context>(CL_KERNEL_PROGRAM)?;
+        unsafe { 
+            tri!(clRetainProgram(prog));
+            // SAFETY: Value checked to be valid by retain function.
+            Ok(RawProgram::from_id_unchecked(prog))
+        }
     }
 
     #[inline]
@@ -127,7 +135,7 @@ impl RawKernel {
     }
 
     #[inline]
-    fn get_info<T> (&self, ty: cl_kernel_info) -> Result<T> {
+    fn get_info<T: Copy> (&self, ty: cl_kernel_info) -> Result<T> {
         let mut value = MaybeUninit::<T>::uninit();
         
         unsafe {

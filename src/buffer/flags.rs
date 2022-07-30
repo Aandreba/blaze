@@ -111,6 +111,13 @@ impl MemAccess {
     }
 
     #[inline(always)]
+    pub const fn from_bits_map (flags: cl_map_flags) -> Self {
+        let read = (flags & CL_MAP_READ) != 0;
+        let write = (flags & CL_MAP_WRITE) != 0;
+        Self::new(read, write)
+    }
+
+    #[inline(always)]
     pub const fn to_bits (self) -> cl_mem_flags {
         match self.unwrap() {
             (true, true) => CL_MEM_READ_WRITE,
@@ -128,6 +135,16 @@ impl MemAccess {
             (true, false) => CL_MEM_HOST_READ_ONLY,
             (false, true) => CL_MEM_HOST_WRITE_ONLY,
             (false, false) => CL_MEM_HOST_NO_ACCESS
+        }
+    }
+
+    #[inline(always)]
+    pub const fn to_bits_map (self) -> cl_map_flags {
+        match self.unwrap() {
+            (true, true) => CL_MAP_READ | CL_MAP_WRITE,
+            (true, false) => CL_MAP_READ,
+            (false, true) => CL_MAP_WRITE,
+            (false, false) => 0
         }
     }
 }

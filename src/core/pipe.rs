@@ -37,7 +37,7 @@ impl RawPipe {
         self.get_info(CL_PIPE_MAX_PACKETS)
     }
 
-    fn get_info<T> (&self, ty: cl_pipe_info) -> Result<T> {
+    fn get_info<T: Copy> (&self, ty: cl_pipe_info) -> Result<T> {
         let mut result = MaybeUninit::<T>::uninit();
         
         unsafe {

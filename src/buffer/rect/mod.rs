@@ -4,7 +4,7 @@ flat_mod!(read, write);
 
 use std::{ptr::NonNull, ops::{Deref, DerefMut}, num::NonZeroUsize, mem::MaybeUninit, fmt::Debug};
 use blaze_proc::docfg;
-use crate::{prelude::*, event::WaitList, memobj::IntoSlice2D};
+use crate::{prelude::*, event::WaitList};
 use super::{Buffer, flags::{MemFlags, MemAccess, HostPtr}};
 
 /// Buffer that conatins a 2D rectangle.
@@ -136,7 +136,7 @@ impl<T: Copy + Unpin, C: Context> BufferRect2D<T, C> {
     }
 
     #[inline(always)]
-    pub fn read<'src> (&'src self, slice: impl IntoSlice2D, wait: impl Into<WaitList>) -> Result<ReadBufferRect2D<'src, T>> {
+    pub fn read<'src> (&'src self, slice: impl crate::memobj::IntoSlice2D, wait: impl Into<WaitList>) -> Result<ReadBufferRect2D<'src, T>> {
         let (buffer_row_pitch, buffer_slice_pitch) = self.row_and_slice_pitch();
         unsafe { ReadBufferRect2D::new(self, self.width.get(), self.height.get(), slice, Some(buffer_row_pitch), Some(buffer_slice_pitch), self.inner.ctx.next_queue(), wait) }
     }

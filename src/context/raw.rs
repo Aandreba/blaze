@@ -203,7 +203,7 @@ impl RawContext {
     }
 
     #[inline]
-    fn get_info<T> (&self, ty: cl_context_info) -> Result<T> {
+    fn get_info<T: Copy> (&self, ty: cl_context_info) -> Result<T> {
         let mut value = MaybeUninit::<T>::uninit();
         
         unsafe {
@@ -278,7 +278,7 @@ unsafe extern "C" fn destructor_callback (_context: cl_context, user_data: *mut 
 }
 
 #[cfg(feature = "cl3")]
-unsafe extern "C" fn context_error (errinfo: *const i8, private_info: *const c_void, cb: usize, user_data: *mut c_void) {
+unsafe extern "C" fn context_error (errinfo: *const i8, _private_info: *const c_void, _cb: usize, user_data: *mut c_void) {
     let str = String::from_utf8_lossy(std::ffi::CStr::from_ptr(errinfo).to_bytes());
     let user_data = &mut *(user_data as *mut Box<dyn Fn(&str) + Send>);
     

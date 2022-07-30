@@ -45,7 +45,7 @@ impl RawEvent {
     }
 
     #[inline(always)]
-    pub(super) fn get_info<T> (&self, id: cl_event_info) -> Result<T> {
+    pub(super) fn get_info<T: Copy> (&self, id: cl_event_info) -> Result<T> {
         let mut result = MaybeUninit::<T>::uninit();
         
         unsafe {

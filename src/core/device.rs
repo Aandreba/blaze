@@ -968,7 +968,7 @@ impl RawDevice {
     }
 
     #[inline]
-    fn get_info_bits<T> (&self, ty: cl_device_info) -> Result<T> {
+    fn get_info_bits<T: Copy> (&self, ty: cl_device_info) -> Result<T> {
         let mut value = MaybeUninit::<T>::uninit();
 
         unsafe {
@@ -1123,7 +1123,7 @@ bitflags::bitflags! {
 }
 
 /// Type of local memory supported. This can be set to [```Self::Local```] implying dedicated local memory storage such as SRAM, or [```Self::Global```].
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u32)]
 pub enum LocalMemType {
     Local = CL_LOCAL,
@@ -1131,13 +1131,13 @@ pub enum LocalMemType {
 }
 
 #[docfg(feature = "cl1_2")]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum PartitionProperty {
     /// Split the aggregate device into as many smaller aggregate devices as can be created, each containing n compute units. The value n is passed as the value accompanying this property. If n does not divide evenly into [max_compute_units](Device::max_compute_units), then the remaining compute units are not used.
     Equally (u32),
-    /// This property is followed by a list of compute unit counts terminated with 0 or CL_DEVICE_PARTITION_BY_COUNTS_LIST_END. For each non-zero count m in the list, a sub-device is created with m compute units in it. The number of non-zero count entries in the list may not exceed [partition_max_sub_devices](Device::partition_max_sub_devices). The total number of compute units specified may not exceed [max_compute_units](Device::max_compute_units).
-    Counts (Vec<u32>),
+    /// This property is followed by a list of compute unit. For each non-zero count m in the list, a sub-device is created with m compute units in it. The number of non-zero count entries in the list may not exceed [partition_max_sub_devices](Device::partition_max_sub_devices). The total number of compute units specified may not exceed [max_compute_units](Device::max_compute_units).
+    Counts (Vec<NonZeroU32>),
     /// Split the device into smaller aggregate devices containing one or more compute units that all share part of a cache hierarchy.
     AffinityDomain (AffinityDomain)
 }
@@ -1157,10 +1157,13 @@ impl PartitionProperty {
                 let mut result = Vec::with_capacity(bits.len());
 
                 for i in 1..bits.len() {
+                    const MAX_COUNT : isize = u32::MAX as isize;
+
                     match bits[i] {
                         #[allow(unreachable_patterns)]
                         0 | opencl_sys::CL_DEVICE_PARTITION_BY_COUNTS_LIST_END => break,
-                        v => result.push(u32::try_from(v).unwrap())
+                        v @ 1..=MAX_COUNT => unsafe { result.push(NonZeroU32::new_unchecked(v as u32)) }
+                        _ => return None
                     }
                 }
 
@@ -1182,7 +1185,7 @@ impl PartitionProperty {
                     result[0].write(opencl_sys::CL_DEVICE_PARTITION_BY_COUNTS);
                     
                     for i in 0..x.len() {
-                        result[1 + i].write(opencl_sys::cl_device_partition_property::try_from(x[i]).unwrap());
+                        result[1 + i].write(opencl_sys::cl_device_partition_property::try_from(x[i].get()).unwrap());
                     }
 
                     result.last_mut().unwrap_unchecked().write(opencl_sys::CL_DEVICE_PARTITION_BY_COUNTS_LIST_END);
@@ -1194,7 +1197,7 @@ impl PartitionProperty {
 }
 
 #[docfg(feature = "cl1_2")]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u64)]
 #[non_exhaustive]
 pub enum AffinityDomain {

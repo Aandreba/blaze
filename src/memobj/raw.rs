@@ -90,7 +90,12 @@ impl RawMemObject {
     /// Return context specified when memory object is created.
     #[inline(always)]
     pub fn context (&self) -> Result<RawContext> {
-        self.get_info(CL_MEM_CONTEXT)
+        let ctx = self.get_info::<cl_context>(CL_MEM_CONTEXT)?;
+        unsafe { 
+            tri!(clRetainContext(ctx));
+            // SAFETY: Context checked to be valid by `clRetainContext`.
+            Ok(RawContext::from_id_unchecked(ctx))
+        }
     }
 
     /// Return offset if memobj is a sub-buffer object created using [create_sub_buffer](RawBuffer::create_sub_buffer). Returns 0 if memobj is not a subbuffer object.
@@ -109,7 +114,7 @@ impl RawMemObject {
     }
 
     #[inline]
-    pub(super) fn get_info<O> (&self, ty: cl_mem_info) -> Result<O> {
+    pub(super) fn get_info<O: Copy> (&self, ty: cl_mem_info) -> Result<O> {
         let mut result = MaybeUninit::<O>::uninit();
 
         unsafe {

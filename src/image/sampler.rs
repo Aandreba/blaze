@@ -114,7 +114,7 @@ impl Sampler {
     }
 
     #[inline]
-    fn get_info<T> (&self, ty: cl_sampler_info) -> Result<T> {
+    fn get_info<T: Copy> (&self, ty: cl_sampler_info) -> Result<T> {
         let mut result = MaybeUninit::<T>::uninit();
 
         unsafe {

@@ -1,6 +1,5 @@
 use std::{ptr::{NonNull, addr_of}, num::NonZeroUsize, mem::{MaybeUninit, ManuallyDrop}, alloc::{Allocator, Global, Layout}, ops::{Index, IndexMut}, fmt::Debug};
 use blaze_proc::docfg;
-use crate::{prelude::Context, buffer::KernelPointer};
 
 #[docfg(feature = "svm")]
 pub type SvmRect2D<T, C = crate::prelude::Global> = Rect2D<T, crate::svm::Svm<C>>;
@@ -367,7 +366,7 @@ impl<T, A: Allocator> Rect2D<MaybeUninit<T>, A> {
 }
 
 #[docfg(feature = "svm")]
-unsafe impl<T, C: Context> crate::svm::SvmPointer<T> for SvmRect2D<T, C> {
+unsafe impl<T, C: crate::prelude::Context> crate::svm::SvmPointer<T> for SvmRect2D<T, C> {
     type Context = C;
 
     #[inline(always)]
@@ -392,7 +391,7 @@ unsafe impl<T, C: Context> crate::svm::SvmPointer<T> for SvmRect2D<T, C> {
 }
 
 #[docfg(feature = "svm")]
-unsafe impl<T: Sync, C: Context> KernelPointer<T> for SvmRect2D<T, C> where C: 'static + Send + Clone {
+unsafe impl<T: Sync, C: crate::prelude::Context> crate::buffer::KernelPointer<T> for SvmRect2D<T, C> where C: 'static + Send + Clone {
     #[inline]
     unsafe fn set_arg (&self, kernel: &mut crate::prelude::RawKernel, wait: &mut crate::prelude::WaitList, idx: u32) -> crate::prelude::Result<()> {
         kernel.set_svm_argument::<T, Self>(idx, self)?;

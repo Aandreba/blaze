@@ -1,5 +1,6 @@
 use core::{mem::MaybeUninit, num::NonZeroUsize};
-use std::{borrow::Cow, ptr::{NonNull, addr_of_mut}, ffi::{c_void, CString}};
+use std::{borrow::Cow, ptr::{NonNull, addr_of_mut}, ffi::{c_void}};
+use box_iter::BoxIntoIter;
 use opencl_sys::*;
 use blaze_proc::docfg;
 use crate::{context::{Context, Global}, core::kernel::RawKernel, prelude::RawContext};
@@ -34,13 +35,23 @@ impl RawProgram {
         let this = NonNull::new(id).map(Self).unwrap();
         this.build(options.into(), ctx)?;
 
-        let kernels = this.kernels()?.into_iter().map(|id| RawKernel::from_id(*id).unwrap()).collect::<Box<[_]>>();
+        let kernels = this.kernels()?.into_iter().map(|id| RawKernel::from_id(id).unwrap()).collect::<Box<[_]>>();
         Ok((this, kernels))
     }
 
     #[inline(always)]
     pub const fn id (&self) -> cl_kernel {
         self.0.as_ptr()
+    }
+
+    #[inline(always)]
+    pub const unsafe fn from_id (id: cl_program) -> Option<Self> {
+        NonNull::new(id).map(Self)
+    }
+
+    #[inline(always)]
+    pub const unsafe fn from_id_unchecked (id: cl_program) -> Self {
+        Self(NonNull::new_unchecked(id))
     }
     
     #[inline(always)]
@@ -66,7 +77,7 @@ impl RawProgram {
 
         let options = match options.into() {
             Some(x) => {
-                let v = CString::new(x).map_err(|e| Error::new(ErrorType::InvalidBuildOptions, e))?;
+                let v = std::ffi::CString::new(x).map_err(|e| Error::new(ErrorType::InvalidBuildOptions, e))?;
                 Some(v)
             },
             None => None
@@ -100,9 +111,12 @@ impl RawProgram {
     /// Return the context specified when the program object is created
     #[inline(always)]
     pub fn context (&self) -> Result<RawContext> {
-        let ctx = self.get_info::<RawContext>(CL_PROGRAM_CONTEXT)?;
-        unsafe { ctx.retain()? };
-        Ok(ctx)
+        let ctx = self.get_info::<cl_context>(CL_PROGRAM_CONTEXT)?;
+        unsafe { 
+            tri!(clRetainContext(ctx));
+            // SAFETY: Context checked to be valid by `clRetainContext`.
+            Ok(RawContext::from_id_unchecked(ctx))
+        }
     }
 
     /// Return the number of devices associated with program.
@@ -114,7 +128,13 @@ impl RawProgram {
     /// Return the list of devices associated with the program object. This can be the devices associated with context on which the program object has been created or can be a subset of devices that are specified when a progam object is created using clCreateProgramWithBinary.
     #[inline]
     pub fn devices (&self) -> Result<Vec<RawDevice>> {
-        let devs = self.get_info_array::<cl_devide_id>(ty);
+        let devs = self.get_info_array::<cl_device_id>(CL_PROGRAM_DEVICES)?;
+        devs.into_iter().map(|dev| unsafe {
+            let dev = RawDevice::from_id(dev).unwrap();
+            #[cfg(feature = "cl1_2")]
+            dev.retain()?;
+            Ok(dev)
+        }).try_collect()
     }
 
     /// Return the program source code
@@ -216,7 +236,7 @@ impl RawProgram {
     }
 
     #[inline]
-    fn get_info<T> (&self, ty: cl_program_info) -> Result<T> {
+    fn get_info<T: Copy> (&self, ty: cl_program_info) -> Result<T> {
         let mut value = MaybeUninit::<T>::uninit();
         
         unsafe {

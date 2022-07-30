@@ -99,7 +99,7 @@ impl RawPlatform {
 
     #[allow(dead_code)]
     #[inline]
-    fn get_info_bits<T> (&self, ty: cl_platform_info) -> Result<T> {
+    fn get_info_bits<T: Copy> (&self, ty: cl_platform_info) -> Result<T> {
         let mut value = MaybeUninit::<T>::uninit();
         
         unsafe {

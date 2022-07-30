@@ -85,18 +85,33 @@ impl RawCommandQueue {
     /// Return the context specified when the command-queue is created.
     #[inline(always)]
     pub fn context (&self) -> Result<RawContext> {
-        let ctx = self.get_info::<RawContext>(CL_QUEUE_CONTEXT)?;
-        unsafe { ctx.retain()? };
-        Ok(ctx)
+        let ctx = self.get_info::<cl_context>(CL_QUEUE_CONTEXT)?;
+        unsafe { 
+            tri!(clRetainContext(ctx));
+            // SAFETY: Context checked to be valid by `clRetainContext`.
+            Ok(RawContext::from_id_unchecked(ctx))
+        }
     }
 
     /// Return the device specified when the command-queue is created.
     #[inline(always)]
     pub fn device (&self) -> Result<RawDevice> {
-        let dev = self.get_info::<RawDevice>(CL_QUEUE_DEVICE)?;
-        #[cfg(feature = "cl1_2")]
-        unsafe { dev.retain()? };
-        Ok(dev)
+        let dev = self.get_info::<cl_device_id>(CL_QUEUE_DEVICE)?;
+        unsafe {
+            cfg_if::cfg_if! {
+                if #[cfg(feature = "cl1_2")] {
+                    tri!(clRetainDevice(dev));
+                    // SAFETY: Context checked to be valid by `clRetainContext`.
+                    Ok(RawDevice::from_id_unchecked(dev))
+                } else {
+                    if let Some(dev) = RawDevice::from_id(dev) {
+                        return Ok(dev);
+                    }
+
+                    Err(ErrorType::InvalidDevice.into())
+                }
+            }
+        }
     }
     
     /// Return the command-queue reference count.
@@ -131,9 +146,12 @@ impl RawCommandQueue {
     #[docfg(feature = "cl2_1")]
     #[inline(always)]
     pub fn device_default (&self) -> Result<RawCommandQueue> {
-        let queue = self.get_info(opencl_sys::CL_QUEUE_DEVICE_DEFAULT)?;
-        unsafe { queue.retain()? };
-        Ok(queue)
+        let queue = self.get_info::<cl_command_queue>(opencl_sys::CL_QUEUE_DEVICE_DEFAULT)?;
+        unsafe {
+            tri!(clRetainCommandQueue(queue));
+            // SAFETY: Queue checked to be valid by `clRetainCommandQueue`.
+            Ok(RawCommandQueue::from_id_unchecked(queue))
+        }
     }
 
     /// Issues all previously queued OpenCL commands in a command-queue to the device associated with the command-queue.
@@ -193,7 +211,7 @@ impl RawCommandQueue {
     }
 
     #[inline]
-    fn get_info<T> (&self, ty: cl_command_queue_info) -> Result<T> {
+    fn get_info<T: Copy> (&self, ty: cl_command_queue_info) -> Result<T> {
         let mut result = MaybeUninit::<T>::uninit();
         unsafe {
             tri!(clGetCommandQueueInfo(self.id(), ty, core::mem::size_of::<T>(), result.as_mut_ptr().cast(), core::ptr::null_mut()));

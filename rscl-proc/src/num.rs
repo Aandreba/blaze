@@ -63,7 +63,7 @@ pub fn derive_op_assign (items: &DeriveInput, path: Path, fun: Ident) -> TokenSt
     }
 
     let (imp, ty, wher) = generics.split_for_impl();
-    let inner = impl_derive_assign(ident, data, &path, &fun);
+    let inner = impl_derive_assign(data, &path, &fun);
 
     quote! {
         #[automatically_derived]
@@ -83,9 +83,9 @@ fn impl_derive (ident: &Ident, data: &Data, path: &Path, fun: &Ident) -> TokenSt
     }
 }
 
-fn impl_derive_assign (ident: &Ident, data: &Data, path: &Path, fun: &Ident) -> TokenStream {
+fn impl_derive_assign (data: &Data, path: &Path, fun: &Ident) -> TokenStream {
     match data {
-        Data::Struct(x) => impl_fields_assign(&Path::from(ident.clone()), &x.fields, path, fun),
+        Data::Struct(x) => impl_fields_assign(&x.fields, path, fun),
         _ => unimplemented!()
     }
 }
@@ -118,7 +118,7 @@ fn impl_fields (path: &Path, fields: &Fields, op_path: &Path, fun: &Ident) -> Op
 }
 
 #[inline(always)]
-fn impl_fields_assign (path: &Path, fields: &Fields, op_path: &Path, fun: &Ident) -> TokenStream {
+fn impl_fields_assign (fields: &Fields, op_path: &Path, fun: &Ident) -> TokenStream {
     fields.into_iter()
         .enumerate()
         .map(|(i, x)| impl_field_assign(x, Some(i), op_path, fun))
@@ -149,7 +149,7 @@ fn impl_field (field: &Field, idx: Option<usize>, path: &Path, fun: &Ident) -> T
 
 #[inline]
 fn impl_field_assign (field: &Field, idx: Option<usize>, path: &Path, fun: &Ident) -> TokenStream {
-    let Field { attrs, ident, colon_token, .. } = field; 
+    let Field { attrs, ident, .. } = field; 
 
     if attrs.contains(&parse_quote! { #[uninit] }) {
         return TokenStream::new()
