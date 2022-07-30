@@ -1,4 +1,4 @@
-use std::{alloc::Layout, sync::atomic::*, ops::{Deref, DerefMut}};
+use std::{alloc::Layout, sync::atomic::*, ops::{Deref, DerefMut, Index, IndexMut}};
 use crate::context::{Context, Global};
 use super::{SvmBox, Svm, SvmUtilsFlags};
 use crate::prelude::*;
@@ -14,6 +14,7 @@ macro_rules! impl_atomic {
             #[repr(transparent)]
             pub struct $svm<C: Context = Global> (SvmBox<[$ty], C>);
 
+            #[cfg(target_has_atomic = $len)]
             impl $svm {
                 #[inline(always)]
                 pub fn new (v: &[$ty]) -> Self {
@@ -21,6 +22,7 @@ macro_rules! impl_atomic {
                 }
             }
 
+            #[cfg(target_has_atomic = $len)]
             impl<C: Context> $svm<C> {
                 pub fn new_in (v: &[$ty], ctx: C) -> Self {
                     let alloc = Svm::new_in(ctx, false);
@@ -49,6 +51,7 @@ macro_rules! impl_atomic {
                 }
             }
 
+            #[cfg(target_has_atomic = $len)]
             impl<C: Context> Deref for $svm<C> {
                 type Target = [$atomic];
 
@@ -65,6 +68,7 @@ macro_rules! impl_atomic {
                 }
             }
 
+            #[cfg(target_has_atomic = $len)]
             impl<C: Context> DerefMut for $svm<C> {
                 #[inline(always)]
                 fn deref_mut(&mut self) -> &mut Self::Target {
@@ -79,6 +83,7 @@ macro_rules! impl_atomic {
                 }
             }
 
+            #[cfg(target_has_atomic = $len)]
             unsafe impl<C: Context> super::SvmPointer<$atomic> for $svm<C> {
                 type Context = C;
 
@@ -103,6 +108,7 @@ macro_rules! impl_atomic {
                 }
             }
 
+            #[cfg(target_has_atomic = $len)]
             unsafe impl<C: Context> KernelPointer<$atomic> for $svm<C> where C: 'static + Send + Clone {
                 #[inline(always)]
                 unsafe fn set_arg (&self, kernel: &mut RawKernel, _wait: &mut WaitList, idx: u32) -> Result<()> {
@@ -122,7 +128,6 @@ macro_rules! impl_atomic {
 }
 
 impl_atomic! {
-    "8" in bool => AtomicBool as SvmAtomicBool,
     "32" in i32 => AtomicU32 as SvmAtomicI32,
     "32" in u32 => AtomicU32 as SvmAtomicU32,
     "64" in i64 => AtomicI64 as SvmAtomicI64,

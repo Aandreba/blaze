@@ -3,7 +3,7 @@
 #![cfg_attr(docsrs, feature(doc_cfg, proc_macro_hygiene))]
 #![cfg_attr(debug_assertions, feature(backtrace, backtrace_frames))]
 
-#![doc = include_str!("../blaze-book/src/intro.md")]
+#![cfg_attr(docsrs, doc = include_str!("../blaze-book/src/intro.md"))]
 
 macro_rules! flat_mod {
     ($($i:ident),+) => {
@@ -98,7 +98,6 @@ mod utils;
 #[cfg(feature = "image")]
 pub mod image;
 
-#[doc = include_str!("../blaze-book/src/svm/README.md")]
-#[cfg_attr(docsrs, doc(cfg(feature = "svm")))]
+#[cfg_attr(docsrs, doc(cfg(feature = "svm")), doc = include_str!("../blaze-book/src/svm/README.md"))]
 #[cfg(feature = "svm")]
 pub mod svm;
