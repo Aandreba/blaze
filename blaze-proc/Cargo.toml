@@ -1,6 +1,6 @@
 [package]
 name = "blaze-proc"
-version = "0.1.0"
+version = "0.0.1"
 edition = "2021"
 
 [lib]
@@ -14,4 +14,4 @@ derive-syn-parse = "0.1.5"
 elor = "1"
 
 [dev-dependencies]
-blaze = { path = "../", features = ["svm"], version = "0.1.0" }
+blaze = { path = "../", features = ["svm"], version = "0.0.1" }
