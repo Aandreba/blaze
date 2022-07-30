@@ -82,12 +82,13 @@ pub mod macros {
 
 /// Core OpenCL types
 pub mod core;
-/// RSCL context's
+/// Blaze context's
 pub mod context;
 /// Generic memory object
 pub mod memobj;
+/// Blaze buffers
 pub mod buffer;
-/// RSCL's event system
+/// Blaze's event system
 pub mod event;
 mod utils;
 
@@ -95,6 +96,7 @@ mod utils;
 #[cfg(feature = "image")]
 pub mod image;
 
+/// Shared Virtual Memory
 #[cfg_attr(docsrs, doc(cfg(feature = "svm")))]
 #[cfg(feature = "svm")]
 pub mod svm;

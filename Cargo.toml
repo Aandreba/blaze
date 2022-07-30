@@ -19,7 +19,7 @@ cl2_1 = ["cl2", "opencl-sys/CL_VERSION_2_1"]
 cl2_2 = ["cl2_1", "opencl-sys/CL_VERSION_2_2"]
 cl3 = ["cl2_2", "opencl-sys/CL_VERSION_3_0"]
 
-# Rscl features
+# Blaze features
 strict = []
 # half = ["dep:half"]
 # image = ["dep:ffmpeg-sys-next"]

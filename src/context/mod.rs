@@ -3,9 +3,9 @@ flat_mod!(raw,flags, global, single);
 use std::ops::Deref;
 use crate::core::*;
 
-/// An object that can be used as a RSCL context, with a similar syntax to Rust allocators.\
-/// RSCL contexts are similar to OpenCL contexts, except they're also in charge of administrating and supplying
-/// their various command queues. This allows RSCL contexts to manage the load between the various devices in an
+/// An object that can be used as a Blaze context, with a similar syntax to Rust allocators.\
+/// Blaze contexts are similar to OpenCL contexts, except they're also in charge of administrating and supplying
+/// their various command queues. This allows Blaze contexts to manage the load between the various devices in an
 /// OpenCL context. 
 pub trait Context: Deref<Target = RawContext> {
     fn queues (&self) -> &[RawCommandQueue];

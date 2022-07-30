@@ -8,7 +8,7 @@ extern "Rust" {
     fn __blaze__global__next_queue () -> &'static RawCommandQueue;
 }
 
-/// RSCL's global context
+/// Blaze's global context
 #[derive(Copy, Clone, Default, Debug)]
 pub struct Global;
 
