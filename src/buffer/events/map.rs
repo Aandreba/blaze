@@ -100,15 +100,13 @@ impl<T: Copy, S: Deref<Target = Buffer<T, C>>, C: Context> MapBufferGuard<T, S, 
     }
 
     #[inline]
-    pub fn unmap (self, wait: impl Into<WaitList>) -> Result<RawEvent> {
+    pub unsafe fn unmap (self, wait: impl Into<WaitList>) -> Result<RawEvent> {
         let this = ManuallyDrop::new(self);
         let wait : WaitList = wait.into();
         let (num_events_in_wait_list, event_wait_list) = wait.raw_parts();
         
         let mut evt = core::ptr::null_mut();
-        unsafe {
-            tri!(clEnqueueUnmapMemObject(this.src.ctx.next_queue().id(), this.src.id(), this.ptr.as_ptr().cast(), num_events_in_wait_list, event_wait_list, addr_of_mut!(evt)));
-        }
+        tri!(clEnqueueUnmapMemObject(this.src.ctx.next_queue().id(), this.src.id(), this.ptr.as_ptr().cast(), num_events_in_wait_list, event_wait_list, addr_of_mut!(evt)));
         
         RawEvent::from_id(evt).ok_or_else(|| Error::from_type(ErrorType::InvalidEvent))
     }
@@ -165,7 +163,7 @@ impl<T: Copy, S: DerefMut<Target = Buffer<T, C>>, C: Context> MapBufferMutGuard<
     }
 
     #[inline(always)]
-    pub fn unmap (self, wait: impl Into<WaitList>) -> Result<RawEvent> {
+    pub unsafe fn unmap (self, wait: impl Into<WaitList>) -> Result<RawEvent> {
         self.0.unmap(wait)
     }
 }

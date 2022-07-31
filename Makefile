@@ -5,5 +5,5 @@ check:
 	$(foreach x, $(features), cargo check --features $(x);)
 	cargo check --all-features
 
-docs:
+doc:
 	cargo rustdoc --open --all-features -- --cfg docsrs

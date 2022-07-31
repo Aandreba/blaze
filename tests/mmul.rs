@@ -2,7 +2,7 @@
 static CONTEXT : SimpleContext = SimpleContext::default();
 
 use std::mem::MaybeUninit;
-use blaze::prelude::*;
+use blaze::{prelude::*, buffer::rect::SvmRect2D, svm::Svm};
 
 static CODE : &str = "
     #define IDX (x, y, width) y * width + x  
@@ -34,7 +34,7 @@ fn matrix_mul () -> Result<()> {
 
     let lhs = BufferRect2D::<f32>::new(&[1.,2.,4.,5.,7.,8.], 2, MemAccess::READ_ONLY, false)?; // 3 x 2
     let rhs = BufferRect2D::<f32>::new(&[1.,2.,3.,4.,5.,6.], 3, MemAccess::READ_ONLY, false)?; // 2 x 3
-    let mut result = BufferRect2D::<f32>::new_uninit(3, 3, MemAccess::WRITE_ONLY, false)?; // 3 x 3
+    let mut result = SvmRect2D::<f32>::new_uninit_in(3, 3, Svm::default()).unwrap(); // 3 x 3
 
     let evt = unsafe { ops.matrix_mul(2, &lhs, &rhs, &mut result, [3, 3], None, WaitList::EMPTY)? };
     evt.wait()?;

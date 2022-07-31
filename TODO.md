@@ -3,5 +3,9 @@
 - [ ] `strict` feature
 - [ ] buffered queues
 - [ ] join streams
-- [ ] rework `image` feature
-    - [ ] Swap lifetimes by generic `Deref` and `DerefMut` trait
+- [ ] `image` feature (use ffmpeg?)
+
+## Before release
+- [ ] Check most important stuf is documented
+- [ ] Create README file for GitHub repo
+- [ ] Add badges to README and book
