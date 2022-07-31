@@ -31,7 +31,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v3
       - name: Install mdook & include book files
-        run: cargo install mdbook & git submodule sync
+        run: |
+          cargo install mdbook
+          git submodule sync
       - name: Build book
         run: mdbook build docs
       - name: Setup Pages
