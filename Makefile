@@ -1,4 +1,4 @@
-features := cl1_1 cl1_2 cl2 cl2_1 cl3 svm futures strict
+features := cl1_1 cl1_2 cl2 cl2_1 cl2_2 cl3 svm futures strict
 
 check:
 	cargo check --no-default-features

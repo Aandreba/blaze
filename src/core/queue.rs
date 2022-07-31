@@ -270,9 +270,9 @@ cfg_if::cfg_if! {
         pub struct QueueProperties {
             pub props: CommandQueueProperties,
             /// Specifies the size of the device queue in bytes.\
-            /// This can only be specified if [on device](OutOfOrderExec::OnDevice) is set in `props`. This must be a value less or equal to the [max size](Device::queue_max_size).\
-            /// For best performance, this should be less or equal to the [preferred size](Device::queue_preferred_size).\
-            /// If `size` is not specified, the device queue is created with the [preferred size](Device::queue_preferred_size) as the size of the queue.
+            /// This can only be specified if [on device](OutOfOrderExec::OnDevice) is set in `props`. This must be a value less or equal to the [max size](crate::prelude::RawDevice::queue_on_device_max_size).\
+            /// For best performance, this should be less or equal to the [preferred size](crate::prelude::RawDevice::queue_on_device_preferred_size).\
+            /// If `size` is not specified, the device queue is created with the [preferred size](crate::prelude::RawDevice::queue_on_device_preferred_size) as the size of the queue.
             pub size: Option<NonZeroU32>
         }
 

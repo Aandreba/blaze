@@ -1,5 +1,5 @@
 use std::ops::Deref;
-use blaze::{prelude::Rect2D};
+use blaze_rs::{prelude::Rect2D};
 
 #[test]
 fn col_major () {

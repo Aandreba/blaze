@@ -67,6 +67,7 @@ pub mod prelude {
     pub use crate::buffer::{RawBuffer, Buffer, flags::*, events::{ReadBuffer, WriteBuffer, CopyBuffer}};
     pub use crate::context::{Context, Global, RawContext, SimpleContext};
     pub use crate::event::{RawEvent, Event, EventExt, WaitList};
+    pub use crate::memobj::RawMemObject;
     #[blaze_proc::docfg(feature = "cl1_1")]
     pub use crate::event::FlagEvent;
     #[blaze_proc::docfg(feature = "cl1_1")]

@@ -1,7 +1,7 @@
 use std::ops::{Deref, DerefMut};
 use super::RawMemObject;
 
-/// Represents types that directly or indirectly dereference [`MemObject`]
+/// Represents types that directly or indirectly dereference [`RawMemObject`](crate::prelude::RawMemObject)
 pub trait AsMem {
     fn as_mem (&self) -> &RawMemObject;
 }
@@ -20,7 +20,7 @@ impl<T: Deref<Target = impl 'static + AsMem>> AsMem for T {
     }
 }
 
-/// Represents types that directly or indirectly mutably dereference [`MemObject`]
+/// Represents types that directly or indirectly mutably dereference [`RawMemObject`](crate::prelude::RawMemObject)
 pub trait AsMutMem: AsMem {
     fn as_mut_mem (&mut self) -> &mut RawMemObject;
 }

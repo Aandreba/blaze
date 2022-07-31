@@ -98,7 +98,7 @@ impl RawMemObject {
         }
     }
 
-    /// Return offset if memobj is a sub-buffer object created using [create_sub_buffer](RawBuffer::create_sub_buffer). Returns 0 if memobj is not a subbuffer object.
+    /// Return offset if memobj is a sub-buffer object created using [create_sub_buffer](crate::buffer::RawBuffer::create_sub_buffer). Returns 0 if memobj is not a subbuffer object.
     #[docfg(feature = "cl1_1")]
     #[inline(always)]
     pub fn offset (&self) -> Result<usize> {

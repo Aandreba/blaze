@@ -1,4 +1,4 @@
-use std::{alloc::Layout, sync::atomic::*, ops::{Deref, DerefMut, Index, IndexMut}};
+use std::{alloc::Layout, sync::atomic::*, ops::{Deref, DerefMut}};
 use crate::context::{Context, Global};
 use super::{SvmBox, Svm, SvmUtilsFlags};
 use crate::prelude::*;

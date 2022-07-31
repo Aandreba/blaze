@@ -251,31 +251,31 @@ impl RawDevice {
         self.get_info_bits(opencl_sys::CL_DEVICE_IMAGE_PITCH_ALIGNMENT).map(NonZeroU32::new)
     }
 
-    /// Max height of 2D image in pixels. The minimum value is 8192 if [```image_support```] is ```true```.
+    /// Max height of 2D image in pixels. The minimum value is 8192 if [`image_support`](RawDevice::image_support) is ```true```.
     #[inline(always)]
     pub fn image2d_max_height (&self) -> Result<Option<NonZeroUsize>> {
         self.get_info_bits::<usize>(CL_DEVICE_IMAGE2D_MAX_HEIGHT).map(NonZeroUsize::new)
     }
 
-    /// Max width of 2D image in pixels. The minimum value is 8192 if [```image_support```] is ```true```.
+    /// Max width of 2D image in pixels. The minimum value is 8192 if [`image_support`](RawDevice::image_support) is ```true```.
     #[inline(always)]
     pub fn image2d_max_width (&self) -> Result<Option<NonZeroUsize>> {
         self.get_info_bits::<usize>(CL_DEVICE_IMAGE2D_MAX_WIDTH).map(NonZeroUsize::new)
     }
 
-    /// Max depth of 3D image in pixels. The minimum value is 2048 if [```image_support```] is ```true```.
+    /// Max depth of 3D image in pixels. The minimum value is 2048 if [`image_support`](RawDevice::image_support) is ```true```.
     #[inline(always)]
     pub fn image3d_max_depth (&self) -> Result<Option<NonZeroUsize>> {
         self.get_info_bits::<usize>(CL_DEVICE_IMAGE3D_MAX_DEPTH).map(NonZeroUsize::new)
     }
 
-    /// Max height of 3D image in pixels. The minimum value is 2048 if [```image_support```] is ```true```.
+    /// Max height of 3D image in pixels. The minimum value is 2048 if [`image_support`](RawDevice::image_support) is ```true```.
     #[inline(always)]
     pub fn image3d_max_height (&self) -> Result<Option<NonZeroUsize>> {
         self.get_info_bits::<usize>(CL_DEVICE_IMAGE3D_MAX_HEIGHT).map(NonZeroUsize::new)
     }
 
-    /// Max width of 3D image in pixels. The minimum value is 2048 if [```image_support```] is ```true```.
+    /// Max width of 3D image in pixels. The minimum value is 2048 if [`image_support`](RawDevice::image_support) is ```true```.
     #[inline(always)]
     pub fn image3d_max_width (&self) -> Result<Option<NonZeroUsize>> {
         self.get_info_bits::<usize>(CL_DEVICE_IMAGE3D_MAX_WIDTH).map(NonZeroUsize::new)
@@ -391,7 +391,7 @@ impl RawDevice {
         self.get_info_bits(opencl_sys::CL_DEVICE_MAX_PIPE_ARGS).map(NonZeroU32::new)
     }
 
-    /// Max number of simultaneous image objects that can be read by a kernel. The minimum value is 128 if [```image_support```] is ```true```.
+    /// Max number of simultaneous image objects that can be read by a kernel. The minimum value is 128 if [`image_support`](RawDevice::image_support) is ```true```.
     #[inline(always)]
     pub fn max_read_image_args (&self) -> Result<Option<NonZeroU32>> {
         self.get_info_bits::<u32>(CL_DEVICE_MAX_READ_IMAGE_ARGS).map(NonZeroU32::new)
@@ -404,7 +404,7 @@ impl RawDevice {
         self.get_info_bits::<u32>(opencl_sys::CL_DEVICE_MAX_READ_IMAGE_ARGS).map(NonZeroU32::new)
     }
 
-    /// Maximum number of samplers that can be used in a kernel. The minimum value is 16 if [```image_support```] is ```true```.
+    /// Maximum number of samplers that can be used in a kernel. The minimum value is 16 if [`image_support`](RawDevice::image_support) is ```true```.
     #[inline(always)]
     pub fn max_samplers (&self) -> Result<Option<NonZeroU32>> {
         self.get_info_bits::<u32>(CL_DEVICE_MAX_SAMPLERS).map(NonZeroU32::new)
@@ -426,7 +426,7 @@ impl RawDevice {
         }
     }
 
-    /// Maximum number of work-items that can be specified in each dimension of the work-group to clEnqueueNDRangeKernel. Returns n ```usize``` entries, where n is the value returned by the query for [```max_work_item_dimensions```]. The minimum value is (1, 1, 1).
+    /// Maximum number of work-items that can be specified in each dimension of the work-group to clEnqueueNDRangeKernel. Returns n ```usize``` entries, where n is the value returned by the query for [`max_work_item_dimensions`](RawDevice::max_work_item_dimensions). The minimum value is (1, 1, 1).
     #[inline(always)]
     pub fn max_work_item_sizes (&self) -> Result<Vec<NonZeroUsize>> {
         let n = usize::try_from(self.max_work_item_dimensions()?.get()).unwrap();
@@ -442,7 +442,7 @@ impl RawDevice {
         Ok(max_work_item_sizes)
     }
 
-    /// Max number of simultaneous image objects that can be written to by a kernel. The minimum value is 8 if [```image_support```] is ```true```.
+    /// Max number of simultaneous image objects that can be written to by a kernel. The minimum value is 8 if [`image_support`](RawDevice::image_support) is ```true```.
     #[inline(always)]
     pub fn max_write_image_args (&self) -> Result<Option<NonZeroU32>> {
         self.get_info_bits::<u32>(CL_DEVICE_MAX_WRITE_IMAGE_ARGS).map(NonZeroU32::new)
@@ -564,7 +564,7 @@ impl RawDevice {
         Ok(PartitionProperty::from_slice(&v))
     } 
 
-    /// Returns the maximum number of sub-devices that can be created when a device is partitioned. The value returned cannot exceed [max_compute_units](Device::max_compute_units).
+    /// Returns the maximum number of sub-devices that can be created when a device is partitioned. The value returned cannot exceed [max_compute_units](RawDevice::max_compute_units).
     #[docfg(feature = "cl1_2")]
     #[inline(always)]
     pub fn partition_max_sub_devices (&self) -> Result<u32> {
@@ -579,7 +579,7 @@ impl RawDevice {
         Ok(PartitionProperty::from_slice(&v))
     }
 
-    /// Is ```true``` if the device supports pipes, and ```false``` otherwise. Devices that return ```true``` must also return ```true``` for [generic_address_space_support](Device::generic_address_space_support).
+    /// Is ```true``` if the device supports pipes, and ```false``` otherwise. Devices that return ```true``` must also return ```true``` for [`generic_address_space_support`](RawDevice::generic_address_space_support).
     #[docfg(feature = "cl3")]
     #[inline(always)]
     pub fn pipe_support (&self) -> Result<bool> {
@@ -831,7 +831,7 @@ impl RawDevice {
     }
 
     /// Creates an array of sub-devices that each reference a non-intersecting set of compute units within in_device, according to the partition scheme given by properties. 
-    /// The output sub-devices may be used in every way that the root (or parent) device can be used, including creating contexts, building programs, further calls to [create_sub_devices](Device::create_sub_devices) and creating command-queues. 
+    /// The output sub-devices may be used in every way that the root (or parent) device can be used, including creating contexts, building programs, further calls to [`create_sub_devices`](RawDevice::create_sub_devices) and creating command-queues. 
     /// When a command-queue is created against a sub-device, the commands enqueued on the queue are executed only on the sub-device.
     #[docfg(feature = "cl1_2")]
     #[inline]
@@ -1134,9 +1134,9 @@ pub enum LocalMemType {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum PartitionProperty {
-    /// Split the aggregate device into as many smaller aggregate devices as can be created, each containing n compute units. The value n is passed as the value accompanying this property. If n does not divide evenly into [max_compute_units](Device::max_compute_units), then the remaining compute units are not used.
+    /// Split the aggregate device into as many smaller aggregate devices as can be created, each containing n compute units. The value n is passed as the value accompanying this property. If n does not divide evenly into [`max_compute_units`](RawDevice::max_compute_units), then the remaining compute units are not used.
     Equally (u32),
-    /// This property is followed by a list of compute unit. For each non-zero count m in the list, a sub-device is created with m compute units in it. The number of non-zero count entries in the list may not exceed [partition_max_sub_devices](Device::partition_max_sub_devices). The total number of compute units specified may not exceed [max_compute_units](Device::max_compute_units).
+    /// This property is followed by a list of compute unit. For each non-zero count m in the list, a sub-device is created with m compute units in it. The number of non-zero count entries in the list may not exceed [`partition_max_sub_devices`](RawDevice::partition_max_sub_devices). The total number of compute units specified may not exceed [max_compute_units](RawDevice::max_compute_units).
     Counts (Vec<NonZeroU32>),
     /// Split the device into smaller aggregate devices containing one or more compute units that all share part of a cache hierarchy.
     AffinityDomain (AffinityDomain)

@@ -2,7 +2,7 @@
 static CONTEXT : SimpleContext = SimpleContext::default();
 
 use std::mem::MaybeUninit;
-use blaze::{prelude::*, buffer::rect::SvmRect2D, svm::Svm};
+use blaze_rs::{prelude::*, buffer::rect::SvmRect2D, svm::Svm};
 
 static CODE : &str = "
     #define IDX (x, y, width) y * width + x  

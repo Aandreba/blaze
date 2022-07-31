@@ -9,3 +9,4 @@
 - [ ] Check most important stuf is documented
 - [x] Create README file for GitHub repo
 - [ ] Add badges to README and book
+- [ ] Fix warnings
