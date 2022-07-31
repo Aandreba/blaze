@@ -7,5 +7,5 @@
 
 ## Before release
 - [ ] Check most important stuf is documented
-- [ ] Create README file for GitHub repo
+- [x] Create README file for GitHub repo
 - [ ] Add badges to README and book
