@@ -6,7 +6,7 @@ use crate::core::*;
 use crate::buffer::{flags::{MemFlags, HostPtr, MemAccess}, events::{ReadBuffer, WriteBuffer, ReadBufferInto}, RawBuffer};
 use super::{events::{CopyBuffer}, IntoRange};
 
-#[doc = include_str!("../../blaze-book/src/buffer/README.md")]
+#[doc = include_str!("../../docs/src/buffer/README.md")]
 pub struct Buffer<T: Copy, C: Context = Global> {
     pub(super) inner: RawBuffer,
     pub(super) ctx: C,

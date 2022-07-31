@@ -8,7 +8,7 @@ extern "Rust" {
     fn __blaze__global__next_queue () -> &'static RawCommandQueue;
 }
 
-#[doc = include_str!("../../blaze-book/src/context/global.md")]
+#[doc = include_str!("../../docs/src/context/global.md")]
 #[derive(Copy, Clone, Default, Debug)]
 pub struct Global;
 

@@ -81,15 +81,15 @@ pub mod macros {
     pub use blaze_proc::{global_context, blaze};
 }
 
-#[doc = include_str!("../blaze-book/src/raw.md")]
+#[doc = include_str!("../docs/src/raw.md")]
 pub mod core;
-#[doc = include_str!("../blaze-book/src/context/README.md")]
+#[doc = include_str!("../docs/src/context/README.md")]
 pub mod context;
 /// Generic memory object
 pub mod memobj;
 /// Blaze buffers
 pub mod buffer;
-#[doc = include_str!("../blaze-book/src/events/README.md")]
+#[doc = include_str!("../docs/src/events/README.md")]
 pub mod event;
 
 #[cfg_attr(docsrs, doc(cfg(feature = "image")))]
