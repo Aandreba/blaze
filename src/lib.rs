@@ -2,7 +2,6 @@
 #![cfg_attr(any(feature = "svm", feature = "map"), feature(strict_provenance, layout_for_ptr))]
 #![cfg_attr(docsrs, feature(doc_cfg, proc_macro_hygiene))]
 #![cfg_attr(debug_assertions, feature(backtrace, backtrace_frames))]
-
 #![cfg_attr(docsrs, doc = include_str!("../blaze-book/src/intro.md"))]
 
 macro_rules! flat_mod {
@@ -82,17 +81,16 @@ pub mod macros {
     pub use blaze_proc::{global_context, blaze};
 }
 
-/// Core OpenCL types
+#[doc = include_str!("../blaze-book/src/raw.md")]
 pub mod core;
-/// Blaze context's
+#[doc = include_str!("../blaze-book/src/context/README.md")]
 pub mod context;
 /// Generic memory object
 pub mod memobj;
 /// Blaze buffers
 pub mod buffer;
-/// Blaze's event system
+#[doc = include_str!("../blaze-book/src/events/README.md")]
 pub mod event;
-mod utils;
 
 #[cfg_attr(docsrs, doc(cfg(feature = "image")))]
 #[cfg(feature = "image")]

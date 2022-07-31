@@ -12,7 +12,7 @@ pub struct EventWait<E: Event> {
     waker: Arc<AtomicWaker>
 }
 
-impl<E: Event> EventWait<E> {
+impl<E: Event + Unpin> EventWait<E> {
     /// Creates a new [`EventWait`] from an [`Event`]
     pub fn new (event: E) -> Result<Self> {
         let waker = Arc::into_raw(Arc::new(AtomicWaker::new()));
@@ -32,6 +32,13 @@ impl<E: Event> EventWait<E> {
                 }
             }
         }
+    }
+
+    /// Returns the underlying [`Event`]
+    /// # Safety
+    /// This function will panic if the underlying [`Event`] has already been consumed
+    pub fn into_inner (self) -> E {
+        self.event.unwrap()
     }
 }
 
@@ -74,6 +81,7 @@ impl<E: Event + Unpin> FusedFuture for EventWait<E> {
     }
 }
 
+#[doc(hidden)]
 unsafe extern "C" fn wake_future (_event: cl_event, _event_command_status: cl_int, user_data: *mut c_void) {
     let user_data = Arc::from_raw(user_data as *mut AtomicWaker);
     user_data.wake()

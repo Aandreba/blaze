@@ -990,10 +990,10 @@ impl Debug for RawDevice {
     }
 }
 
-#[docfg(feature = "cl1_2")]
 impl Clone for RawDevice {
     #[inline(always)]
     fn clone(&self) -> Self {
+        #[cfg(feature = "cl1_2")]
         unsafe {
             tri_panic!(opencl_sys::clRetainDevice(self.id()))
         }

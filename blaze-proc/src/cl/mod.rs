@@ -38,8 +38,8 @@ pub fn blaze_c (ident: Ident, blaze: Blaze, content: Expr) -> TokenStream {
 
     quote! {
         #vis struct #ident<C: ::blaze::context::Context = ::blaze::context::Global> {
-            inner: ::blaze::core::RawProgram,
-            ctx: C,
+            __blaze_inner__: ::blaze::core::RawProgram,
+            __blaze_ctx__: C,
             #(#kernel_defs),*
         }
 
@@ -52,13 +52,13 @@ pub fn blaze_c (ident: Ident, blaze: Blaze, content: Expr) -> TokenStream {
 
         impl<C: ::blaze::context::Context> #ident<C> {
             #vis fn new_in<'a> (ctx: C, options: impl Into<Option<&'a str>>) -> ::blaze::core::Result<Self> {
-                let (inner, kernels) = ::blaze::core::RawProgram::from_source_in(&ctx, #content, options)?;
+                let __blaze_ctx__ = ctx;
+                let (__blaze_inner__, __blaze_kernels__) = ::blaze::core::RawProgram::from_source_in(&__blaze_ctx__, #content, options)?;
 
                 #(let mut #kernel_names = None);*;
-                for kernel in kernels.into_iter() {
-                    let name = kernel.name()?;
-                    match name.as_str() {
-                        #(#kernel_extern_names => #kernel_names = unsafe { Some(kernel.clone()) }),*,
+                for __blaze_kernel__ in __blaze_kernels__.into_iter() {
+                    match __blaze_kernel__.name()?.as_str() {
+                        #(#kernel_extern_names => #kernel_names = unsafe { Some(__blaze_kernel__.clone()) }),*,
                         __other => return Err(::blaze::core::Error::new(::blaze::core::ErrorType::InvalidKernel, format!("unknown kernel '{}'", __other)))
                     }
                 }
@@ -71,8 +71,8 @@ pub fn blaze_c (ident: Ident, blaze: Blaze, content: Expr) -> TokenStream {
                 )*
 
                 Ok(Self {
-                    inner,
-                    ctx,
+                    __blaze_inner__,
+                    __blaze_ctx__,
                     #(#kernel_names),*
                 })
             }
@@ -83,7 +83,7 @@ pub fn blaze_c (ident: Ident, blaze: Blaze, content: Expr) -> TokenStream {
 
             #[inline(always)]
             fn deref (&self) -> &Self::Target {
-                &self.inner
+                &self.__blaze_inner__
             }
         }
 
@@ -114,25 +114,29 @@ fn create_kernel (parent_vis: &Visibility, parent: &Ident, kernel: &Kernel) -> T
 
     quote! {
         #vis struct #big_name #r#type {
-            inner: ::blaze::event::RawEvent,
+            __blaze_inner__: ::blaze::event::RawEvent,
             #(#define),*
         }
 
         impl<C: ::blaze::context::Context> #parent<C> {
-            pub unsafe fn #ident #fn_impl (&self, #(#new,)* global_work_dims: [usize; N], local_work_dims: impl Into<Option<[usize; N]>>, wait: impl Into<::blaze::event::WaitList>) -> ::blaze::core::Result<#big_name #r#type> #r#where {
+            #vis unsafe fn #ident #fn_impl (&self, #(#new,)* global_work_dims: [usize; N], local_work_dims: impl Into<Option<[usize; N]>>, wait: impl Into<::blaze::event::WaitList>) -> ::blaze::core::Result<#big_name #r#type> #r#where {
                 let mut wait = wait.into();
-                let mut kernel = self.#ident.lock().unwrap();
+                let mut __blaze_kernel__ = match self.#ident.lock() {
+                    Ok(x) => x,
+                    Err(e) => e.into_inner()
+                };
+
                 #(#set);*;
 
-                let inner = kernel.enqueue_with_context(&self.ctx, global_work_dims, local_work_dims, wait)?;
-                drop(kernel);
+                let __blaze_inner__ = __blaze_kernel__.enqueue_with_context(&self.__blaze_ctx__, global_work_dims, local_work_dims, wait)?;
+                drop(__blaze_kernel__);
 
                 #(
-                    ::blaze::buffer::KernelPointer::complete(::core::ops::Deref::deref(&#pointer_names), &inner)?;
+                    ::blaze::buffer::KernelPointer::complete(::core::ops::Deref::deref(&#pointer_names), &__blaze_inner__)?;
                 )*
 
                 Ok(#big_name {
-                    inner,
+                    __blaze_inner__,
                     #(#names),*
                 })
             }
@@ -143,20 +147,13 @@ fn create_kernel (parent_vis: &Visibility, parent: &Ident, kernel: &Kernel) -> T
 
             #[inline(always)]
             fn as_raw (&self) -> &::blaze::event::RawEvent {
-                &self.inner
+                &self.__blaze_inner__
             }
 
             #[inline(always)]
             fn consume (self, err: Option<::blaze::prelude::Error>) -> ::blaze::prelude::Result<Self::Output> {
                 if let Some(err) = err { return Err(err) }; 
                 Ok((#(self.#names),*))
-            }
-        }
-
-        impl #r#impl std::convert::AsRef<::blaze::event::RawEvent> for #big_name #r#type #r#where {
-            #[inline(always)]
-            fn as_ref (&self) -> &::blaze::event::RawEvent {
-                &self.inner
             }
         }
     }
@@ -189,11 +186,11 @@ fn set_arg (arg: &Argument, idx: u32) -> TokenStream {
 
     match arg.ty {
         Type::Pointer(_, _) => quote! {
-            ::blaze::buffer::KernelPointer::set_arg(::core::ops::Deref::deref(&#name), &mut kernel, &mut wait, #idx)?
+            ::blaze::buffer::KernelPointer::set_arg(::core::ops::Deref::deref(&#name), &mut __blaze_kernel__, &mut wait, #idx)?
         },
 
-        Type::Image2d => quote! { kernel.set_argument(#idx, ::blaze::image::DynImage2D::id_ref(::core::ops::Deref::deref(&#name)))? },
-        _ => quote! { kernel.set_argument(#idx, &#name)? }
+        Type::Image2d => quote! { __blaze_kernel__.set_argument(#idx, ::blaze::image::DynImage2D::id_ref(::core::ops::Deref::deref(&#name)))? },
+        _ => quote! { __blaze_kernel__.set_argument(#idx, &#name)? }
     }
 }
 

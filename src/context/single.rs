@@ -4,7 +4,7 @@ use blaze_proc::docfg;
 use crate::{core::*};
 use super::{Context, RawContext, ContextProperties};
 
-/// A simple Blaze context with a single command queue
+#[doc = include_str!("../../blaze-book/src/context/simple.md")]
 #[derive(Clone)]
 pub struct SimpleContext {
     ctx: RawContext,

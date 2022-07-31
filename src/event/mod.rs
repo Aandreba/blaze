@@ -83,7 +83,7 @@ pub trait Event {
     /// Returns a future that waits for the event to complete without blocking.
     #[inline(always)]
     #[docfg(feature = "futures")]
-    fn wait_async (self) -> Result<crate::event::EventWait<Self>> where Self: Sized {
+    fn wait_async (self) -> Result<crate::event::EventWait<Self>> where Self: Sized + Unpin {
         crate::event::EventWait::new(self)
     }
 

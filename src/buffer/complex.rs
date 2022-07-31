@@ -4,13 +4,9 @@ use blaze_proc::docfg;
 use crate::{context::{Context, Global}, event::{WaitList}, prelude::{Event}};
 use crate::core::*;
 use crate::buffer::{flags::{MemFlags, HostPtr, MemAccess}, events::{ReadBuffer, WriteBuffer, ReadBufferInto}, RawBuffer};
-
-#[cfg(not(debug_assertions))]
-use std::hint::unreachable_unchecked;
-
 use super::{events::{CopyBuffer}, IntoRange};
 
-/// A buffer that holds device memory.
+#[doc = include_str!("../../blaze-book/src/buffer/README.md")]
 pub struct Buffer<T: Copy, C: Context = Global> {
     pub(super) inner: RawBuffer,
     pub(super) ctx: C,
@@ -104,6 +100,7 @@ impl<T: Copy, C: Context> Buffer<MaybeUninit<T>, C> {
         self.transmute()
     }
 
+    /// Fills the buffer with the given value. Helper function for [`fill`](Self::write)
     #[inline(always)]
     pub fn write_init<'src, 'dst> (&'dst mut self, offset: usize, src: &'src [T], wait: impl Into<WaitList>) -> Result<WriteBuffer<&'src [MaybeUninit<T>], &'dst mut Self>> where T: Unpin {
         debug_assert_eq!(core::mem::size_of::<T>(), core::mem::size_of::<MaybeUninit<T>>());
@@ -131,32 +128,38 @@ impl<T: Copy + Unpin, C: Context> Buffer<T, C> {
         Self::read_into_by_deref(self, offset, dst, wait)
     }
 
+    /// Returns an event that writes the contents of `src` into the buffer.
     #[inline(always)]
     pub fn write<'dst, Src: Deref<Target = [T]>> (&'dst mut self, offset: usize, src: Src, wait: impl Into<WaitList>) -> Result<WriteBuffer<Src, &'dst mut Self>> {
         Self::write_by_deref(self, offset, src, wait)
     }
 
+    /// Copies the contens from `src` ino the buffer.
     #[inline(always)]
     pub fn copy_from<'dst, Src: Deref<Target = Self>> (&'dst mut self, offset_dst: usize, src: Src, offset_src: usize, len: usize, wait: impl Into<WaitList>) -> Result<CopyBuffer<Src, &'dst mut Self>> {
         Self::copy_from_by_deref(self, offset_dst, src, offset_src, len, wait)
     }
 
+    /// Copies the contents of the buffer into `dst`
     #[inline(always)]
     pub fn copy_to<'src, Dst: DerefMut<Target = Self>> (&'src self, offset_src: usize, dst: Dst, offset_dst: usize, len: usize, wait: impl Into<WaitList>) -> Result<CopyBuffer<&'src Self, Dst>> {
         Self::copy_to_by_deref(self, offset_src, dst, offset_dst, len, wait)
     }
 
+    /// Fills a region of the buffer with `v`
     #[docfg(feature = "cl1_2")]
     #[inline(always)]
     pub fn fill<'dst> (&'dst mut self, v: T, range: impl IntoRange, wait: impl Into<WaitList>) -> Result<super::events::FillBuffer<&'dst mut Self>> {
         Self::fill_by_deref(self, v, range, wait)
     }
 
+    /// Maps a region of the buffer's device memory into host memory. The mapped region will be read-only.
     #[inline(always)]
     pub fn map<'a> (&'a self, range: impl IntoRange, wait: impl Into<WaitList>) -> Result<super::events::MapBuffer<T, &'a Self>> where T: 'static, C: 'static + Clone {
         Self::map_by_deref(self, range, wait)
     }
 
+    /// Maps a region of the buffer's device memory into host memory. The mapped region will be read-write.
     #[inline(always)]
     pub fn map_mut<'a> (&'a mut self, range: impl IntoRange, wait: impl Into<WaitList>) -> Result<super::events::MapBufferMut<T, &'a mut Self>> where T: 'static, C: 'static {
         Self::map_by_deref_mut(self, range, wait)
