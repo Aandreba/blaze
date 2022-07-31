@@ -10,6 +10,7 @@ use std::hint::unreachable_unchecked;
 
 use super::{events::{CopyBuffer}, IntoRange};
 
+/// A buffer that holds device memory.
 pub struct Buffer<T: Copy, C: Context = Global> {
     pub(super) inner: RawBuffer,
     pub(super) ctx: C,
@@ -17,22 +18,26 @@ pub struct Buffer<T: Copy, C: Context = Global> {
 }
 
 impl<T: Copy> Buffer<T> {
+    /// Creates a new buffer with the given values and flags.
     #[inline(always)]
     pub fn new (v: &[T], access: MemAccess, alloc: bool) -> Result<Self> {
         Self::new_in(Global, v, access, alloc)
     }
 
+    /// Creates a new uninitialized buffer with the given size and flags. 
     #[inline(always)]
     pub fn new_uninit (len: usize, access: MemAccess, alloc: bool) -> Result<Buffer<MaybeUninit<T>>> {
         Self::new_uninit_in(Global, len, access, alloc)
     }
 
-    #[docfg(feature = "cl1_2")]
+    /// Creates a new zero-filled, uninitialized buffer with the given size and flags.
+    /// If using OpenCL 1.2 or higher, this uses the `fill` event. Otherwise, a regular `write` is used. 
     #[inline(always)]
     pub fn new_zeroed (len: usize, access: MemAccess, alloc: bool) -> Result<Buffer<MaybeUninit<T>>> where T: Unpin {
         Self::new_zeroed_in(Global, len, access, alloc)
     }
 
+    /// Creates a new buffer with the given custom parameters.
     #[inline(always)]
     pub unsafe fn create (len: usize, flags: MemFlags, host_ptr: Option<NonNull<T>>) -> Result<Self> {
         Self::create_in(Global, len, flags, host_ptr)
@@ -40,26 +45,34 @@ impl<T: Copy> Buffer<T> {
 }
 
 impl<T: Copy, C: Context> Buffer<T, C> {
+    /// Creates a new buffer with the given values and flags.
     #[inline]
     pub fn new_in (ctx: C, v: &[T], access: MemAccess, alloc: bool) -> Result<Self> {
         let flags = MemFlags::new(access, HostPtr::new(alloc, true));
         unsafe { Self::create_in(ctx, v.len(), flags, NonNull::new(v.as_ptr() as *mut _)) }
     }
 
+    /// Creates a new uninitialized buffer with the given size and flags. 
     #[inline(always)]
     pub fn new_uninit_in (ctx: C, len: usize, access: MemAccess, alloc: bool) -> Result<Buffer<MaybeUninit<T>, C>> {
         let host = MemFlags::new(access, HostPtr::new(alloc, false));
         unsafe { Buffer::create_in(ctx, len, host, None) }
     }
 
-    #[docfg(feature = "cl1_2")]
+    /// Creates a new zero-filled, uninitialized buffer with the given size and flags.
+    /// If using OpenCL 1.2 or higher, this uses the `fill` event. Otherwise, a regular `write` is used.
     #[inline(always)]
     pub fn new_zeroed_in (ctx: C, len: usize, access: MemAccess, alloc: bool) -> Result<Buffer<MaybeUninit<T>, C>> where T: Unpin {
         let mut buffer = Self::new_uninit_in(ctx, len, access, alloc)?;
+        #[cfg(feature = "cl1_2")]
         buffer.fill(MaybeUninit::zeroed(), .., WaitList::EMPTY)?.wait()?;
+        #[cfg(not(feature = "cl1_2"))]
+        buffer.write(0, vec![MaybeUninit::zeroed(); len], WaitList::EMPTY)?.wait()?;
+        
         Ok(buffer)
     }
 
+    /// Creates a new buffer with the given custom parameters.
     #[inline]
     pub unsafe fn create_in (ctx: C, len: usize, flags: MemFlags, host_ptr: Option<NonNull<T>>) -> Result<Self> {
         let size = len.checked_mul(core::mem::size_of::<T>()).unwrap();
@@ -72,6 +85,9 @@ impl<T: Copy, C: Context> Buffer<T, C> {
         })
     }
 
+    /// Reinterprets the bits of the buffer to another type.
+    /// # Safety
+    /// This function has the same safety as [`transmute`](std::mem::transmute)
     #[inline(always)]
     pub unsafe fn transmute<U: Copy> (self) -> Buffer<U, C> {
         debug_assert_eq!(core::mem::size_of::<T>(), core::mem::size_of::<U>());
@@ -80,6 +96,9 @@ impl<T: Copy, C: Context> Buffer<T, C> {
 }
 
 impl<T: Copy, C: Context> Buffer<MaybeUninit<T>, C> {
+    /// Extracts the value from `Buffer<MaybeUninit<T>>` to `Buffer<T>`
+    /// # Safety
+    /// This function has the same safety as [`MaybeUninit`](std::mem::MaybeUninit)'s `assume_init`
     #[inline(always)]
     pub unsafe fn assume_init (self) -> Buffer<T, C> {
         self.transmute()
@@ -100,11 +119,13 @@ impl<T: Copy, C: Context> Buffer<MaybeUninit<T>, C> {
 }
 
 impl<T: Copy + Unpin, C: Context> Buffer<T, C> {
+    /// Returns an event that reads the contents of the buffer into a `Vec<T>`
     #[inline(always)]
     pub fn read<'src> (&'src self, range: impl IntoRange, wait: impl Into<WaitList>) -> Result<ReadBuffer<T, &'src Self>> {
         Self::read_by_deref(self, range, wait)
     }
 
+    /// Returns an event that reads the contents of the buffer into `dst`
     #[inline(always)]
     pub fn read_into<'src, Dst: DerefMut<Target = [T]>> (&'src self, offset: usize, dst: Dst, wait: impl Into<WaitList>) -> Result<ReadBufferInto<&'src Self, Dst>> {
         Self::read_into_by_deref(self, offset, dst, wait)
