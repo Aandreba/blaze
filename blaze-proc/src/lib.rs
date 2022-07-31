@@ -47,6 +47,7 @@ pub fn error (items: proc_macro::TokenStream) -> proc_macro::TokenStream {
     input.to_token_stream().into()
 }
 
+#[doc = include_str!("../../docs/src/program/README.md")]
 #[proc_macro_attribute]
 pub fn blaze (attrs: proc_macro::TokenStream, items: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let ident = parse_macro_input!(attrs as Ident);
