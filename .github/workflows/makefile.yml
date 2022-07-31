@@ -18,5 +18,8 @@ jobs:
     - name: Set nightly
       run: rustup override set nightly
       
-    - name: Run check
+    - name: Run checks
       run: make check
+
+    - name: Run tests
+      run: make test

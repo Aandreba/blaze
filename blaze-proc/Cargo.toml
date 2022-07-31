@@ -12,6 +12,3 @@ proc-macro2 = "1"
 quote = "1"
 derive-syn-parse = "0.1.5"
 elor = "1"
-
-[dev-dependencies]
-blaze-rs = { path = "../", features = ["svm"], version = "0.0.1" }

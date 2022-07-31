@@ -49,7 +49,7 @@ impl Type {
 
             Type::Pointer(mutability, ty) => {
                 let ty = ty.rustify_ptr();
-                let wher = parse_quote_spanned! { ty.span() => <#name as ::core::ops::Deref>::Target: ::blaze::buffer::KernelPointer<#ty> };
+                let wher = parse_quote_spanned! { ty.span() => <#name as ::core::ops::Deref>::Target: ::blaze_rs::buffer::KernelPointer<#ty> };
                 let param = match mutability {
                     true => parse_quote_spanned! { ty.span() => #name: ::core::ops::DerefMut },
                     false => parse_quote_spanned! { ty.span() => #name: ::core::ops::Deref }
@@ -59,7 +59,7 @@ impl Type {
             },
 
             Type::Image2d => {
-                let wher = parse_quote! { <#name as ::core::ops::Deref>::Target: ::blaze::image::DynImage2D };
+                let wher = parse_quote! { <#name as ::core::ops::Deref>::Target: ::blaze_rs::image::DynImage2D };
                 let param = match mutability {
                     true => parse_quote! { #name: ::core::ops::DerefMut },
                     false => parse_quote! { #name: ::core::ops::Deref }

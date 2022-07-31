@@ -27,7 +27,6 @@ unsafe impl<T: Copy + Sync, C: Context> KernelPointer<T> for Buffer<T, C> {
     }
 }
 
-#[docfg(feature = "cl1_1")]
 unsafe impl<T: Copy + Sync, C: Context> KernelPointer<T> for rect::BufferRect2D<T, C> {
     #[inline(always)]
     unsafe fn set_arg (&self, kernel: &mut RawKernel, _wait: &mut WaitList, idx: u32) -> Result<()> {
