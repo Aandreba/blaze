@@ -32,3 +32,10 @@ jobs:
       # Runs a single command using the runners shell
       - name: Run mdbook
         run: cd docs && mdbook build
+        
+      - name: Move book contents
+        run: mv book .
+        
+      - uses: actions/upload-pages-artifact@v3
+      
+      - uses: actions/deploy-pages@v3
