@@ -5,6 +5,7 @@
 - [ ] buffered queues
 - [ ] join streams
 - [ ] `image` feature (use ffmpeg?)
+- [ ] serde support
 
 ## Before release
 - [x] Check most important stuff is documented
