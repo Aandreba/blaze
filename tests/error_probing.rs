@@ -1,4 +1,3 @@
-use std::ops::Deref;
 use blaze_rs::prelude::*;
 
 #[global_context]
@@ -6,9 +5,9 @@ static CONTEXT : SimpleContext = SimpleContext::default();
 
 #[test]
 fn invalid_raw () -> Result<()> {
-    let buffer = Buffer::new(&[1, 2, 3, 4, 5], MemAccess::default(), false)?;
-    let map = buffer.map(.., EMPTY)?.wait()?;
+    let queue = CONTEXT.next_queue();
+    let default = queue.queue_properties()?;
     
-    assert_eq!(map.deref(), &[1, 2, 3, 4, 5]);
+    println!("{default:?}");
     Ok(())
 }

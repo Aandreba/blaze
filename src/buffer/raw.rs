@@ -6,7 +6,7 @@ use super::{flags::{MemFlags}, IntoRange};
 
 /// A raw OpenCL buffer
 #[repr(transparent)]
-#[derive(Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct RawBuffer (RawMemObject);
 
 impl RawBuffer {

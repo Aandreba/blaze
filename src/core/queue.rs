@@ -5,6 +5,7 @@ use blaze_proc::docfg;
 use crate::{context::RawContext};
 use std::ptr::addr_of_mut;
 
+#[derive(Debug, PartialEq, Eq, Hash)]
 #[repr(transparent)]
 pub struct RawCommandQueue (NonNull<c_void>);
 
@@ -146,7 +147,9 @@ impl RawCommandQueue {
     #[docfg(feature = "cl2_1")]
     #[inline(always)]
     pub fn device_default (&self) -> Result<RawCommandQueue> {
+        // TODO FIX
         let queue = self.get_info::<cl_command_queue>(opencl_sys::CL_QUEUE_DEVICE_DEFAULT)?;
+        
         unsafe {
             tri!(clRetainCommandQueue(queue));
             // SAFETY: Queue checked to be valid by `clRetainCommandQueue`.
@@ -265,7 +268,7 @@ cfg_if::cfg_if! {
         use elor::prelude::*;
 
         #[cfg_attr(docsrs, doc(cfg(feature = "cl2")))]
-        #[derive(Clone, Copy, PartialEq, Eq, Hash, Default)]
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
         #[non_exhaustive]
         pub struct QueueProperties {
             pub props: CommandQueueProperties,

@@ -1,4 +1,5 @@
 - [x] Semi-rework of buffers
+- [ ] 3d rect buffers
 - [ ] Check `core` items have `new` and `new_in` methods
 - [ ] `strict` feature
 - [ ] buffered queues
@@ -6,7 +7,7 @@
 - [ ] `image` feature (use ffmpeg?)
 
 ## Before release
-- [ ] Check most important stuf is documented
+- [x] Check most important stuff is documented
 - [x] Create README file for GitHub repo
-- [ ] Add badges to README and book
-- [ ] Fix warnings
+- [x] Add badges to README and book
+- [x] Fix warnings

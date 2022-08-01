@@ -6,7 +6,7 @@ use blaze_proc::docfg;
 use super::{Event};
 
 /// A raw OpenCL event
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, Hash)]
 #[repr(transparent)]
 pub struct RawEvent (NonNull<c_void>);
 

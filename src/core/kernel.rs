@@ -3,7 +3,7 @@ use opencl_sys::*;
 use blaze_proc::docfg;
 use crate::{core::*, context::{RawContext, Context, Global}, event::{RawEvent, WaitList}};
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, Hash)]
 #[repr(transparent)]
 pub struct RawKernel (NonNull<c_void>);
 

@@ -9,6 +9,7 @@ use crate::{prelude::*, event::WaitList};
 use super::{Buffer, flags::{MemFlags, MemAccess, HostPtr}};
 
 /// Buffer that conatins a 2D rectangle.
+#[derive(Hash)]
 pub struct BufferRect2D<T: Copy, C: Context = Global> {
     inner: Buffer<T, C>,
     width: NonZeroUsize,
@@ -178,6 +179,15 @@ impl<T: Copy, C: Context> DerefMut for BufferRect2D<T, C> {
     }
 }
 
+impl<T: Copy + Unpin + PartialEq, C: Context> PartialEq for BufferRect2D<T, C> {
+    #[inline]
+    fn eq(&self, other: &Self) -> bool {
+        self.width == other.width && 
+        self.height == other.height &&
+        self.inner == other.inner
+    }
+}
+
 impl<T: Copy + Unpin + Debug, C: Context> Debug for BufferRect2D<T, C> {
     #[inline(always)]
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -200,3 +210,5 @@ impl<T: Copy + Unpin + Debug, C: Context> Debug for BufferRect2D<T, C> {
         Debug::fmt(&all, f)
     }
 }
+
+impl<T: Copy + Unpin + Eq, C: Context> Eq for BufferRect2D<T, C> {}

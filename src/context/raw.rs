@@ -6,6 +6,7 @@ use blaze_proc::docfg;
 use crate::{core::{*, device::DeviceType}, prelude::device::Version};
 use super::ContextProperties;
 
+#[derive(Debug, PartialEq, Eq, Hash)]
 #[repr(transparent)]
 pub struct RawContext (NonNull<c_void>);
 
@@ -271,12 +272,14 @@ impl Drop for RawContext {
 unsafe impl Send for RawContext {}
 unsafe impl Sync for RawContext {}
 
+#[doc(hidden)]
 #[cfg(feature = "cl3")]
 unsafe extern "C" fn destructor_callback (_context: cl_context, user_data: *mut c_void) {
     let f = *Box::from_raw(user_data as *mut Box<dyn FnOnce() + Send>);
     f()
 }
 
+#[doc(hidden)]
 #[cfg(feature = "cl3")]
 unsafe extern "C" fn context_error (errinfo: *const i8, _private_info: *const c_void, _cb: usize, user_data: *mut c_void) {
     let str = String::from_utf8_lossy(std::ffi::CStr::from_ptr(errinfo).to_bytes());

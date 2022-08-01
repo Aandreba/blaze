@@ -1,11 +1,12 @@
 use std::{marker::PhantomData, ptr::{NonNull}, ops::{Deref, DerefMut}, fmt::Debug, mem::MaybeUninit, sync::Arc, rc::Rc};
 use blaze_proc::docfg;
 
-use crate::{context::{Context, Global}, event::{WaitList}, prelude::{Event}};
+use crate::{context::{Context, Global}, event::{WaitList}, prelude::{Event, EventExt}};
 use crate::core::*;
 use crate::buffer::{flags::{MemFlags, HostPtr, MemAccess}, events::{ReadBuffer, WriteBuffer, ReadBufferInto}, RawBuffer};
 use super::{events::{CopyBuffer}, IntoRange};
 
+#[derive(Hash)]
 #[doc = include_str!("../../docs/src/buffer/README.md")]
 pub struct Buffer<T: Copy, C: Context = Global> {
     pub(super) inner: RawBuffer,
@@ -88,6 +89,12 @@ impl<T: Copy, C: Context> Buffer<T, C> {
     pub unsafe fn transmute<U: Copy> (self) -> Buffer<U, C> {
         debug_assert_eq!(core::mem::size_of::<T>(), core::mem::size_of::<U>());
         Buffer { inner: self.inner, ctx: self.ctx, phtm: PhantomData }
+    }
+
+    /// Checks if the buffer pointer is the same in both buffers.
+    #[inline(always)]
+    pub fn eq_buffer (&self, other: &Buffer<T, C>) -> bool {
+        self.inner.eq(&other.inner)
     }
 }
 
@@ -264,6 +271,27 @@ impl<T: Copy, C: Context> DerefMut for Buffer<T, C> {
     }
 }
 
+impl<T: Copy + Unpin + PartialEq, C: Context> PartialEq for Buffer<T, C> {
+    fn eq(&self, other: &Self) -> bool {
+        let this = match self.read(.., WaitList::EMPTY) {
+            Ok(x) => x,
+            Err(_) => return false
+        };
+
+        let other = match other.read(.., WaitList::EMPTY) {
+            Ok(x) => x,
+            Err(_) => return false
+        };
+        
+        let join = match ReadBuffer::join_blocking([this, other]) {
+            Ok(x) => x,
+            Err(_) => return false
+        };
+
+        join[0] == join[1]
+    }
+}
+
 impl<T: Copy + Unpin + Debug, C: Context> Debug for Buffer<T, C> {
     #[inline(always)]
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -271,3 +299,5 @@ impl<T: Copy + Unpin + Debug, C: Context> Debug for Buffer<T, C> {
         Debug::fmt(&v, f)
     }
 }
+
+impl<T: Copy + Unpin + Eq, C: Context> Eq for Buffer<T, C> {}
