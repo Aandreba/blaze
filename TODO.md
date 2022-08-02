@@ -2,10 +2,11 @@
 - [ ] 3d rect buffers
 - [ ] Check `core` items have `new` and `new_in` methods
 - [ ] `strict` feature
-- [ ] buffered queues
+- [-] buffered queues
 - [ ] join streams
 - [ ] `image` feature (use ffmpeg?)
 - [ ] serde support
+- [ ] opencl 1.1 and lower for listening to events
 
 ## Before release
 - [x] Check most important stuff is documented

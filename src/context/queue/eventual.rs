@@ -1,191 +1,106 @@
-use std::{sync::{Arc, atomic::{AtomicPtr, AtomicI32}}, ffi::c_void};
-use blaze_proc::docfg;
-use crossbeam::{queue::SegQueue, atomic::AtomicConsume};
-use crate::prelude::{RawEvent, Result, Error, Event};
+use std::{sync::{atomic::{AtomicI32, Ordering}}, mem::MaybeUninit, cell::UnsafeCell, thread::Thread, collections::VecDeque};
+use crate::prelude::*;
 
-cfg_if::cfg_if! {
-    if #[cfg(feature = "futures")] {
-        enum EventualWaker {
-            Sync (std::thread::Thread),
-            Async (core::task::Waker)
-        }
+const UNINIT : i32 = 2;
+const WORKING : i32 = 1;
+const OK : i32 = 0;
 
-        impl EventualWaker {
-            #[inline(always)]
-            pub fn wake (self) {
-                match self {
-                    Self::Sync (x) => x.unpark(),
-                    Self::Async (x) => x.wake(),
-                }
-            }
-        }
-
-        impl From<std::thread::Thread> for EventualWaker {
-            #[inline(always)]
-            fn from (x: std::thread::Thread) -> Self {
-                Self::Sync(x)
-            }            
-        }
-
-        impl From<core::task::Waker> for EventualWaker {
-            #[inline(always)]
-            fn from (x: core::task::Waker) -> Self {
-                Self::Async(x)
-            }            
-        }
-    } else {
-        #[repr(transparent)]
-        struct EventualWaker (std::thread::Thread);
-
-        impl EventualWaker {
-            #[inline(always)]
-            pub fn wake (&self) {
-                self.0.unpark()
-            }
-        }
-
-        impl From<std::thread::Thread> for EventualWaker {
-            #[inline(always)]
-            fn from (x: std::thread::Thread) -> Self {
-                Self(x)
-            }            
-        }
-    }
+pub struct Eventual {
+    state: AtomicI32,
+    inner: UnsafeCell<MaybeUninit<RawEvent>>,
+    queue: MaybeUninit<VecDeque<Waker>>
 }
-
-#[repr(transparent)]
-#[derive(Clone)]
-pub struct Eventual (Arc<EventualInner>);
 
 impl Eventual {
     #[inline(always)]
     pub fn new () -> Self {
-        Self(Arc::new(EventualInner::new()))
-    }
-
-    #[inline(always)]
-    pub fn from_event (evt: RawEvent) -> Self {
-        Self(Arc::new(EventualInner::from_event(evt)))
-    }
-
-    #[inline(always)]
-    pub fn from_error (err: Error) -> Self {
-        Self(Arc::new(EventualInner::from_error(err.ty)))
+        Self {
+            state: AtomicI32::new(UNINIT),
+            inner: UnsafeCell::new(MaybeUninit::uninit()),
+            queue: MaybeUninit::new(VecDeque::default())
+        }
     }
 
     #[inline]
-    pub fn try_get (&self) -> Option<RawEvent> {
-        let evt = RawEvent::from_id(self.0.inner.load_consume())?;
-        unsafe { evt.retain().unwrap() };
-        Some(evt)
-    }
-
-    #[inline(always)]
-    pub unsafe fn get_unchecked (&self) -> Result<RawEvent> {
-        match self.0.status.load_consume() {
-            0 => {
-                let evt = RawEvent::from_id_unchecked(self.0.inner.load_consume());
-                evt.retain().unwrap();
-                Ok(evt)
-            },
-
-            other => Err(Error::from(other))
-        }
-    }
-
-    #[inline(always)]
-    pub fn wait (&self) -> Result<RawEvent> {
-        self.0.register(std::thread::current());
-        std::thread::park();
-
-        unsafe {
-            self.get_unchecked()
-        }
-    }
-
-    #[docfg(feature = "futures")]
-    pub fn wait_async (&self) -> RawEvent {
+    pub fn get (&self) -> Result<&RawEvent> {
+        self.state.compare_exchange(UNINIT, WORKING, success, failure);
         todo!()
     }
 
     #[inline]
-    pub(super) unsafe fn set_unchecked (&self, evt: Result<RawEvent>) {
-        match evt {
-            Ok(evt) => {
-                self.0.inner.store(evt.id(), std::sync::atomic::Ordering::Release);
-                self.0.status.store(0, std::sync::atomic::Ordering::Release);
+    pub fn try_get (&self) -> Option<Result<&RawEvent>> {
+        match self.state.load(Ordering::Acquire) {
+            UNINIT | WORKING => None,
+            OK => unsafe {
+                let rf = (&*self.inner.get()).assume_init_ref();
+                Some(Ok(rf))
             },
 
-            Err(err) => {
-                self.0.status.store(err.ty as i32, std::sync::atomic::Ordering::Release)
-            }
-        }
-
-        while let Some(waker) = self.0.wakers.pop() {
-            waker.wake();
-        }
-    }
-}
-
-struct EventualInner {
-    inner: AtomicPtr<c_void>,
-    status: AtomicI32, // 2 = uninit, 1 = working, 0 = completed, -1.. = error
-    wakers: SegQueue<EventualWaker>
-}
-
-impl EventualInner {
-    #[inline(always)]
-    fn new () -> Self {
-        Self { 
-            inner: AtomicPtr::default(),
-            status: AtomicI32::new(2),
-            wakers: SegQueue::new()
+            err => Some(Err(Error::from(err)))
         }
     }
 
     #[inline(always)]
-    fn from_event (evt: RawEvent) -> Self {
-        Self { 
-            inner: AtomicPtr::new(evt.id()),
-            status: AtomicI32::default(),
-            wakers: SegQueue::new()
+    pub(super) fn try_init_event (&self, v: RawEvent) {
+        match self.state.compare_exchange(UNINIT, WORKING, Ordering::AcqRel, Ordering::Relaxed) {
+            Ok(_) => unsafe {
+                (&mut *self.inner.get()).write(v);
+                self.wake_all();
+                self.state.store(OK, Ordering::Release);
+            },
+
+            _ => {}
         }
     }
 
     #[inline(always)]
-    fn from_error (err: crate::core::ErrorType) -> Self {
-        Self {
-            inner: AtomicPtr::default(),
-            status: AtomicI32::new(err as i32),
-            wakers: SegQueue::new()
-        }
-    }
-
-    #[inline(always)]
-    fn register (&self, waker: impl Into<EventualWaker>) {
-        if self.status.load_consume() < 1 {
-            waker.into().wake();
+    pub(super) fn try_init_error (&self, err: ErrorType) {
+        if self.state.compare_exchange(UNINIT, WORKING, Ordering::AcqRel, Ordering::Relaxed).is_err() {
             return;
         }
 
-        self.wakers.push(waker.into())
+        self.wake_all();
+        self.state.store(err as i32, Ordering::Release);
+    }
+
+    #[inline]
+    fn wake_all (&self) {
+        self.queue
     }
 }
 
-#[docfg(feature = "futures")]
-impl futures::Future for Eventual {
-    type Output = RawEvent;
-
+impl Drop for Eventual {
     #[inline(always)]
-    fn poll(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> std::task::Poll<Self::Output> {
-        self.0.register(cx.waker().clone());
-        if let Some(evt) = self.try_get() {
-            return std::task::Poll::Ready(evt);
-        }
+    fn drop(&mut self) {
+        match *self.state.get_mut() {
+            UNINIT => {},
+            WORKING => panic!("Shouldn't be dropping an Eventual that's initializing"),
 
-        std::task::Poll::Pending
+            // OK or error
+            _ => unsafe {
+                self.inner.get_mut().assume_init_drop();
+                self.queue.assume_init_drop();
+            },
+        }
     }
 }
 
-unsafe impl Send for EventualInner {}
-unsafe impl Sync for EventualInner {}
+unsafe impl Send for Eventual {}
+unsafe impl Sync for Eventual {}
+
+enum Waker {
+    Sync (Thread),
+    #[cfg(feature = "futures")]
+    Async (std::task::Waker)
+}
+
+impl Waker {
+    #[inline(always)]
+    pub fn wake (self) {
+        match self {
+            Self::Sync(x) => x.unpark(),
+            #[cfg(feature = "futures")]
+            Self::Async(x) => x.wake()
+        }
+    }
+}
