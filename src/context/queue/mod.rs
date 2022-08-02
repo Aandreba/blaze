@@ -1,11 +1,14 @@
 use std::{sync::Arc, fmt::Debug, hash::Hash};
 use crate::prelude::*;
 
+#[cfg(feature = "cl1_1")]
+flat_mod!(count);
+
 #[derive(Clone)]
 pub struct CommandQueue {
     inner: RawCommandQueue,
     #[cfg(feature = "cl1_1")]
-    size: Arc<()>
+    size: AtomicCount
 }
 
 impl CommandQueue {
@@ -14,13 +17,13 @@ impl CommandQueue {
         Self { 
             inner,
             #[cfg(feature = "cl1_1")]
-            size: Arc::new(())
+            size: AtomicCount::new()
         }
     }
 
     #[inline(always)]
     pub fn size (&self) -> usize {
-        Arc::strong_count(&self.size) - 1
+        self.size.count() - 1
     }
 
     #[cfg(feature = "cl1_1")]
@@ -28,11 +31,11 @@ impl CommandQueue {
     pub fn enqueue<F: 'static + Send + FnOnce(&RawCommandQueue, WaitList) -> Result<RawEvent>> (&self, f: F, wait: impl Into<WaitList>) -> Result<RawEvent> {
         let size = self.size.clone();
         let evt = f(&self.inner, wait.into())?;
-        let size = Arc::into_raw(size);
+        let size = size.into_raw();
 
         unsafe {
             if let Err(e) = evt.on_complete_raw(decrease_count, size as *mut std::ffi::c_void) {
-                Arc::decrement_strong_count(size);
+                AtomicCount::decrement_count(size);
                 return Err(e)
             }
         }
