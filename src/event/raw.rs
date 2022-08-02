@@ -109,7 +109,11 @@ impl RawEvent {
         let user_data = Box::into_raw(Box::new(f));
         
         unsafe {
-            self.on_status_raw(status, event_listener, user_data.cast())?;
+            if let Err(e) = self.on_status_raw(status, event_listener, user_data.cast()) {
+                let _ = Box::from_raw(user_data);
+                return Err(e)
+            }
+
             tri!(clRetainEvent(self.id()));
         }
 
@@ -219,7 +223,7 @@ unsafe impl Sync for RawEvent {}
 #[cfg(feature = "cl1_1")]
 unsafe extern "C" fn event_listener (event: cl_event, event_command_status: cl_int, user_data: *mut c_void) {
     let user_data : *mut Box<dyn FnOnce(RawEvent, Result<EventStatus>) + Send> = user_data.cast();
-    let f = *Box::from_raw(user_data);
+    let f = Box::into_inner(Box::from_raw(user_data));
     
     let event = RawEvent::from_id_unchecked(event);
     let status = EventStatus::try_from(event_command_status);

@@ -1,12 +1,11 @@
-use std::sync::{Arc, atomic::AtomicUsize};
+use std::{sync::Arc, fmt::Debug, hash::Hash};
 use crate::prelude::*;
 
-flat_mod!(eventual);
-
+#[derive(Clone)]
 pub struct CommandQueue {
     inner: RawCommandQueue,
-    #[cfg(feature = "cl1_2")]
-    size: Arc<AtomicUsize>
+    #[cfg(feature = "cl1_1")]
+    size: Arc<()>
 }
 
 impl CommandQueue {
@@ -14,41 +13,68 @@ impl CommandQueue {
     pub fn new (inner: RawCommandQueue) -> Self {
         Self { 
             inner,
-            #[cfg(feature = "cl1_2")]
-            size: Arc::new(AtomicUsize::default())
+            #[cfg(feature = "cl1_1")]
+            size: Arc::new(())
         }
     }
 
-    #[cfg(feature = "cl1_2")]
-    pub fn enqueue<F: 'static + Send + FnOnce(RawCommandQueue, WaitList)> (&self, f: F, wait: impl Into<WaitList>) -> Result<()> {
-        cfg_if::cfg_if! {
-            if #[cfg(debug_assertions)] {
-                let prev = self.size.fetch_add(1, std::sync::atomic::Ordering::Release);
-                if prev == usize::MAX {
-                    panic!("CommandQueue overflow");
-                }
-            } else {
-                self.size.fetch_add(1, std::sync::atomic::Ordering::Release);
-            }
-        }
+    #[inline(always)]
+    pub fn size (&self) -> usize {
+        Arc::strong_count(&self.size) - 1
+    }
 
-        let wait : WaitList = wait.into();
-        if wait.is_empty() {
-            todo!()
-        }
+    #[cfg(feature = "cl1_1")]
+    #[inline]
+    pub fn enqueue<F: 'static + Send + FnOnce(&RawCommandQueue, WaitList) -> Result<RawEvent>> (&self, f: F, wait: impl Into<WaitList>) -> Result<RawEvent> {
+        let size = self.size.clone();
+        let evt = f(&self.inner, wait.into())?;
+        let size = Arc::into_raw(size);
 
-        let marker = match self.inner.marker(wait.clone()) {
-            Ok(x) => x,
-            Err(e) => {
-                self.size.fetch_sub(1, std::sync::atomic::Ordering::Release);
+        unsafe {
+            if let Err(e) = evt.on_complete_raw(decrease_count, size as *mut std::ffi::c_void) {
+                Arc::decrement_strong_count(size);
                 return Err(e)
             }
-        };
+        }
 
-        marker.on_complete(move |a, b| {
-            
-        });
-
-        todo!();
+        Ok(evt)
     }
+
+    #[cfg(not(feature = "cl1_1"))]
+    #[inline(always)]
+    pub fn enqueue<F: 'static + Send + FnOnce(&RawCommandQueue, WaitList) -> Result<RawEvent>> (&self, f: F, wait: impl Into<WaitList>) -> Result<RawEvent> {
+        f(&self.inner, wait.into())
+    }
+}
+
+impl Debug for CommandQueue {
+    #[inline]
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CommandQueue")
+            .field("inner", &self.inner)
+            .field("size", &self.size())
+            .finish()
+    }
+}
+
+impl PartialEq for CommandQueue {
+    #[inline(always)]
+    fn eq(&self, other: &Self) -> bool {
+        self.inner == other.inner
+    }
+}
+
+impl Hash for CommandQueue {
+    #[inline(always)]
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.inner.hash(state)
+    }
+}
+
+impl Eq for CommandQueue {}
+
+#[doc(hidden)]
+#[cfg(feature = "cl1_2")]
+unsafe extern "C" fn decrease_count (_event: opencl_sys::cl_event, _event_command_status: opencl_sys::cl_int, user_data: *mut std::ffi::c_void) {
+    Arc::decrement_strong_count(user_data as *mut ());
 }
