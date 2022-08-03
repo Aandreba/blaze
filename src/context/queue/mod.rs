@@ -23,12 +23,12 @@ impl CommandQueue {
 
     #[inline(always)]
     pub fn size (&self) -> usize {
-        self.size.count() - 1
+        self.size.count()
     }
 
     #[cfg(feature = "cl1_1")]
     #[inline]
-    pub fn enqueue<F: 'static + Send + FnOnce(&RawCommandQueue, WaitList) -> Result<RawEvent>> (&self, f: F, wait: impl Into<WaitList>) -> Result<RawEvent> {
+    pub fn enqueue<F: FnOnce(&RawCommandQueue, WaitList) -> Result<RawEvent>> (&self, f: F, wait: impl Into<WaitList>) -> Result<RawEvent> {
         let size = self.size.clone();
         let evt = f(&self.inner, wait.into())?;
         let size = size.into_raw();
@@ -45,7 +45,7 @@ impl CommandQueue {
 
     #[cfg(not(feature = "cl1_1"))]
     #[inline(always)]
-    pub fn enqueue<F: 'static + Send + FnOnce(&RawCommandQueue, WaitList) -> Result<RawEvent>> (&self, f: F, wait: impl Into<WaitList>) -> Result<RawEvent> {
+    pub fn enqueue<F: FnOnce(&RawCommandQueue, WaitList) -> Result<RawEvent>> (&self, f: F, wait: impl Into<WaitList>) -> Result<RawEvent> {
         f(&self.inner, wait.into())
     }
 }

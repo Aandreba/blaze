@@ -10,7 +10,7 @@ pub(super) struct AtomicCount {
 impl AtomicCount {
     #[inline(always)]
     pub fn new () -> Self {
-        let ptr = Box::into_raw(Box::new(AtomicUsize::new(1)));
+        let ptr = Box::into_raw(Box::new(AtomicUsize::default()));
 
         unsafe {
             Self {
@@ -69,9 +69,8 @@ impl Drop for AtomicCount {
     fn drop(&mut self) {
         unsafe {
             let prev = self.inner.as_ref().fetch_sub(1, std::sync::atomic::Ordering::AcqRel);
-            debug_assert_ne!(prev, 0);
 
-            if prev == 1 {
+            if prev == 0 {
                 let _ = Box::from_raw(self.inner.as_ptr());
             }
         }
