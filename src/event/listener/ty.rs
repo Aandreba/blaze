@@ -9,13 +9,19 @@ pub(super) enum Listener {
 
 impl Listener {
     #[inline]
-    fn call (self, evt: &RawEvent, status: Result<EventStatus>) {
+    pub fn call (self, evt: &RawEvent, status: Result<EventStatus>) {
         match self {
-            Self::Raw(f, user_data) => {
-                todo!()
+            Self::Raw(f, user_data) => unsafe {
+                evt.retain().unwrap();
+                let status = match status {
+                    Ok(x) => x as cl_int,
+                    Err(e) => e.ty as cl_int
+                };
+
+                f(evt.id(), status, user_data);
             },
 
-            Self::Boxed(f) => f(evt.clone(), )
+            Self::Boxed(f) => f(evt.clone(), status)
         }
     }
 }

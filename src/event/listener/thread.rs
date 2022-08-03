@@ -1,6 +1,7 @@
 use std::sync::Mutex;
 use once_cell::sync::Lazy;
-use crate::{event::{listener::{SUBMITTING, RUNNING, COMPLETED, ListenerQueue}, EventStatus}, prelude::RawEvent};
+use crate::{event::{listener::{SUBMITTING, RUNNING, COMPLETED, ListenerQueue}, EventStatus}, prelude::{RawEvent, Event}};
+use super::{Flag, FALSE, TRUE};
 
 static THREAD_STARTED : Flag = Flag::new(FALSE);
 
@@ -18,18 +19,28 @@ fn thread_loop () {
             Err(e) => e.into_inner()
         };
 
-        for (event, list) in events.drain_filter(|x, _| x.status().map_or(true, |x| x <= status)) {
-            let status = event.status().map(|_| status);
+        let events = events.as_mut_queue();
 
-            for f in list {
-                f.call(&event, status)
+        let mut i = 0;
+        while i < events.len() {
+            let status_result = events[i].0.status();
+
+            if status_result.is_err() || status_result.is_ok_and(|x| x <= &status) {
+                let status_result = status_result.map(|_| status);
+                let (event, listeners) = unsafe {
+                    events.remove(i).unwrap_unchecked()
+                };
+
+                for f in listeners {
+                    f.call(&event, status_result.clone());
+                }
+
+                continue
             }
+
+            i += 1;
         }
     }
-
-    let submitting = Lazy::force(&SUBMITTING);
-    let running = Lazy::force(&RUNNING);
-    let completed = Lazy::force(&COMPLETED);
 
     /*loop {
         check_submitting(submitting);

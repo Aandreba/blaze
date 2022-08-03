@@ -1,18 +1,20 @@
-use std::{ptr::NonNull, alloc::{alloc, Layout}, sync::RwLock, num::NonZeroUsize, ops::{RangeBounds, Range}, cmp::Ordering};
+use std::{ptr::NonNull, alloc::{alloc, Layout}, sync::{RwLock, atomic::AtomicPtr}, num::NonZeroUsize, ops::{RangeBounds, Range}, cmp::Ordering, collections::VecDeque};
 use crate::{prelude::{RawEvent, Event}, event::EventStatus};
 use super::{Flag, Listener, FALSE};
+use crossbeam::atomic::AtomicCell;
 use elor::Either;
+use once_cell::sync::Lazy;
 
 type Entry = (RawEvent, Vec<Listener>);
 
 pub(super) struct ListenerQueue {
-    inner: Vec<Entry>
+    inner: Lazy<VecDeque<Entry>>
 }
 
 impl ListenerQueue {
     pub const fn new () -> Self {
         Self {
-            inner: Vec::new()
+            inner: Lazy::new(VecDeque::new)
         }
     }
 
@@ -24,15 +26,15 @@ impl ListenerQueue {
         }
     }
 
-    #[inline]
-    pub fn drain (&mut self, status: EventStatus) -> impl '_ + Iterator<Item = Entry> {
-        self.inner.drain_filter(move |(x, _)| x.status().map_or(true, |x| x <= status))
+    #[inline(always)]
+    pub fn as_mut_queue (&mut self) -> &mut VecDeque<Entry> {
+        &mut self.inner
     }
     
     /// pseudo binary search - O(log(n))
     fn get_or_idx (&mut self, target: &RawEvent) -> Either<&mut Entry, usize> {
-        let left = 0usize;
-        let right = self.inner.len();
+        let mut left = 0usize;
+        let mut right = self.inner.len();
 
         while left < right {
             let mid = (left + right).div_ceil(2);
@@ -47,4 +49,4 @@ impl ListenerQueue {
 
         return Either::Right(right);
     }
-} 
+}
