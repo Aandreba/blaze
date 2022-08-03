@@ -5,8 +5,12 @@ use crate::{core::*};
 
 #[path = "various.rs"]
 mod extra;
+
 #[cfg(feature = "cl1_2")]
 mod join;
+
+#[cfg(not(feature = "cl1_1"))]
+flat_mod!(listener);
 
 pub mod various {
     pub use super::extra::*;
@@ -148,6 +152,24 @@ pub trait Event {
         Ok(nanos.duration())
     }
 
+    /// Returns `true` if the status of the event is [`EventStatus::Queued`] or an error, `false` otherwise.
+    #[inline(always)]
+    fn is_queued (&self) -> bool {
+        self.status().as_ref().map_or(true, EventStatus::is_queued)
+    }
+
+    /// Returns `true` if the status of the event is [`EventStatus::Submitted`], [`EventStatus::Running`], [`EventStatus::Complete`] or an error, `false` otherwise.
+    #[inline(always)]
+    fn has_submited (&self) -> bool {
+        self.status().as_ref().map_or(true, EventStatus::has_submitted)
+    }
+
+    /// Returns `true` if the status of the event is [`EventStatus::Running`], [`EventStatus::Complete`] or an error, `false` otherwise.
+    #[inline(always)]
+    fn has_started_running (&self) -> bool {
+        self.status().as_ref().map_or(true, EventStatus::has_started_running)
+    }
+    
     /// Returns `true` if the status of the event is [`EventStatus::Complete`] or an error, `false` otherwise.
     #[inline(always)]
     fn has_completed (&self) -> bool {

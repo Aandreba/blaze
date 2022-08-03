@@ -1,4 +1,4 @@
-#![feature(box_into_inner, new_uninit, iterator_try_collect, extend_one, const_nonnull_new, int_roundings, const_maybe_uninit_zeroed, const_ptr_as_ref, const_maybe_uninit_array_assume_init, maybe_uninit_array_assume_init, const_option_ext, maybe_uninit_uninit_array, const_option, nonzero_ops, associated_type_bounds, ptr_metadata, is_some_with, fn_traits, vec_into_raw_parts, const_trait_impl, allocator_api)]
+#![feature(box_into_inner, nonzero_min_max, new_uninit, iterator_try_collect, extend_one, const_nonnull_new, int_roundings, const_maybe_uninit_zeroed, const_ptr_as_ref, const_maybe_uninit_array_assume_init, maybe_uninit_array_assume_init, const_option_ext, maybe_uninit_uninit_array, const_option, nonzero_ops, associated_type_bounds, ptr_metadata, is_some_with, fn_traits, vec_into_raw_parts, const_trait_impl, hash_drain_filter, allocator_api)]
 #![cfg_attr(any(feature = "svm", feature = "map"), feature(strict_provenance, layout_for_ptr))]
 #![cfg_attr(docsrs, feature(doc_cfg, proc_macro_hygiene))]
 #![cfg_attr(debug_assertions, feature(backtrace, backtrace_frames))]
