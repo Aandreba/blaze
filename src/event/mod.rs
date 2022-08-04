@@ -10,7 +10,7 @@ mod extra;
 mod join;
 
 #[cfg(not(feature = "cl1_1"))]
-flat_mod!(listener);
+mod listener;
 
 pub mod various {
     pub use super::extra::*;

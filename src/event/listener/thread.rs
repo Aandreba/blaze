@@ -42,9 +42,9 @@ fn thread_loop () {
         }
     }
 
-    /*loop {
-        check_submitting(submitting);
-        check_running(running);
-        check_completed(completed);
-    }*/
+    loop {
+        check_status(EventStatus::Submitted, &SUBMITTING);
+        check_status(EventStatus::Submitted, &RUNNING);
+        check_status(EventStatus::Complete, &COMPLETED);
+    }
 }

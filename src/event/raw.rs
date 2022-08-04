@@ -2,7 +2,7 @@ use crate::core::*;
 use std::ffi::c_void;
 use std::{mem::MaybeUninit, ptr::{addr_of, NonNull}};
 use opencl_sys::{cl_event, clRetainEvent, clReleaseEvent, clGetEventInfo, cl_event_info, clWaitForEvents};
-use blaze_proc::docfg;
+use {opencl_sys::cl_int, super::EventStatus};
 use super::{Event};
 
 /// A raw OpenCL event
@@ -55,10 +55,6 @@ impl RawEvent {
     }
 }
 
-#[cfg(feature = "cl1_1")]
-use {opencl_sys::cl_int, super::EventStatus};
-
-#[docfg(feature = "cl1_1")]
 impl RawEvent {
     /// Adds a callback function that will be executed when the event is submitted.
     #[inline(always)]
@@ -106,14 +102,19 @@ impl RawEvent {
 
     #[inline(always)]
     pub fn on_status_boxed (&self, status: EventStatus, f: Box<dyn FnOnce(RawEvent, Result<EventStatus>) + Send>) -> Result<()> {
-        let user_data = Box::into_raw(Box::new(f));
-        
-        unsafe {
-            self.on_status_raw(status, event_listener, user_data.cast())?;
-            tri!(clRetainEvent(self.id()));
-        }
+        cfg_if::cfg_if! {
+            if #[cfg(feature = "cl1_1")] {
+                let user_data = Box::into_raw(Box::new(f));
+                unsafe {
+                    self.on_status_raw(status, event_listener, user_data.cast())?;
+                    tri!(clRetainEvent(self.id()));
+                }
 
-        Ok(())
+                Ok(())
+            } else {
+                return super::listener::add_boxed_listener(self, status, f)
+            }
+        }
     }
     
     #[inline(always)]
@@ -133,8 +134,14 @@ impl RawEvent {
 
     #[inline(always)]
     pub unsafe fn on_status_raw (&self, status: EventStatus, f: unsafe extern "C" fn(event: cl_event, event_command_status: cl_int, user_data: *mut c_void), user_data: *mut c_void) -> Result<()> {
-        tri!(opencl_sys::clSetEventCallback(self.id(), status as i32, Some(f), user_data));
-        Ok(())
+        cfg_if::cfg_if! {
+            if #[cfg(feature = "cl1_1")] {
+                tri!(opencl_sys::clSetEventCallback(self.id(), status as i32, Some(f), user_data));
+                Ok(())
+            } else {
+                return super::listener::add_raw_listener(self, status, f, user_data)
+            }
+        }
     }
 }
 

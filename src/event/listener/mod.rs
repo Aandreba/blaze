@@ -25,13 +25,27 @@ static RUNNING : Mutex<ListenerQueue> = Mutex::new(ListenerQueue::new());
 static COMPLETED : Mutex<ListenerQueue> = Mutex::new(ListenerQueue::new());
 static EVENTS : [&Mutex<ListenerQueue>; 3] = [&COMPLETED, &RUNNING, &SUBMITTING];
 
-fn add_listener (evt: RawEvent, status: EventStatus, listener: Listener) -> Result<()> {
+#[inline(always)]
+pub fn add_boxed_listener (evt: &RawEvent, status: EventStatus, f: Box<dyn FnOnce(RawEvent, Result<EventStatus>) + Send>) -> Result<()> {
+    add_listener(evt, status, Listener::Boxed(f))
+}
+
+#[inline(always)]
+pub fn add_raw_listener (evt: &RawEvent, status: EventStatus, f: unsafe extern "C" fn(event: cl_event, event_command_status: cl_int, user_data: *mut c_void), user_data: *mut c_void) -> Result<()> {
+    add_listener(evt, status, Listener::Raw(f, user_data))
+}
+
+fn add_listener (evt: &RawEvent, status: EventStatus, listener: Listener) -> Result<()> {
     if status.is_queued() {
         return Err(Error::new(ErrorType::InvalidValue, "Cannot listen to 'Queued' status"))
     }
 
     init_thread();
-    let events = EVENTS[status as usize].lock().unwrap();
+    let mut events = match EVENTS[status as usize].lock() {
+        Ok(x) => x,
+        Err(e) => e.into_inner()
+    };
 
-    todo!()
+    events.add_listener(&evt, listener);
+    Ok(())
 }
