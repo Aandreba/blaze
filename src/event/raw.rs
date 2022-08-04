@@ -110,7 +110,7 @@ impl RawEvent {
                     tri!(clRetainEvent(self.id()));
                 }
 
-                Ok(())
+                return Ok(())
             } else {
                 return super::listener::add_boxed_listener(self, status, f)
             }
@@ -137,7 +137,7 @@ impl RawEvent {
         cfg_if::cfg_if! {
             if #[cfg(feature = "cl1_1")] {
                 tri!(opencl_sys::clSetEventCallback(self.id(), status as i32, Some(f), user_data));
-                Ok(())
+                return Ok(())
             } else {
                 return super::listener::add_raw_listener(self, status, f, user_data)
             }
