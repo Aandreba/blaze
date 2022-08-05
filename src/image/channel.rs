@@ -1,16 +1,18 @@
 use std::ops::*;
 use bytemuck::Zeroable;
 use ffmpeg_sys_next::AVPixelFormat;
-use num_traits::{NumOps, NumAssignOps, AsPrimitive, Zero, One};
+use num_traits::{AsPrimitive, Zero, One};
 use blaze_proc::{docfg, NumOps, NumOpsAssign};
 use crate::{prelude::{RawContext, Result}, buffer::flags::MemAccess, memobj::MemObjectType};
 use super::{ChannelType, ChannelOrder, ImageFormat};
 use std::{fmt::Debug, hash::{Hash, Hasher}, mem::MaybeUninit};
 
 /// # Safety
+/// - No bit pattern inside `Self` can result in undefined behavior.
+///     - Example: [`bool`], [`NonNull`](std::ptr::NonNull) 
 /// - `Self` must have the same size and alignment as `[Channel; CHANNEL_COUNT]`
 ///     - This might be accomplished with `#[repr(C)]` or `#[repr(transparent)]`
-pub unsafe trait RawPixel: Copy + NumOps + NumAssignOps + bytemuck::Zeroable {
+pub unsafe trait RawPixel: Copy {
     type Channel: RawChannel;
 
     const ORDER : ChannelOrder;
@@ -41,8 +43,29 @@ pub unsafe trait RawPixel: Copy + NumOps + NumAssignOps + bytemuck::Zeroable {
     }
 }
 
-pub unsafe trait FfmpegPixel: RawPixel {
-    const PIX_FMT : AVPixelFormat;
+unsafe impl<T: RawPixel> RawPixel for MaybeUninit<T> {
+    type Channel = MaybeUninit<T::Channel>;
+    const ORDER : ChannelOrder = T::ORDER;
+
+    #[inline(always)]
+    fn channels (&self) -> &[Self::Channel] {
+        unsafe {
+            let channels = T::channels(self.assume_init_ref());
+            core::slice::from_raw_parts(channels.as_ptr().cast(), channels.len())
+        }
+    }
+
+    #[inline(always)]
+    fn channels_mut (&mut self) -> &mut [Self::Channel] {
+        unsafe {
+            let channels = T::channels(self.assume_init_mut());
+            core::slice::from_raw_parts_mut(channels.as_mut_ptr().cast(), channels.len())
+        }
+    }
+}
+
+pub trait FfmpegPixel: RawPixel {
+    const PIX_FMT : AVPixelFormat = Self::FORMAT.ffmpeg_pixel();
 }
 
 macro_rules! impl_pixel {
@@ -400,17 +423,26 @@ impl_pixel! {
 }
 
 /// A type with an associated [`ChannelType`]
-pub unsafe trait RawChannel: Copy + Zero + One + Zeroable + NumOps + NumAssignOps + AsPrimitive<f32> {
+/// # Safet
+/// - No bit pattern inside `Self` can result in undefined behavior.
+///     - Example: [`bool`], [`NonNull`](std::ptr::NonNull) 
+pub unsafe trait RawChannel: 'static + Copy {
     const TYPE : ChannelType;
     const MIN : f32;
     const MAX : f32;
     const DELTA : f32 = Self::MAX - Self::MIN;
 
     #[inline]
-    fn cast<U: RawChannel> (self) -> U where f32: AsPrimitive<U> {
+    fn cast<U: RawChannel> (self) -> U where Self: AsPrimitive<f32>, f32: AsPrimitive<U> {
         let norm = (self.as_() / Self::DELTA) + Self::MIN;
         f32::as_((norm * U::DELTA) - U::MIN)
     }
+}
+
+unsafe impl<T: RawChannel> RawChannel for MaybeUninit<T> {
+    const TYPE : ChannelType = T::TYPE;
+    const MIN : f32 = T::MAX;
+    const MAX : f32 = T::MIN;
 }
 
 macro_rules! impl_channel {
@@ -446,6 +478,34 @@ impl_channel! {
     Norm<i16> as NormI16: <i16 as RawChannel>::MIN => <i16 as RawChannel>::MAX,
     #[docfg(feature = "half")]
     ::half::f16 as F16: 0f32 => 1f32
+}
+
+macro_rules! impl_ffmpeg {
+    ($($i:ident<$($t:ty)|+>),+) => {
+        $(
+            $(
+                impl FfmpegPixel for $i<$t> {}
+            )+
+        )+
+    };
+}
+
+impl_ffmpeg! {
+    Luma<u8 | u16 | Norm<u8> | Norm<u16>>,
+    Rgb<u8 | u16 | Norm<u8> | Norm<u16>>,
+    Argb<u8 | Norm<u8>>,
+    Rgba<u8 | u16 | Norm<u8> | Norm<u16>>,
+    Bgra<u8 | u16 | Norm<u8> | Norm<u16>>
+}
+
+#[docfg(feature = "cl1_1")]
+impl_ffmpeg! {
+    Rgbx<u8 | Norm<u8>>
+}
+
+#[docfg(feature = "cl2")]
+impl_ffmpeg! {
+    Abgr<u8 | Norm<u8>>
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, NumOps, NumOpsAssign)]

@@ -1,97 +1,192 @@
-use std::ptr::NonNull;
-use image::ImageBuffer;
-use crate::{prelude::*, memobj::{MapMutBox, MapMut, MapBox, AsMem, AsMutMem}, image::{IntoSlice, channel::RawPixel}, event::WaitList};
+use std::{ops::{Deref, DerefMut}, ptr::{addr_of_mut, NonNull, addr_of}, mem::ManuallyDrop, fmt::Debug};
+use opencl_sys::*;
+use crate::{prelude::*, buffer::{IntoRange, BufferRange}};
 
-pub struct MapImage2D<P: RawPixel, D, C: Context> {
-    event: RawEvent,
-    mem: D,
-    width: usize,
-    height: usize,
-    ptr: NonNull<P::Subpixel>,
-    ctx: C
+pub struct MapBuffer<T, S> {
+    evt: RawEvent,
+    ptr: NonNull<[T]>,
+    src: S
 }
 
-impl<P: RawPixel, D: AsMem, C: Context> MapImage2D<P, D, C> {
+impl<T: 'static + Copy, S: Deref<Target = Buffer<T, C>>, C: 'static + Context> MapBuffer<T, S> {
     #[inline(always)]
-    pub unsafe fn new (ctx: C, src: D, slice: impl IntoSlice<2>, wait: impl Into<WaitList>) -> Result<Self> {
-        let range = slice.into_slice([src.width()?, src.height()?]);
-        let (ptr, _, _, event) = src.map_read_write(range, ctx.next_queue(), wait)?;
-        let ptr : NonNull<P::Subpixel> = NonNull::new(ptr).unwrap();
-
-        Ok(Self { 
-            event, ptr, ctx,
-            width: range.width(),
-            height: range.height(),
-            mem: src
-        })
-    }
-}
-
-impl<P: RawPixel, D: AsMem, C: Context> Event for MapImage2D<P, D, C> {
-    type Output = ImageBuffer<P, MapBox<P::Subpixel, D, C>>;
-
-    #[inline(always)]
-    fn as_raw (&self) -> &RawEvent {
-        &self.event
+    pub fn new<R: IntoRange, W: Into<WaitList>> (src: S, range: R, wait: W) -> Result<Self> {
+        Self::new_inner::<R, W, CL_MAP_READ>(src, range, wait)
     }
 
-    #[inline]
-    fn consume (self, err: Option<Error>) -> Result<Self::Output> {
-        if let Some(err) = err { return Err(err); }
-        let len = self.height.checked_mul(self.width).and_then(|x| x.checked_mul(P::CHANNEL_COUNT as usize)).unwrap();
+    fn new_inner<R: IntoRange, W: Into<WaitList>, const FLAG: cl_mem_flags> (src: S, range: R, wait: W) -> Result<Self> {
+        let wait : WaitList = wait.into();
+        let (num_events_in_wait_list, event_wait_list) = wait.raw_parts();
+        let BufferRange { offset, cb } = range.into_range::<T>(&src)?;
 
-        let buf = unsafe {
-            MapBox::from_raw_parts_in(self.mem, self.ptr.as_ptr(), len, self.ctx)
-        };
+        let mut err = 0;
+        let mut evt = core::ptr::null_mut();
 
-        Ok(ImageBuffer::from_raw(u32::try_from(self.width).unwrap(), u32::try_from(self.height).unwrap(), buf).unwrap())
-    }
-}
-
-pub struct MapMutImage2D<P: RawPixel, D: AsMutMem, C: Context> {
-    event: RawEvent,
-    mem: D,
-    width: usize,
-    height: usize,
-    ptr: NonNull<P::Subpixel>,
-    ctx: C
-}
-
-impl<P: RawPixel, D: AsMutMem, C: Context> MapMutImage2D<P, D, C> {
-    #[inline(always)]
-    pub unsafe fn new (ctx: C, src: D, slice: impl IntoSlice<2>, wait: impl Into<WaitList>) -> Result<Self> {
-        let range = slice.into_slice([src.width()?, src.height()?]);
-        let (ptr, _, _, event) = src.map_read_write(range, ctx.next_queue(), wait)?;
-        let ptr : NonNull<P::Subpixel> = NonNull::new(ptr).unwrap();
-
-        Ok(Self { 
-            event, ptr, ctx,
-            width: range.width(),
-            height: range.height(),
-            mem: src
-        })
-    }
-}
-
-impl<P: RawPixel, D: AsMutMem, C: Context> Event for MapMutImage2D<P, D, C> {
-    type Output = ImageBuffer<P, MapMutBox<P::Subpixel, D, C>>;
-
-    #[inline(always)]
-    fn as_raw (&self) -> &RawEvent {
-        &self.event
-    }
-
-    #[inline]
-    fn consume (self, err: Option<Error>) -> Result<Self::Output> {
-        if let Some(err) = err { return Err(err); }
-
-        let buf;
         unsafe {
-            let len = self.height.checked_mul(self.width).and_then(|x| x.checked_mul(P::CHANNEL_COUNT as usize)).unwrap();
-            let ptr = core::slice::from_raw_parts_mut(self.ptr.as_ptr(), len);
-            buf = MapMutBox::from_raw_in(ptr, MapMut::new_in(self.ctx, self.mem));
+            let ptr = clEnqueueMapBuffer(src.ctx.next_queue().id(), src.id(), CL_FALSE, FLAG, offset, cb, num_events_in_wait_list, event_wait_list, addr_of_mut!(evt), addr_of_mut!(err));
+    
+            if err != 0 {
+                return Err(Error::from(err))
+            }
+    
+            let evt = RawEvent::from_id(evt).unwrap();
+            let ptr = {
+                let slice = core::slice::from_raw_parts_mut(ptr as *mut T, cb / core::mem::size_of::<T>());
+                NonNull::new(slice)
+            }.ok_or_else(|| Error::from_type(crate::prelude::ErrorType::InvalidValue))?;
+    
+            Ok(Self { evt, src, ptr })
         }
+    }
+}
 
-        Ok(ImageBuffer::from_raw(u32::try_from(self.width).unwrap(), u32::try_from(self.height).unwrap(), buf).unwrap())
+impl<T: 'static + Copy, S: Deref<Target = Buffer<T, C>>, C: 'static + Context> Event for MapBuffer<T, S> {
+    type Output = MapBufferGuard<T, S, C>;
+
+    #[inline(always)]
+    fn as_raw (&self) -> &RawEvent {
+        &self.evt
+    }
+
+    #[inline(always)]
+    fn consume (self, err: Option<Error>) -> Result<Self::Output> {
+        if let Some(err) = err { return Err(err); }
+        Ok(MapBufferGuard::new(self.ptr, self.src))
+    }
+}
+
+#[repr(transparent)]
+pub struct MapBufferMut<T, S> (MapBuffer<T, S>);
+
+impl<T: 'static + Copy, S: DerefMut<Target = Buffer<T, C>>, C: 'static + Context> MapBufferMut<T, S> {
+    #[inline(always)]
+    pub fn new<R: IntoRange, W: Into<WaitList>> (src: S, range: R, wait: W) -> Result<Self> {
+        MapBuffer::new_inner::<R, W, {CL_MAP_READ | CL_MAP_WRITE}>(src, range, wait).map(Self)
+    }
+}
+
+impl<T: 'static + Copy, S: DerefMut<Target = Buffer<T, C>>, C: 'static + Context> Event for MapBufferMut<T, S> {
+    type Output = MapBufferMutGuard<T, S, C>;
+
+    #[inline(always)]
+    fn as_raw (&self) -> &RawEvent {
+        self.0.as_raw()
+    }
+
+    #[inline(always)]
+    fn consume (self, err: Option<Error>) -> Result<Self::Output> {
+        self.0.consume(err).map(MapBufferMutGuard)
+    }
+}
+
+/* GUARDS */
+
+/// Guard for mapped memory object region
+pub struct MapBufferGuard<T: Copy, S: Deref<Target = Buffer<T, C>>, C: Context = Global> {
+    ptr: NonNull<[T]>,
+    src: S
+}
+
+impl<T: Copy, S: Deref<Target = Buffer<T, C>>, C: Context> MapBufferGuard<T, S, C> {
+    #[inline(always)]
+    pub(crate) const fn new (ptr: NonNull<[T]>, src: S) -> Self {
+        Self { ptr, src }
+    }
+
+    #[inline(always)]
+    pub unsafe fn into_ptr (self) -> *const [T] {
+        let this = ManuallyDrop::new(self);
+        this.ptr.as_ptr()
+    }
+
+    #[inline]
+    pub unsafe fn unmap (self, wait: impl Into<WaitList>) -> Result<RawEvent> {
+        let this = ManuallyDrop::new(self);
+        let wait : WaitList = wait.into();
+        let (num_events_in_wait_list, event_wait_list) = wait.raw_parts();
+        
+        let mut evt = core::ptr::null_mut();
+        tri!(clEnqueueUnmapMemObject(this.src.ctx.next_queue().id(), this.src.id(), this.ptr.as_ptr().cast(), num_events_in_wait_list, event_wait_list, addr_of_mut!(evt)));
+        
+        RawEvent::from_id(evt).ok_or_else(|| Error::from_type(ErrorType::InvalidEvent))
+    }
+}
+
+impl<T: Copy, S: Deref<Target = Buffer<T, C>>, C: Context> Deref for MapBufferGuard<T, S, C> {
+    type Target = [T];
+
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        unsafe { self.ptr.as_ref() }
+    }
+}
+
+impl<T: Copy, S: Clone + Deref<Target = Buffer<T, C>>, C: Context> Clone for MapBufferGuard<T, S, C> {
+    #[inline(always)]
+    fn clone(&self) -> Self {
+        Self { ptr: self.ptr, src: self.src.clone() }
+    }
+}
+
+impl<T: Debug + Copy, S: Deref<Target = Buffer<T, C>>, C: Context> Debug for MapBufferGuard<T, S, C> {
+    #[inline(always)]
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        Debug::fmt(self.deref(), f)
+    }
+}
+
+impl<T: Copy, S: Deref<Target = Buffer<T, C>>, C: Context> Drop for MapBufferGuard<T, S, C> {
+    #[inline(always)]
+    fn drop(&mut self) {        
+        let mut evt = core::ptr::null_mut();
+
+        unsafe {
+            tri_panic! {
+                clEnqueueUnmapMemObject(self.src.ctx.next_queue().id(), self.src.id(), self.ptr.as_ptr().cast(), 0, core::ptr::null(), addr_of_mut!(evt));
+                clWaitForEvents(1, addr_of!(evt))
+            }
+        }
+    }
+}
+
+unsafe impl<T: Copy, S: Send + Deref<Target = Buffer<T, C>>, C: Context> Send for MapBufferGuard<T, S, C> {}
+unsafe impl<T: Copy, S: Sync + Deref<Target = Buffer<T, C>>, C: Context> Sync for MapBufferGuard<T, S, C> {}
+
+/// Guard for mutably mapped memory object region
+#[repr(transparent)]
+pub struct MapBufferMutGuard<T: Copy, S: DerefMut<Target = Buffer<T, C>>, C: Context> (MapBufferGuard<T, S, C>);
+
+impl<T: Copy, S: DerefMut<Target = Buffer<T, C>>, C: Context> MapBufferMutGuard<T, S, C> {
+    #[inline(always)]
+    pub unsafe fn into_ptr (self) -> *mut [T] {
+        self.0.into_ptr() as *mut _
+    }
+
+    #[inline(always)]
+    pub unsafe fn unmap (self, wait: impl Into<WaitList>) -> Result<RawEvent> {
+        self.0.unmap(wait)
+    }
+}
+
+impl<T: Copy, S: DerefMut<Target = Buffer<T, C>>, C: Context> Deref for MapBufferMutGuard<T, S, C> {
+    type Target = [T];
+
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        self.0.deref()
+    }
+}
+
+impl<T: Copy, S: DerefMut<Target = Buffer<T, C>>, C: Context> DerefMut for MapBufferMutGuard<T, S, C> {
+    #[inline(always)]
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        unsafe { self.0.ptr.as_mut() }
+    }
+}
+
+impl<T: Debug + Copy, S: DerefMut<Target = Buffer<T, C>>, C: Context> Debug for MapBufferMutGuard<T, S, C> {
+    #[inline(always)]
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        Debug::fmt(&self.0, f)
     }
 }

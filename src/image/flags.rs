@@ -39,13 +39,39 @@ impl ImageFormat {
 }
 
 impl ImageFormat {
-    pub fn ffmpeg_pixel (&self) -> AVPixelFormat {
+    pub const fn ffmpeg_pixel (&self) -> AVPixelFormat {
         use AVPixelFormat::*;
+        use ChannelOrder::*;
+        use ChannelType::*;
 
         // TODO
         match self.unzip() {
-            (ChannelOrder::Luminance, ChannelType::U8) => AV_PIX_FMT_GRAY8,
-            (ChannelOrder::Luminance, ChannelType::U16) => AV_PIX_FMT_GRAY16,
+            // LUMA
+            (Luminance, U8 | NormU8) => AV_PIX_FMT_GRAY8,
+            (Luminance, U16 | NormU16) => AV_PIX_FMT_GRAY16,
+
+            // RGB
+            (RGB, U8 | NormU8) => AV_PIX_FMT_RGB24,
+            (RGB, U16 | NormU16) => AV_PIX_FMT_RGB48,
+            (RGB, U16_555) => AV_PIX_FMT_RGB555,
+            (RGB, U16_565) => AV_PIX_FMT_RGB565,
+            
+            // RGB + Alpha
+            (ARGB, U8 | NormU8) => AV_PIX_FMT_ARGB,
+            #[cfg(target_endian = "little")]
+            (RGBA, U16 | NormU16) => AV_PIX_FMT_RGBA64LE,
+            #[cfg(target_endian = "big")]
+            (RGBA, U16 | NormU16) => AV_PIX_FMT_RGBA64BE,
+            (RGBA, U8 | NormU8) => AV_PIX_FMT_RGBA,
+            #[cfg(feature = "cl2")]
+            (ABGR, U8 | NormU8) => AV_PIX_FMT_ABGR,
+            (BGRA, U8 | NormU8) => AV_PIX_FMT_BGRA,
+            #[cfg(target_endian = "little")]
+            (BGRA, U16 | NormU16) => AV_PIX_FMT_BGRA64LE,
+            #[cfg(target_endian = "big")]
+            (BGRA, U16 | NormU16) => AV_PIX_FMT_BGRA64BE,
+            #[cfg(feature = "cl1_1")]
+            (RGBx, U8 | NormU8) => AV_PIX_FMT_RGB0,
             _ => AV_PIX_FMT_NONE
         }
     } 

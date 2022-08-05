@@ -1,4 +1,4 @@
-use std::{ptr::NonNull, os::raw::c_void, marker::PhantomData, ops::{Deref, DerefMut}};
+use std::{ptr::NonNull, os::raw::c_void, marker::PhantomData, ops::{Deref, DerefMut}, mem::MaybeUninit};
 use opencl_sys::cl_mem;
 use crate::{core::*, context::{Context, Global}, buffer::{flags::{HostPtr, MemFlags, MemAccess}, rect::Rect2D}, event::WaitList, memobj::{MemObjectType, IntoSlice2D, RawMemObject}};
 use super::{RawImage, ImageDesc, channel::{RawPixel}, events::{ReadImage2D, WriteImage2D, CopyImage}};
@@ -32,8 +32,8 @@ impl<P: RawPixel> Image2D<P> {
     }
 
     #[inline(always)]
-    pub unsafe fn uninit (width: usize, height: usize, access: MemAccess, alloc: bool) -> Result<Self> {
-        Self::uninit_in(Global, width, height, access, alloc)
+    pub fn new_uninit (width: usize, height: usize, access: MemAccess, alloc: bool) -> Result<Image2D<MaybeUninit<P>>> {
+        Self::new_uninit_in(Global, width, height, access, alloc)
     }
 
     #[inline(always)]
@@ -80,9 +80,12 @@ impl<P: RawPixel, C: Context> Image2D<P, C> {
     }
 
     #[inline(always)]
-    pub unsafe fn uninit_in (ctx: C, width: usize, height: usize, access: MemAccess, alloc: bool) -> Result<Self> {
+    pub fn new_uninit_in (ctx: C, width: usize, height: usize, access: MemAccess, alloc: bool) -> Result<Image2D<MaybeUninit<P>, C>> {
         let host = MemFlags::new(access, HostPtr::new(alloc, false));
-        Self::create_in(ctx, width, height, host, None)
+        
+        unsafe {
+            Image2D::create_in(ctx, width, height, host, None)
+        }
     }
     
     #[inline]
