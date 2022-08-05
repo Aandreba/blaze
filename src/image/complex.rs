@@ -1,6 +1,5 @@
-use std::{ptr::NonNull, os::raw::c_void, marker::PhantomData, ops::{Deref, DerefMut}, mem::MaybeUninit};
-use opencl_sys::cl_mem;
-use crate::{core::*, context::{Context, Global}, buffer::{flags::{HostPtr, MemFlags, MemAccess}, rect::Rect2D}, event::WaitList, memobj::{MemObjectType, IntoSlice2D, RawMemObject}};
+use std::{ptr::NonNull, os::raw::c_void, marker::PhantomData, ops::{Deref, DerefMut}, mem::{MaybeUninit, ManuallyDrop}};
+use crate::{core::*, context::{Context, Global}, buffer::{flags::{HostPtr, MemFlags, MemAccess}, rect::Rect2D}, event::WaitList, memobj::{MemObjectType, IntoSlice2D}};
 use super::{RawImage, ImageDesc, channel::{RawPixel}, events::{ReadImage2D, WriteImage2D, CopyImage}};
 
 #[derive(Debug)]
@@ -101,6 +100,12 @@ impl<P: RawPixel, C: Context> Image2D<P, C> {
         Ok(Self { inner, ctx, phtm: PhantomData })
     }
 
+    #[inline(always)]
+    pub unsafe fn transmute<U: RawPixel> (self) -> Image2D<U, C> {
+        let this = ManuallyDrop::new(self);
+        Image2D { inner: core::ptr::read(&this.inner), ctx: core::ptr::read(&this.ctx), phtm: PhantomData }
+    }
+
     /// Returns a reference to the image's [`RawImage`].
     #[inline(always)]
     pub fn as_raw (&self) -> &RawImage {
@@ -114,7 +119,14 @@ impl<P: RawPixel, C: Context> Image2D<P, C> {
     }
 }
 
-impl<P: RawPixel + Unpin, C: Context> Image2D<P, C> {
+impl<P: RawPixel, C: Context> Image2D<MaybeUninit<P>, C> {
+    #[inline(always)]
+    pub unsafe fn assume_init (self) -> Image2D<P, C> {
+        self.transmute()
+    }
+}
+
+impl<P: RawPixel, C: Context> Image2D<P, C> {
     #[inline(always)]
     pub fn read (&self, slice: impl IntoSlice2D, wait: impl Into<WaitList>) -> Result<ReadImage2D<P>> {
         self.read_with_pitch(slice, None, None, wait)
@@ -160,29 +172,25 @@ impl<P: RawPixel + Unpin, C: Context> Image2D<P, C> {
         unsafe { FillImage::new(&mut self.inner, color.borrow(), slice, self.ctx.next_queue(), wait) }
     }*/
 
-    /*#[docfg(feature = "map")]
     #[inline(always)]
-    pub fn map<'a> (&'a self, slice: impl IntoSlice<2>, wait: impl Into<WaitList>) -> Result<super::events::MapImage2D<P, &'a Self, C>> where P: 'static, C: 'static + Clone {
+    pub fn map<'a> (&'a self, slice: impl IntoSlice2D, wait: impl Into<WaitList>) -> Result<super::events::MapImage2D<P, &'a Self>> {
         Self::map_by_deref(self, slice, wait)
     }
 
-    #[docfg(feature = "map")]
     #[inline(always)]
-    pub fn map_mut<'a> (&'a mut self, slice: impl IntoSlice<2>, wait: impl Into<WaitList>) -> Result<super::events::MapMutImage2D<P, &'a mut Self, C>> where P: 'static, C: 'static + Clone {
+    pub fn map_mut<'a> (&'a mut self, slice: impl IntoSlice2D, wait: impl Into<WaitList>) -> Result<super::events::MapImage2DMut<P, &'a mut Self>> {
         Self::map_by_deref_mut(self, slice, wait)
     }
 
-    #[docfg(feature = "map")]
     #[inline(always)]
-    pub fn map_by_deref<D: Deref<Target = Self>> (this: D, slice: impl IntoSlice<2>, wait: impl Into<WaitList>) -> Result<super::events::MapImage2D<P, D, C>> where P: 'static, C: 'static + Clone {
-        unsafe { super::events::MapImage2D::new(this.ctx.clone(), this, slice, wait) }
+    pub fn map_by_deref<D: Deref<Target = Self>> (this: D, slice: impl IntoSlice2D, wait: impl Into<WaitList>) -> Result<super::events::MapImage2D<P, D>> {
+        super::events::MapImage2D::new(this, slice, wait)
     }
 
-    #[docfg(feature = "map")]
     #[inline(always)]
-    pub fn map_by_deref_mut<D: DerefMut<Target = Self>> (this: D, slice: impl IntoSlice<2>, wait: impl Into<WaitList>) -> Result<super::events::MapMutImage2D<P, D, C>> where P: 'static, C: 'static + Clone {
-        unsafe { super::events::MapMutImage2D::new(this.ctx.clone(), this, slice, wait) }
-    }*/
+    pub fn map_by_deref_mut<D: DerefMut<Target = Self>> (this: D, slice: impl IntoSlice2D, wait: impl Into<WaitList>) -> Result<super::events::MapImage2DMut<P, D>> {
+        super::events::MapImage2DMut::new(this, slice, wait)
+    }
 }
 
 impl<P: RawPixel, C: Context> Deref for Image2D<P, C> {
@@ -200,22 +208,3 @@ impl<P: RawPixel, C: Context> DerefMut for Image2D<P, C> {
         &mut self.inner
     }
 }
-
-use sealed::Sealed;
-
-mod sealed {
-    pub trait Sealed {}
-}
-
-pub trait DynImage2D: Sealed {
-    fn id_ref (&self) -> &cl_mem; 
-}
-
-impl<P: RawPixel, C: Context> DynImage2D for Image2D<P, C> {
-    #[inline(always)]
-    fn id_ref (&self) -> &cl_mem {
-        RawMemObject::id_ref(self)
-    }
-}
-
-impl<P: RawPixel, C: Context> Sealed for Image2D<P, C> {}

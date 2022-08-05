@@ -12,7 +12,7 @@ use std::{fmt::Debug, hash::{Hash, Hasher}, mem::MaybeUninit};
 ///     - Example: [`bool`], [`NonNull`](std::ptr::NonNull) 
 /// - `Self` must have the same size and alignment as `[Channel; CHANNEL_COUNT]`
 ///     - This might be accomplished with `#[repr(C)]` or `#[repr(transparent)]`
-pub unsafe trait RawPixel: Copy {
+pub unsafe trait RawPixel: Copy  + Unpin {
     type Channel: RawChannel;
 
     const ORDER : ChannelOrder;
@@ -58,7 +58,7 @@ unsafe impl<T: RawPixel> RawPixel for MaybeUninit<T> {
     #[inline(always)]
     fn channels_mut (&mut self) -> &mut [Self::Channel] {
         unsafe {
-            let channels = T::channels(self.assume_init_mut());
+            let channels = T::channels_mut(self.assume_init_mut());
             core::slice::from_raw_parts_mut(channels.as_mut_ptr().cast(), channels.len())
         }
     }
@@ -426,7 +426,7 @@ impl_pixel! {
 /// # Safet
 /// - No bit pattern inside `Self` can result in undefined behavior.
 ///     - Example: [`bool`], [`NonNull`](std::ptr::NonNull) 
-pub unsafe trait RawChannel: 'static + Copy {
+pub unsafe trait RawChannel: 'static + Copy + Unpin {
     const TYPE : ChannelType;
     const MIN : f32;
     const MAX : f32;

@@ -3,7 +3,7 @@
 
 use std::{ffi::CStr, ptr::{NonNull, addr_of}, path::Path, fs::File, io::Write};
 use ffmpeg_sys_next::{avcodec_find_decoder, AVERROR_INVALIDDATA, AVPixelFormat, sws_scale};
-use crate::prelude::{Rect2D, MemAccess};
+use crate::prelude::{Rect2D, MemAccess, WaitList, Event, Context};
 
 use super::{channel::FfmpegPixel, Image2D};
 
@@ -15,7 +15,7 @@ macro_rules! trii {
 
 flat_mod!(error, format, codec, frame, swr);
 
-pub fn decode_image<P: FfmpegPixel> (path: impl AsRef<str>, access: MemAccess, alloc: bool) -> Result<()> {
+pub fn decode_image_in<P: FfmpegPixel, C: Context> (path: impl AsRef<str>, ctx: C, access: MemAccess, alloc: bool) -> Result<Image2D<P, C>> {
     let mut format_ctx = FormatContext::new();
     format_ctx.open_input(path)?;
     format_ctx.find_stream_info()?;
@@ -46,29 +46,29 @@ pub fn decode_image<P: FfmpegPixel> (path: impl AsRef<str>, access: MemAccess, a
     let width = usize::try_from(codec_ctx.width).unwrap();
     let height = usize::try_from(codec_ctx.height).unwrap();
     
-    let mut result = Image2D::<P>::new_uninit(width, height, access, alloc).unwrap();
-    let mut map = result;
+    let mut result = Image2D::<P, C>::new_uninit_in(ctx, width, height, access, alloc).unwrap();
+    let mut map = result.map_mut((.., ..), WaitList::EMPTY).unwrap().wait_unwrap();
 
-    if format_ctx.read_frame(&mut packet).is_ok() {
-        codec_ctx.send_packet(&packet)?;
-        codec_ctx.receive_frame(&mut frame)?;
-        
-        unsafe {
-            let ptr = result.as_mut_ptr() as *mut u8;
-            let stride = frame.width * i32::try_from(core::mem::size_of::<P>()).unwrap();
+    format_ctx.read_frame(&mut packet)?;
+    codec_ctx.send_packet(&packet)?;
+    codec_ctx.receive_frame(&mut frame)?;
+    
+    unsafe {
+        let ptr = map.as_mut_ptr() as *mut u8;
+        let stride = frame.width * i32::try_from(core::mem::size_of::<P>()).unwrap();
 
-            trii! {
-                sws_scale(
-                    sws_ctx.as_ptr(), 
-                    frame.data.as_ptr().cast(), frame.linesize.as_ptr(),
-                    0, frame.height,
-                    addr_of!(ptr), addr_of!(stride)
-                )
-            }
-        }
+        Error::try_from_id({
+            sws_scale(
+                sws_ctx.as_ptr(), 
+                frame.data.as_ptr().cast(), frame.linesize.as_ptr(),
+                0, frame.height,
+                addr_of!(ptr), addr_of!(stride)
+            )
+        })?;
+
+        drop(map);
+        Ok(result.assume_init())
     }
-
-    Ok(())
 }
 
 #[cfg(test)]
@@ -76,11 +76,14 @@ mod test {
     use std::ptr::addr_of;
     use ffmpeg_sys_next::{av_pix_fmt_desc_get_id, AVPixelFormat};
     use crate::{image::{ImageFormat, channel::Rgb}, prelude::*};
-    use super::decode_image;
+    use super::decode_image_in;
+
 
     #[test]
     fn test () {
-        decode_image::<Rgb<u8>>("tests/index.jpeg").unwrap();
+        let ctx = SimpleContext::default().unwrap();
+        let img = decode_image_in::<Rgb<u8>, _>("tests/index.jpeg", ctx, MemAccess::default(), false).unwrap();
+        println!("{:?}", img.width());
     }
 
     #[test]

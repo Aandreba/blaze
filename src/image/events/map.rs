@@ -8,7 +8,7 @@ pub struct MapImage2D<T, S> {
     src: S
 }
 
-impl<T: 'static + RawPixel, S: Deref<Target = Image2D<T, C>>, C: 'static + Context> MapImage2D<T, S> {
+impl<T: RawPixel, S: Deref<Target = Image2D<T, C>>, C: Context> MapImage2D<T, S> {
     #[inline(always)]
     pub fn new<R: IntoSlice2D, W: Into<WaitList>> (src: S, slice: R, wait: W) -> Result<Self> {
         Self::new_inner::<R, W, CL_MAP_READ>(src, slice, wait)
@@ -37,7 +37,7 @@ impl<T: 'static + RawPixel, S: Deref<Target = Image2D<T, C>>, C: 'static + Conte
             }
     
             let evt = RawEvent::from_id(evt).unwrap();
-            let rect = unsafe {
+            let rect = {
                 let ptr = NonNull::new(ptr).ok_or_else(|| Error::from_type(crate::prelude::ErrorType::InvalidValue))?;
                 ManuallyDrop::new(Rect2D::from_raw_parts(ptr.cast(), slice.region_x, slice.region_y))
             };
@@ -47,7 +47,7 @@ impl<T: 'static + RawPixel, S: Deref<Target = Image2D<T, C>>, C: 'static + Conte
     }
 }
 
-impl<T: 'static + RawPixel, S: Deref<Target = Image2D<T, C>>, C: 'static + Context> Event for MapImage2D<T, S> {
+impl<T: RawPixel, S: Deref<Target = Image2D<T, C>>, C: Context> Event for MapImage2D<T, S> {
     type Output = MapImage2DGuard<T, S, C>;
 
     #[inline(always)]
@@ -65,14 +65,14 @@ impl<T: 'static + RawPixel, S: Deref<Target = Image2D<T, C>>, C: 'static + Conte
 #[repr(transparent)]
 pub struct MapImage2DMut<T, S> (MapImage2D<T, S>);
 
-impl<T: 'static + RawPixel, S: DerefMut<Target = Image2D<T, C>>, C: 'static + Context> MapImage2DMut<T, S> {
+impl<T: RawPixel, S: DerefMut<Target = Image2D<T, C>>, C: Context> MapImage2DMut<T, S> {
     #[inline(always)]
     pub fn new<R: IntoSlice2D, W: Into<WaitList>> (src: S, slice: R, wait: W) -> Result<Self> {
         MapImage2D::new_inner::<R, W, {CL_MAP_READ | CL_MAP_WRITE}>(src, slice, wait).map(Self)
     }
 }
 
-impl<T: 'static + RawPixel, S: DerefMut<Target = Image2D<T, C>>, C: 'static + Context> Event for MapImage2DMut<T, S> {
+impl<T: RawPixel, S: DerefMut<Target = Image2D<T, C>>, C: Context> Event for MapImage2DMut<T, S> {
     type Output = MapImage2DMutGuard<T, S, C>;
 
     #[inline(always)]
