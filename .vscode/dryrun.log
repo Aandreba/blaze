@@ -1,0 +1,8 @@
+make --dry-run --always-make --keep-going --print-directory
+make: Entering directory '/home/aandreba/blaze'
+cargo check --no-default-features
+cargo check --features cl1_1;  cargo check --features cl1_2;  cargo check --features cl2;  cargo check --features cl2_1;  cargo check --features cl2_2;  cargo check --features cl3;  cargo check --features svm;  cargo check --features futures;
+cargo check --features strict,cl1_1;  cargo check --features strict,cl1_2;  cargo check --features strict,cl2;  cargo check --features strict,cl2_1;  cargo check --features strict,cl2_2;  cargo check --features strict,cl3;  cargo check --features strict,svm;  cargo check --features strict,futures;
+cargo check --all-features
+make: Leaving directory '/home/aandreba/blaze'
+ 

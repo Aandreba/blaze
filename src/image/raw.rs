@@ -1,12 +1,12 @@
 use opencl_sys::*;
 use blaze_proc::docfg;
 use std::{ptr::{NonNull, addr_of_mut}, ffi::c_void, ops::{Deref, DerefMut}, mem::MaybeUninit};
-use crate::{core::*, context::RawContext, buffer::{flags::MemFlags}, event::WaitList, prelude::RawEvent, memobj::MemObject};
+use crate::{core::*, context::RawContext, buffer::{flags::MemFlags}, event::WaitList, prelude::RawEvent, memobj::RawMemObject};
 use super::{ImageFormat, ImageDesc};
 
 #[derive(Debug, Clone)]
 #[repr(transparent)]
-pub struct RawImage (MemObject);
+pub struct RawImage (RawMemObject);
 
 impl RawImage {
     #[docfg(feature = "cl1_2")]
@@ -26,7 +26,7 @@ impl RawImage {
         let id = opencl_sys::clCreateImage(ctx.id(), flags, addr_of!(image_format), addr_of!(image_desc), host_ptr, addr_of_mut!(err));
         
         if err != 0 { return Err(Error::from(err)) }
-        let id = MemObject::from_id(id).unwrap();
+        let id = RawMemObject::from_id(id).unwrap();
         Ok(Self(id))
     }
 
@@ -44,7 +44,7 @@ impl RawImage {
         let id = opencl_sys::clCreateImage2D(ctx.id(), flags, addr_of_mut!(image_format), desc.width, desc.height, desc.row_pitch, host_ptr, addr_of_mut!(err));
         
         if err != 0 { return Err(Error::from(err)) }
-        let id = MemObject::from_id(id).unwrap();
+        let id = RawMemObject::from_id(id).unwrap();
         Ok(Self(id))
     }
 
@@ -62,7 +62,7 @@ impl RawImage {
         let id = opencl_sys::clCreateImage3D(ctx.id(), flags, addr_of_mut!(image_format), desc.width, desc.height, desc.depth, desc.row_pitch, desc.slice_pitch, host_ptr, addr_of_mut!(err));
         
         if err != 0 { return Err(Error::from(err)) }
-        let id = MemObject::from_id(id).unwrap();
+        let id = RawMemObject::from_id(id).unwrap();
         Ok(Self(id))
     }
 
@@ -126,8 +126,8 @@ impl RawImage {
     #[docfg(feature = "cl1_2")]
     #[cfg_attr(feature = "2", deprecated(note = "use `other`"))]
     #[inline(always)]
-    pub fn buffer (&self) -> Result<Option<MemObject>> {
-        self.get_info::<cl_mem>(opencl_sys::CL_IMAGE_ARRAY_SIZE).map(MemObject::from_id)
+    pub fn buffer (&self) -> Result<Option<RawMemObject>> {
+        self.get_info::<cl_mem>(opencl_sys::CL_IMAGE_ARRAY_SIZE).map(RawMemObject::from_id)
     }
 
     /// Return `num_mip_levels` associated with image.
@@ -157,7 +157,7 @@ impl RawImage {
 
 impl RawImage {
     #[inline]
-    pub unsafe fn read_to_ptr (&self, origin: [usize; 3], region: [usize; 3], row_pitch: Option<usize>, slice_pitch: Option<usize>, dst: *mut c_void, queue: &CommandQueue, wait: impl Into<WaitList>) -> Result<RawEvent> {
+    pub unsafe fn read_to_ptr (&self, origin: [usize; 3], region: [usize; 3], row_pitch: Option<usize>, slice_pitch: Option<usize>, dst: *mut c_void, queue: &RawCommandQueue, wait: impl Into<WaitList>) -> Result<RawEvent> {
         let row_pitch = row_pitch.unwrap_or_default();
         let slice_pitch = slice_pitch.unwrap_or_default();
 
@@ -170,7 +170,7 @@ impl RawImage {
     }
 
     #[inline]
-    pub unsafe fn write_from_ptr (&mut self, origin: [usize; 3], region: [usize; 3], row_pitch: Option<usize>, slice_pitch: Option<usize>, src: *const c_void, queue: &CommandQueue, wait: impl Into<WaitList>) -> Result<RawEvent> {
+    pub unsafe fn write_from_ptr (&mut self, origin: [usize; 3], region: [usize; 3], row_pitch: Option<usize>, slice_pitch: Option<usize>, src: *const c_void, queue: &RawCommandQueue, wait: impl Into<WaitList>) -> Result<RawEvent> {
         let row_pitch = row_pitch.unwrap_or_default();
         let slice_pitch = slice_pitch.unwrap_or_default();
 
@@ -183,7 +183,7 @@ impl RawImage {
     }
 
     #[inline]
-    pub unsafe fn copy_from (&mut self, offset_dst: [usize; 3], src: &RawImage, offset_src: [usize; 3], region: [usize; 3], queue: &CommandQueue, wait: impl Into<WaitList>) -> Result<RawEvent> {
+    pub unsafe fn copy_from (&mut self, offset_dst: [usize; 3], src: &RawImage, offset_src: [usize; 3], region: [usize; 3], queue: &RawCommandQueue, wait: impl Into<WaitList>) -> Result<RawEvent> {
         let wait : WaitList = wait.into();
         let (num_events_in_wait_list, event_wait_list) = wait.raw_parts();
         
@@ -193,13 +193,13 @@ impl RawImage {
     }
 
     #[inline(always)]
-    pub unsafe fn copy_to (&self, offset_src: [usize; 3], dst: &mut RawImage, offset_dst: [usize; 3], region: [usize; 3], queue: &CommandQueue, wait: impl Into<WaitList>) -> Result<RawEvent> {
+    pub unsafe fn copy_to (&self, offset_src: [usize; 3], dst: &mut RawImage, offset_dst: [usize; 3], region: [usize; 3], queue: &RawCommandQueue, wait: impl Into<WaitList>) -> Result<RawEvent> {
         Self::copy_from(dst, offset_dst, self, offset_src, region, queue, wait)
     }
 
     #[docfg(feature = "cl1_2")]
     #[inline]
-    pub unsafe fn fill (&mut self, color: *const c_void, origin: [usize; 3], region: [usize; 3], queue: &CommandQueue, wait: impl Into<WaitList>) -> Result<RawEvent> {
+    pub unsafe fn fill (&mut self, color: *const c_void, origin: [usize; 3], region: [usize; 3], queue: &RawCommandQueue, wait: impl Into<WaitList>) -> Result<RawEvent> {
         let wait : WaitList = wait.into();
         let (num_events_in_wait_list, event_wait_list) = wait.raw_parts();
         
@@ -209,22 +209,22 @@ impl RawImage {
     }
 
     #[inline(always)]
-    pub unsafe fn map_read<T, W: Into<WaitList>> (&self, origin: [usize; 3], region: [usize; 3], queue: &CommandQueue, wait: W) -> Result<(*const T, usize, usize, RawEvent)> {
+    pub unsafe fn map_read<T, W: Into<WaitList>> (&self, origin: [usize; 3], region: [usize; 3], queue: &RawCommandQueue, wait: W) -> Result<(*const T, usize, usize, RawEvent)> {
         let (ptr, image_row_pitch, image_slice_pitch, evt) = self.__map_inner::<T, W, CL_MAP_READ>(origin, region, queue, wait)?;
         Ok((ptr as *const _, image_row_pitch, image_slice_pitch, evt))
     }
 
     #[inline(always)]
-    pub unsafe fn map_write<T, W: Into<WaitList>> (&self, origin: [usize; 3], region: [usize; 3], queue: &CommandQueue, wait: W) -> Result<(*mut T, usize, usize, RawEvent)> {
+    pub unsafe fn map_write<T, W: Into<WaitList>> (&self, origin: [usize; 3], region: [usize; 3], queue: &RawCommandQueue, wait: W) -> Result<(*mut T, usize, usize, RawEvent)> {
         self.__map_inner::<T, W, CL_MAP_WRITE>(origin, region, queue, wait)
     }
 
     #[inline(always)]
-    pub unsafe fn map_read_write<T, W: Into<WaitList>> (&self, origin: [usize; 3], region: [usize; 3], queue: &CommandQueue, wait: W) -> Result<(*mut T, usize, usize, RawEvent)> {
+    pub unsafe fn map_read_write<T, W: Into<WaitList>> (&self, origin: [usize; 3], region: [usize; 3], queue: &RawCommandQueue, wait: W) -> Result<(*mut T, usize, usize, RawEvent)> {
         self.__map_inner::<T, W, {CL_MAP_READ | CL_MAP_WRITE}>(origin, region, queue, wait)
     }
 
-    unsafe fn __map_inner<T, W: Into<WaitList>, const FLAGS : cl_mem_flags> (&self, origin: [usize; 3], region: [usize; 3], queue: &CommandQueue, wait: W) -> Result<(*mut T, usize, usize, RawEvent)> {
+    unsafe fn __map_inner<T, W: Into<WaitList>, const FLAGS : cl_mem_flags> (&self, origin: [usize; 3], region: [usize; 3], queue: &RawCommandQueue, wait: W) -> Result<(*mut T, usize, usize, RawEvent)> {
         let wait : WaitList = wait.into();
         let (num_events_in_wait_list, event_wait_list) = wait.raw_parts();
         
@@ -240,7 +240,7 @@ impl RawImage {
 }
 
 impl Deref for RawImage {
-    type Target = MemObject;
+    type Target = RawMemObject;
 
     #[inline(always)]
     fn deref(&self) -> &Self::Target {
@@ -255,9 +255,9 @@ impl DerefMut for RawImage {
     }
 }
 
-impl Into<MemObject> for RawImage {
+impl Into<RawMemObject> for RawImage {
     #[inline(always)]
-    fn into(self) -> MemObject {
+    fn into(self) -> RawMemObject {
         self.0
     }
 }

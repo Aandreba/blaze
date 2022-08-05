@@ -40,7 +40,7 @@ impl ImageFormat {
 
 impl ImageFormat {
     #[inline(always)]
-    pub const fn ffmpeg_pixel (&self) -> Option<Pixel> {
+    pub const fn ffmpeg_pixel (&self) -> Option<AVPixFmtDescriptor> {
         macro_rules! trii {
             ($e:expr) => {{
                 match $e {
@@ -98,7 +98,7 @@ impl ImageFormat {
             alias: core::ptr::null(),
         };
 
-        Some(Pixel::new(AVPixelFormat::AV_PIX_FMT_NONE, desc))
+        Some(desc)
     }
 
     const fn red_component (&self, step: i32) -> Option<AVComponentDescriptor> {
@@ -305,7 +305,6 @@ impl ImageFormat {
 
     const fn luma_component (&self, step: i32) -> Option<AVComponentDescriptor> {
         use ChannelOrder::*;
-        use ChannelType::*;
 
         match self.order {
             Luminance | Intensity => {
@@ -552,9 +551,7 @@ impl From<TryFromPrimitiveError<ChannelType>> for FromRawError {
 }
 
 use opencl_sys::{cl_image_desc, cl_mem_object_type};
-use crate::{memobj::{MemObjectType, MemObject}};
-
-use super::{channel::{Argb, RawPixel, Rgba, Bgra, Rgb, Luma, Red}, encdec::pixel::Pixel};
+use crate::{memobj::{MemObjectType, RawMemObject}};
 
 #[derive(Clone)]
 #[non_exhaustive]
@@ -582,7 +579,7 @@ pub struct ImageDesc {
     /// May refer to a valid buffer or image memory object. mem_object can be a buffer memory object if image_type is CL_MEM_OBJECT_IMAGE1D_BUFFER or CL_MEM_OBJECT_IMAGE2D.
     /// mem_object can be an image object if image_type is CL_MEM_OBJECT_IMAGE2D. Otherwise it must be NULL. The image pixels are taken from the memory objects data store. 
     /// When the contents of the specified memory objects data store are modified, those changes are reflected in the contents of the image object and vice-versa at corresponding synchronization points.
-    pub mem_object: Option<MemObject>
+    pub mem_object: Option<RawMemObject>
 }
 
 impl ImageDesc {

@@ -1,6 +1,6 @@
 use std::{ptr::NonNull, os::raw::c_void, marker::PhantomData, ops::{Deref, DerefMut}};
 use opencl_sys::cl_mem;
-use crate::{core::*, context::{Context, Global}, buffer::{flags::{HostPtr, MemFlags, MemAccess}, rect::Rect2D}, event::WaitList, memobj::{MemObjectType, IntoSlice2D, MemObject}};
+use crate::{core::*, context::{Context, Global}, buffer::{flags::{HostPtr, MemFlags, MemAccess}, rect::Rect2D}, event::WaitList, memobj::{MemObjectType, IntoSlice2D, RawMemObject}};
 use super::{RawImage, ImageDesc, channel::{RawPixel}, events::{ReadImage2D, WriteImage2D, CopyImage}};
 
 #[derive(Debug)]
@@ -211,7 +211,7 @@ pub trait DynImage2D: Sealed {
 impl<P: RawPixel, C: Context> DynImage2D for Image2D<P, C> {
     #[inline(always)]
     fn id_ref (&self) -> &cl_mem {
-        MemObject::id_ref(self)
+        RawMemObject::id_ref(self)
     }
 }
 

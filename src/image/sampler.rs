@@ -77,7 +77,12 @@ impl Sampler {
     /// Return the context specified when the sampler is created.
     #[inline(always)]
     pub fn context (&self) -> Result<RawContext> {
-        self.get_info(CL_SAMPLER_CONTEXT)
+        let ctx = self.get_info::<cl_context>(CL_SAMPLER_CONTEXT)?;
+
+        unsafe {
+            tri!(clRetainContext(ctx));
+            Ok(RawContext::from_id_unchecked(ctx))
+        }
     }
 
     /// Return the normalized coords value associated with sampler.
