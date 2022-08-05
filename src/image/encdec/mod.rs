@@ -1,52 +1,9 @@
-use std::{path::Path, ffi::{CString, NulError}};
+// https://github.com/leandromoreira/ffmpeg-libav-tutorial#learn-ffmpeg-libav-the-hard-way
 
-macro_rules! ffmpeg_tri {
-    ($e:expr) => {{
-        let err = $e;
-        if err < 0 {
-            return Err(super::error::Error::from(err))
-        }
-    }};
-
-    ($($e:expr);+) => {{
-        let mut err = 0;
-        
-        $(
-            err = $e;
-            if err < 0 {
-                return Err(super::error::Error::from(err))
-            }
-        )+
-    }};
-}
-
-macro_rules! ffmpeg_tri_panic {
-    ($e:expr) => {{
-        let err = $e;
-        if err < 0 {
-            panic!("{:?}", super::error::Error::from(err));
-        }
-    }};
-
-    ($($e:expr);+) => {{
-        let mut err = 0;
-        
-        $(
-            err = $e;
-            if err < 0 {
-                panic!("{:?}", super::error::Error::from(err));
-            }
-        )+
-    }};
-}
-
-mod error;
-pub mod pixel;
-mod stream;
-mod alloc;
-
-#[inline]
-pub(super) fn path_str (path: impl AsRef<Path>) -> Result<CString, NulError> {
-    let path = path.as_ref().to_string_lossy().into_owned();
-    CString::new(path)
+pub fn decode_image (path: impl AsRef<Path>) -> Result<Image, Error> {
+    let mut file = File::open(path)?;
+    let mut buf = Vec::new();
+    file.read_to_end(&mut buf)?;
+    let image = Image::decode(&buf)?;
+    Ok(image)
 }

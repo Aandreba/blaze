@@ -24,7 +24,7 @@ cl3 = ["cl2_2", "opencl-sys/CL_VERSION_3_0"]
 # Blaze features
 strict = []
 # half = ["dep:half"]
-# image = ["dep:ffmpeg-sys-next"]
+image = ["dep:ffmpeg-sys-next"]
 svm = ["cl2"]
 futures = ["cl1_1", "dep:futures"]
 
@@ -35,7 +35,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 blaze-proc = { path = "blaze-proc", version = "0.0.1" }
 opencl-sys = { version = "0.2.1", default-features = false }
 futures = { version = "0.3.21", optional = true }
-# ffmpeg-sys-next = { version = "5.0.1", optional = true }
+ffmpeg-sys-next = { version = "5.0.1", optional = true }
 # half = { version = "2", features = ["num-traits", "bytemuck"], optional = true }
 box-iter = "0.1.0"
 bytemuck = "1.10.0"

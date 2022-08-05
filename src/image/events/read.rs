@@ -11,7 +11,7 @@ pub struct ReadImage2D<'src, P: RawPixel> {
 
 impl<'src, P: RawPixel + Unpin> ReadImage2D<'src, P> {
     #[inline]
-    pub unsafe fn new (src: &'src RawImage, queue: &CommandQueue, slice: impl IntoSlice2D, row_pitch: Option<usize>, slice_pitch: Option<usize>, wait: impl Into<WaitList>) -> Result<Self> {
+    pub unsafe fn new (src: &'src RawImage, queue: &RawCommandQueue, slice: impl IntoSlice2D, row_pitch: Option<usize>, slice_pitch: Option<usize>, wait: impl Into<WaitList>) -> Result<Self> {
         if let Some(slice) = slice.into_slice(src.width()?, src.height()?) {
             let [origin, region] = slice.raw_parts();
             let size = slice.size().and_then(|x| x.checked_mul(NonZeroUsize::new(P::CHANNEL_COUNT as usize).unwrap())).unwrap().get();
