@@ -6,7 +6,7 @@ use super::{RawImage, ImageDesc, channel::{RawPixel}, events::{ReadImage2D, Writ
 #[derive(Debug)]
 pub struct Image2D<P: RawPixel, C: Context = Global> {
     inner: RawImage,
-    ctx: C,
+    pub(crate) ctx: C,
     phtm: PhantomData<P>
 }
 

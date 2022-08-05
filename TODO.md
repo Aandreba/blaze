@@ -1,4 +1,6 @@
 - [x] Semi-rework of buffers
+- [ ] fix buffer maps
+- [ ] 2d rect buffer map
 - [ ] 3d rect buffers
 - [ ] Check `core` items have `new` and `new_in` methods
 - [ ] `strict` feature

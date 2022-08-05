@@ -72,6 +72,16 @@ impl<T, A: Allocator> Rect2D<T, A> {
     }
 
     #[inline(always)]
+    pub fn non_zero_width (&self) -> NonZeroUsize {
+        self.width
+    }
+
+    #[inline(always)]
+    pub fn non_zero_height (&self) -> NonZeroUsize {
+        self.height
+    }
+
+    #[inline(always)]
     pub fn len (&self) -> usize {
         self.width() * self.height()
     }

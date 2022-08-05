@@ -1,4 +1,4 @@
-use std::{ops::{Deref, DerefMut}, ptr::{addr_of_mut, NonNull, addr_of}, mem::ManuallyDrop, fmt::Debug};
+use std::{ops::{Deref, DerefMut}, ptr::{addr_of_mut, NonNull, addr_of}, fmt::Debug};
 use opencl_sys::*;
 use crate::{prelude::*, buffer::{IntoRange, BufferRange}};
 
@@ -92,24 +92,6 @@ impl<T: Copy, S: Deref<Target = Buffer<T, C>>, C: Context> MapBufferGuard<T, S, 
     pub(crate) const fn new (ptr: NonNull<[T]>, src: S) -> Self {
         Self { ptr, src }
     }
-
-    #[inline(always)]
-    pub unsafe fn into_ptr (self) -> *const [T] {
-        let this = ManuallyDrop::new(self);
-        this.ptr.as_ptr()
-    }
-
-    #[inline]
-    pub unsafe fn unmap (self, wait: impl Into<WaitList>) -> Result<RawEvent> {
-        let this = ManuallyDrop::new(self);
-        let wait : WaitList = wait.into();
-        let (num_events_in_wait_list, event_wait_list) = wait.raw_parts();
-        
-        let mut evt = core::ptr::null_mut();
-        tri!(clEnqueueUnmapMemObject(this.src.ctx.next_queue().id(), this.src.id(), this.ptr.as_ptr().cast(), num_events_in_wait_list, event_wait_list, addr_of_mut!(evt)));
-        
-        RawEvent::from_id(evt).ok_or_else(|| Error::from_type(ErrorType::InvalidEvent))
-    }
 }
 
 impl<T: Copy, S: Deref<Target = Buffer<T, C>>, C: Context> Deref for MapBufferGuard<T, S, C> {
@@ -118,13 +100,6 @@ impl<T: Copy, S: Deref<Target = Buffer<T, C>>, C: Context> Deref for MapBufferGu
     #[inline(always)]
     fn deref(&self) -> &Self::Target {
         unsafe { self.ptr.as_ref() }
-    }
-}
-
-impl<T: Copy, S: Clone + Deref<Target = Buffer<T, C>>, C: Context> Clone for MapBufferGuard<T, S, C> {
-    #[inline(always)]
-    fn clone(&self) -> Self {
-        Self { ptr: self.ptr, src: self.src.clone() }
     }
 }
 
@@ -155,18 +130,6 @@ unsafe impl<T: Copy, S: Sync + Deref<Target = Buffer<T, C>>, C: Context> Sync fo
 /// Guard for mutably mapped memory object region
 #[repr(transparent)]
 pub struct MapBufferMutGuard<T: Copy, S: DerefMut<Target = Buffer<T, C>>, C: Context> (MapBufferGuard<T, S, C>);
-
-impl<T: Copy, S: DerefMut<Target = Buffer<T, C>>, C: Context> MapBufferMutGuard<T, S, C> {
-    #[inline(always)]
-    pub unsafe fn into_ptr (self) -> *mut [T] {
-        self.0.into_ptr() as *mut _
-    }
-
-    #[inline(always)]
-    pub unsafe fn unmap (self, wait: impl Into<WaitList>) -> Result<RawEvent> {
-        self.0.unmap(wait)
-    }
-}
 
 impl<T: Copy, S: DerefMut<Target = Buffer<T, C>>, C: Context> Deref for MapBufferMutGuard<T, S, C> {
     type Target = [T];
