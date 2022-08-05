@@ -24,7 +24,7 @@ cl3 = ["cl2_2", "opencl-sys/CL_VERSION_3_0"]
 # Blaze features
 strict = []
 # half = ["dep:half"]
-image = ["dep:ffmpeg-sys-next"]
+image = ["cl1_2", "dep:ffmpeg-sys-next"]
 svm = ["cl2"]
 futures = ["cl1_1", "dep:futures"]
 

@@ -1,5 +1,6 @@
 use std::ops::*;
 use bytemuck::Zeroable;
+use ffmpeg_sys_next::AVPixelFormat;
 use num_traits::{NumOps, NumAssignOps, AsPrimitive, Zero, One};
 use blaze_proc::{docfg, NumOps, NumOpsAssign};
 use crate::{prelude::{RawContext, Result}, buffer::flags::MemAccess, memobj::MemObjectType};
@@ -38,6 +39,10 @@ pub unsafe trait RawPixel: Copy + NumOps + NumAssignOps + bytemuck::Zeroable {
         let iter = ctx.supported_image_formats(access, ty)?;
         Ok(iter.into_iter().any(|x| x == Self::FORMAT))
     }
+}
+
+pub unsafe trait FfmpegPixel: RawPixel {
+    const PIX_FMT : AVPixelFormat;
 }
 
 macro_rules! impl_pixel {
@@ -120,6 +125,7 @@ macro_rules! impl_pixel {
                 }
             }
 
+            $(#[cfg(feature = $feat)])?
             impl<T: Debug> Debug for $name<T> {
                 #[inline]
                 fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -131,6 +137,7 @@ macro_rules! impl_pixel {
 
             // ARITHMETIC
 
+            $(#[cfg(feature = $feat)])?
             impl<T: Add<T, Output = T>> Add for $name<T> {
                 type Output = Self;
 
@@ -142,6 +149,7 @@ macro_rules! impl_pixel {
                 }
             }
 
+            $(#[cfg(feature = $feat)])?
             impl<T: Sub<T, Output = T>> Sub for $name<T> {
                 type Output = Self;
 
@@ -153,6 +161,7 @@ macro_rules! impl_pixel {
                 }
             }
 
+            $(#[cfg(feature = $feat)])?
             impl<T: Mul<T, Output = T>> Mul for $name<T> {
                 type Output = Self;
 
@@ -164,6 +173,7 @@ macro_rules! impl_pixel {
                 }
             }
 
+            $(#[cfg(feature = $feat)])?
             impl<T: Div<T, Output = T>> Div for $name<T> {
                 type Output = Self;
 
@@ -175,6 +185,7 @@ macro_rules! impl_pixel {
                 }
             }
 
+            $(#[cfg(feature = $feat)])?
             impl<T: Rem<T, Output = T>> Rem for $name<T> {
                 type Output = Self;
 
@@ -188,6 +199,7 @@ macro_rules! impl_pixel {
 
             // ASSIGN ARITHMETIC
 
+            $(#[cfg(feature = $feat)])?
             impl<T: AddAssign<T>> AddAssign for $name<T> {
                 #[inline]
                 fn add_assign (&mut self, rhs: Self) {
@@ -197,6 +209,7 @@ macro_rules! impl_pixel {
                 }
             }
 
+            $(#[cfg(feature = $feat)])?
             impl<T: SubAssign<T>> SubAssign for $name<T> {
                 #[inline]
                 fn sub_assign (&mut self, rhs: Self) {
@@ -206,6 +219,7 @@ macro_rules! impl_pixel {
                 }
             }
 
+            $(#[cfg(feature = $feat)])?
             impl<T: MulAssign<T>> MulAssign for $name<T> {
                 #[inline]
                 fn mul_assign (&mut self, rhs: Self) {
@@ -215,6 +229,7 @@ macro_rules! impl_pixel {
                 }
             }
 
+            $(#[cfg(feature = $feat)])?
             impl<T: DivAssign<T>> DivAssign for $name<T> {
                 #[inline]
                 fn div_assign (&mut self, rhs: Self) {
@@ -224,6 +239,7 @@ macro_rules! impl_pixel {
                 }
             }
 
+            $(#[cfg(feature = $feat)])?
             impl<T: RemAssign<T>> RemAssign for $name<T> {
                 #[inline]
                 fn rem_assign (&mut self, rhs: Self) {

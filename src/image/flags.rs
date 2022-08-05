@@ -39,8 +39,19 @@ impl ImageFormat {
 }
 
 impl ImageFormat {
+    pub fn ffmpeg_pixel (&self) -> AVPixelFormat {
+        use AVPixelFormat::*;
+
+        // TODO
+        match self.unzip() {
+            (ChannelOrder::Luminance, ChannelType::U8) => AV_PIX_FMT_GRAY8,
+            (ChannelOrder::Luminance, ChannelType::U16) => AV_PIX_FMT_GRAY16,
+            _ => AV_PIX_FMT_NONE
+        }
+    } 
+
     #[inline(always)]
-    pub const fn ffmpeg_pixel (&self) -> Option<AVPixFmtDescriptor> {
+    pub const fn ffmpeg_pixel_desc (&self) -> Option<AVPixFmtDescriptor> {
         macro_rules! trii {
             ($e:expr) => {{
                 match $e {
@@ -119,13 +130,15 @@ impl ImageFormat {
             U32_10_10_10_2 => 0,
             _ => {
                 let v = match self.order {
-                    Alpha | Depth | Luminance | Intensity => return None,
+                    Alpha | Luminance | Intensity => return None,
                     Red | RedAlpha | RedGreen | RGB | RGBA => 0,
                     ARGB => 1,
                     BGRA => 2,
                     #[cfg(feature = "cl2")]
                     ABGR => 3,
         
+                    #[cfg(feature = "cl2")]
+                    Depth => return None,
                     #[cfg(feature = "cl1_1")]
                     Rx | RGx | RGBx => 0,
                     #[cfg(feature = "cl2")]
@@ -170,13 +183,15 @@ impl ImageFormat {
             U32_10_10_10_2 => 10,
             _ => {
                 let v = match self.order {
-                    Alpha | Depth | Luminance | Intensity | Red | RedAlpha => return None,
+                    Alpha | Luminance | Intensity | Red | RedAlpha => return None,
                     RedGreen | RGB | RGBA => 1,
                     BGRA => 1,
                     ARGB => 2,
                     #[cfg(feature = "cl2")]
                     ABGR => 2,
         
+                    #[cfg(feature = "cl2")]
+                    Depth => return None,
                     #[cfg(feature = "cl1_1")]
                     Rx => return None,
                     #[cfg(feature = "cl1_1")]
@@ -221,13 +236,15 @@ impl ImageFormat {
             U32_10_10_10_2 => 20,
             _ => {
                 let v = match self.order {
-                    Alpha | Depth | Luminance | Intensity | Red | RedAlpha | RedGreen => return None,
+                    Alpha | Luminance | Intensity | Red | RedAlpha | RedGreen => return None,
                     RGB | RGBA => 2,
                     BGRA => 0,
                     ARGB => 3,
                     #[cfg(feature = "cl2")]
                     ABGR => 1,
         
+                    #[cfg(feature = "cl2")]
+                    Depth => return None,
                     #[cfg(feature = "cl1_1")]
                     Rx | RGx => return None,
                     #[cfg(feature = "cl1_1")]
@@ -271,7 +288,7 @@ impl ImageFormat {
             U32_10_10_10_2 => 30,
             _ => {
                 let v = match self.order {
-                    Depth | Luminance | Intensity | Red | RedGreen | RGB => return None,
+                    Luminance | Intensity | Red | RedGreen | RGB => return None,
                     Alpha => 0,
                     ARGB => 0,
                     RedAlpha => 1,
@@ -279,6 +296,8 @@ impl ImageFormat {
                     #[cfg(feature = "cl2")]
                     ABGR => 0,
         
+                    #[cfg(feature = "cl2")]
+                    Depth => return None,
                     #[cfg(feature = "cl1_1")]
                     Rx | RGx | RGBx => return None,
                     #[cfg(feature = "cl2")]
@@ -416,12 +435,14 @@ impl ChannelOrder {
             Rx => 2,
             #[cfg(feature = "cl1_1")]
             RGx => 3,
+            #[cfg(feature = "cl1_1")]
+            RGBx => 4,
             #[cfg(feature = "cl2")]
             Depth => 1,
             #[cfg(feature = "cl2")]
             sRGB => 3,
             #[cfg(feature = "cl2")]
-            sRGBA | sRGBx | sBGRA | ABGR | RGBx => 4
+            sRGBA | sRGBx | sBGRA | ABGR => 4,
         }
     }
 
@@ -430,7 +451,9 @@ impl ChannelOrder {
         use ChannelOrder::*;
 
         match self {
-            RedGreen | RedAlpha | RGB | RGBA | ARGB | BGRA | sRGB | sRGBA | sBGRA | sRGBx | ABGR | RGBx => true,
+            RedGreen | RedAlpha | RGB | RGBA | ARGB | BGRA | RGBx => true,
+            #[cfg(feature = "cl2")]
+            sRGB | ABGR | sRGBA | sBGRA | sRGBx => true,
             _ => false
         }
     }
@@ -440,7 +463,9 @@ impl ChannelOrder {
         use ChannelOrder::*;
 
         match self {
-            RedAlpha | RGBA | ARGB | BGRA | sRGBA | sBGRA | sRGBx | ABGR | RGBx => true,
+            RedAlpha | RGBA | ARGB | BGRA | RGBx => true,
+            #[cfg(feature = "cl2")]
+            ABGR | sRGBA | sBGRA | sRGBx => true,
             _ => false
         }
     }
