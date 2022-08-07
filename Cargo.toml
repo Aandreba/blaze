@@ -29,6 +29,7 @@ svm = ["cl2"]
 futures = ["cl1_1", "dep:futures"]
 
 [package.metadata.docs.rs]
+all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
