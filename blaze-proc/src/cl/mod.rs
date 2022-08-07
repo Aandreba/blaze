@@ -22,13 +22,14 @@ pub fn blaze_c (ident: Ident, generics: Generics, blaze: Blaze, content: Expr) -
     let phantom_generics = match generics.params.is_empty() {
         true => None,
         false => {
-            let ty = generics.type_params().map(|p| p.to_token_stream());
+            let ty = generics.type_params().map(|p| p.ident.to_token_stream());
             let lt = generics.lifetimes().map(|p| quote! { &#p () });
 
             let iter = ty.chain(lt);
             Some(quote! { #[doc(hidden)] __blaze_phtm__: ::core::marker::PhantomData::<(#(#iter),*)>,})
         }
     };
+
     let phantom_fill = phantom_generics.as_ref().map(|_| quote! { __blaze_phtm__: ::core::marker::PhantomData, });
 
     let mut program_generics = generics.clone();
@@ -47,7 +48,7 @@ pub fn blaze_c (ident: Ident, generics: Generics, blaze: Blaze, content: Expr) -
     }).collect::<Vec<_>>();
 
     let kernel_structs = kernels.iter()
-        .map(|x| create_kernel(&vis, &ident, &generics, x));
+        .map(|x| create_kernel(&vis, &ident, &generics, &program_generics, &phantom_generics, &phantom_fill, x));
 
     let kernel_defs = kernels.iter().map(|x| {
         let name = &x.ident;
@@ -113,9 +114,10 @@ pub fn blaze_c (ident: Ident, generics: Generics, blaze: Blaze, content: Expr) -
     }
 }
 
-fn create_kernel (parent_vis: &Visibility, parent: &Ident, generics: &Generics, kernel: &Kernel) -> TokenStream {
+fn create_kernel (parent_vis: &Visibility, parent: &Ident, impl_generics: &Generics, parent_generics: &Generics, phantom_generics: &Option<TokenStream>, phantom_fill: &Option<TokenStream>, kernel: &Kernel) -> TokenStream {
     let Kernel { vis, ident, args, .. } = kernel;
-    let mut generics = generics.clone();
+    let mut generics = Generics::default();
+    let (parent_imp, parent_ty, parent_wher) = parent_generics.split_for_impl();
 
     let vis = match vis {
         Visibility::Inherited => parent_vis,
@@ -128,20 +130,24 @@ fn create_kernel (parent_vis: &Visibility, parent: &Ident, generics: &Generics, 
     let names = args.iter().filter_map(|x| if x.ty.is_define() { Some(&x.name) } else { None }).collect::<Vec<_>>();
     let pointer_names = args.iter().filter_map(|x| if x.ty.is_pointer() { Some(&x.name) } else { None });
     let set = args.iter().enumerate().map(|(i, x)| set_arg(x, u32::try_from(i).unwrap()));
-    let (r#impl, r#type, r#where) = generics.split_for_impl();
-    let type_list = generics.type_params().map(|x| &x.ident);
+    let (r#impl, _, _) = generics.split_for_impl();
+    let type_list = generics.type_params().map(|x| x.ident.clone()).collect::<Vec<_>>();
 
     let mut fn_generics : Generics = parse_quote! { #r#impl };
     fn_generics.params.push(parse_quote! { const N: usize });
     let (fn_impl, _, _) = fn_generics.split_for_impl();
 
+    generics.params.extend(impl_generics.params.iter().cloned());
+    let (r#impl, r#type, r#where) = generics.split_for_impl();
+
     quote! {
         #vis struct #big_name #r#type {
             __blaze_inner__: ::blaze_rs::event::RawEvent,
+            #phantom_generics
             #(#define),*
         }
 
-        impl<C: ::blaze_rs::context::Context> #parent<C> {
+        impl #parent_imp #parent #parent_ty #parent_wher {
             #vis unsafe fn #ident #fn_impl (&self, #(#new,)* global_work_dims: [usize; N], local_work_dims: impl Into<Option<[usize; N]>>, wait: impl Into<::blaze_rs::event::WaitList>) -> ::blaze_rs::core::Result<#big_name #r#type> #r#where {
                 let mut wait = wait.into();
                 let mut __blaze_kernel__ = match self.#ident.lock() {
@@ -160,6 +166,7 @@ fn create_kernel (parent_vis: &Visibility, parent: &Ident, generics: &Generics, 
 
                 Ok(#big_name {
                     __blaze_inner__,
+                    #phantom_fill
                     #(#names),*
                 })
             }
