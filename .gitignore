@@ -1,5 +1,6 @@
+.vscode
 /target
 /Cargo.lock
-/tests/*.png
-/tests/*.jpg
-/tests/*.jpeg
+*.png
+*.jpg
+*.jpeg
