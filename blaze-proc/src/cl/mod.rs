@@ -17,7 +17,7 @@ macro_rules! peek_and_parse {
 
 flat_mod!(ty, kern, access, arg);
 
-pub fn blaze_c (ident: Ident, blaze: Blaze, content: Expr) -> TokenStream {
+pub fn blaze_c (ident: Ident, generics: Generics, blaze: Blaze, content: Expr) -> TokenStream {
     let Blaze { vis, kernels, .. } = blaze;
 
     let kernel_names = kernels.iter().map(|x| &x.ident).collect::<Vec<_>>();
