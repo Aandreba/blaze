@@ -6,7 +6,7 @@ lazy_static! {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct BlaseContext {
+struct BlaseContext {
     max_wgs: NonZeroUsize,
 }
 
@@ -20,7 +20,7 @@ impl BlaseContext {
 
             max_wgs = match max_wgs {
                 Some(x) => Some(wgs.min(x)),
-                None => Some(wgs)    
+                None => Some(wgs)
             };
         }
 

@@ -1,14 +1,16 @@
-use std::{mem::MaybeUninit, ops::{Deref, DerefMut}};
+pub mod arith;
+
+use std::{mem::MaybeUninit, ops::{Deref, DerefMut}, fmt::Debug};
 use blaze_rs::{prelude::*, buffer::KernelPointer};
-use crate::{include_prog, Real, work_group_size};
+use crate::{Real, include_prog};
+use self::arith::{Addition, Subtraction, Scale};
 
-//flat_mod!(arith);
-
-#[blaze(VectorArith<T: Real>)]
+#[blaze(VectorProgram<T: Real>)]
 #[link = include_prog::<T>(include_str!("../opencl/vec.cl"))]
 pub extern "C" {
     fn add (n: usize, lhs: *const T, rhs: *const T, out: *mut MaybeUninit<T>);
     fn sub (n: usize, lhs: *const T, rhs: *const T, out: *mut MaybeUninit<T>);
+    fn scal (n: usize, alpha: T, rhs: *const T, out: *mut MaybeUninit<T>);
 }
 
 #[repr(transparent)]
@@ -29,23 +31,89 @@ impl<T: Copy> Vector<T> {
     }
 }
 
+// ADDITION
 impl<T: Real> Vector<T> {
     #[inline(always)]
-    pub unsafe fn add_unchecked_in (&self, other: &Self, prog: &VectorArith<T>) -> Result<()> {
-        todo!()
+    pub fn add<RHS: Deref<Target = Self>> (&self, other: RHS, wait: impl Into<WaitList>) -> Result<Addition<T, &'_ Self, RHS>> {
+        Self::add_by_deref(self, other, wait)
+    }
+
+    #[inline(always)]
+    pub unsafe fn add_unchecked<RHS: Deref<Target = Self>> (&self, other: RHS, wait: impl Into<WaitList>) -> Result<Addition<T, &'_ Self, RHS>> {
+        Self::add_unchecked_by_deref(self, other, wait)
     }
 
     #[inline]
-    unsafe fn inner_add<LHS: Deref<Target = Self>, RHS: Deref<Target = Self>> (lhs: LHS, rhs: RHS, len: usize, prog: &VectorArith<T>) -> Result<()> {
-        let mut result = Self::new_uninit(len, false)?;
-        let inner = unsafe {
-            prog.add(len, lhs, rhs, &mut result.inner, [work_group_size(len)], None, EMPTY)?
-        };
+    pub fn add_by_deref<LHS: Deref<Target = Self>, RHS: Deref<Target = Self>> (this: LHS, other: RHS, wait: impl Into<WaitList>) -> Result<Addition<T, LHS, RHS>> {
+        let len = this.len()?;
+        if len != other.len()? {
+            return Err(Error::new(ErrorType::InvalidBufferSize, "Vectors must be of the same length"));
+        }
 
-        
-
-        todo!()
+        unsafe{
+            Addition::new_custom(this, other, len, wait)
+        }
     }
+
+    #[inline(always)]
+    pub unsafe fn add_unchecked_by_deref<LHS: Deref<Target = Self>, RHS: Deref<Target = Self>> (this: LHS, other: RHS, wait: impl Into<WaitList>) -> Result<Addition<T, LHS, RHS>> {
+        let len = this.len()?;
+        Addition::new_custom(this, other, len, wait)
+    }
+}
+
+// SUBTRACTION
+impl<T: Real> Vector<T> {
+    #[inline(always)]
+    pub fn sub<RHS: Deref<Target = Self>> (&self, other: RHS, wait: impl Into<WaitList>) -> Result<Subtraction<T, &'_ Self, RHS>> {
+        Self::sub_by_deref(self, other, wait)
+    }
+
+    #[inline(always)]
+    pub unsafe fn sub_unchecked<RHS: Deref<Target = Self>> (&self, other: RHS, wait: impl Into<WaitList>) -> Result<Subtraction<T, &'_ Self, RHS>> {
+        Self::sub_unchecked_by_deref(self, other, wait)
+    }
+
+    #[inline]
+    pub fn sub_by_deref<LHS: Deref<Target = Self>, RHS: Deref<Target = Self>> (this: LHS, other: RHS, wait: impl Into<WaitList>) -> Result<Subtraction<T, LHS, RHS>> {
+        let len = this.len()?;
+        if len != other.len()? {
+            return Err(Error::new(ErrorType::InvalidBufferSize, "Vectors must be of the same length"));
+        }
+
+        unsafe{
+            Subtraction::new_custom(this, other, len, wait)
+        }
+    }
+
+    #[inline(always)]
+    pub unsafe fn sub_unchecked_by_deref<LHS: Deref<Target = Self>, RHS: Deref<Target = Self>> (this: LHS, other: RHS, wait: impl Into<WaitList>) -> Result<Subtraction<T, LHS, RHS>> {
+        let len = this.len()?;
+        Subtraction::new_custom(this, other, len, wait)
+    }
+}
+
+// MULTIPLICATION
+impl<T: Real> Vector<T> {
+    #[inline(always)]
+    pub fn mul (&self, alpha: T, wait: impl Into<WaitList>) -> Result<Scale<T, &'_ Self>> {
+        Self::mul_by_deref(alpha, self, wait)
+    }
+
+    #[inline]
+    pub fn mul_by_deref<RHS: Deref<Target = Self>> (alpha: T, this: RHS, wait: impl Into<WaitList>) -> Result<Scale<T, RHS>> {
+        let len = this.len()?;
+        unsafe{
+            Scale::new_custom(alpha, this, len, wait)
+        }
+    }
+}
+
+impl<T: Copy> Vector<MaybeUninit<T>> {
+    #[inline(always)]
+    pub unsafe fn assume_init (self) -> Vector<T> {
+        Vector { inner: self.inner.assume_init() }
+    } 
 }
 
 impl<T: Copy> Deref for Vector<T> {
@@ -61,6 +129,13 @@ impl<T: Copy> DerefMut for Vector<T> {
     #[inline(always)]
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.inner
+    }
+}
+
+impl<T: Copy> Debug for Vector<T> where Buffer<T>: Debug {
+    #[inline(always)]
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        Debug::fmt(&self.inner, f)
     }
 }
 
