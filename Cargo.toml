@@ -54,4 +54,4 @@ elor = "1"
 tokio = { version = "1.19.2", features = ["full"] }
 
 [workspace]
-members = ["blaze-proc"]
+members = ["blaze-proc", "blase"]
