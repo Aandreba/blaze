@@ -82,6 +82,12 @@ impl<T: Copy, C: Context> Buffer<T, C> {
         })
     }
 
+    /// Returns the number of elements inside the buffer.
+    #[inline(always)]
+    pub fn len (&self) -> Result<usize> {
+        Ok(self.inner.size()? / core::mem::size_of::<T>())
+    }
+
     /// Reinterprets the bits of the buffer to another type.
     /// # Safety
     /// This function has the same safety as [`transmute`](std::mem::transmute)
@@ -89,6 +95,12 @@ impl<T: Copy, C: Context> Buffer<T, C> {
     pub unsafe fn transmute<U: Copy> (self) -> Buffer<U, C> {
         debug_assert_eq!(core::mem::size_of::<T>(), core::mem::size_of::<U>());
         Buffer { inner: self.inner, ctx: self.ctx, phtm: PhantomData }
+    }
+
+    /// Returns a reference to the buffer's context.
+    #[inline(always)]
+    pub fn context (&self) -> &C {
+        &self.ctx
     }
 
     /// Checks if the buffer pointer is the same in both buffers.
