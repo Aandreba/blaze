@@ -30,7 +30,7 @@ impl RawKernel {
     }
 
     #[inline(always)]
-    pub unsafe fn set_argument<T: ?Sized> (&mut self, idx: u32, v: &T) -> Result<()> {
+    pub unsafe fn set_argument<T: Copy> (&mut self, idx: u32, v: &T) -> Result<()> {
         let ptr = v as *const _ as *const _;
         tri!(clSetKernelArg(self.id(), idx, core::mem::size_of_val(v), ptr));
         Ok(())

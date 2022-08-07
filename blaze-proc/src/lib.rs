@@ -10,10 +10,11 @@ macro_rules! flat_mod {
 }
 
 use cl::{Link};
+use derive_syn_parse::Parse;
 use error::Error;
 use proc_macro2::{TokenStream, Ident};
 use quote::{ToTokens, quote, format_ident};
-use syn::{parse_macro_input, ItemStatic, Meta, DeriveInput};
+use syn::{parse_macro_input, ItemStatic, Meta, DeriveInput, Generics};
 
 use crate::cl::Blaze;
 
@@ -49,7 +50,7 @@ pub fn error (items: proc_macro::TokenStream) -> proc_macro::TokenStream {
 
 #[proc_macro_attribute]
 pub fn blaze (attrs: proc_macro::TokenStream, items: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    let ident = parse_macro_input!(attrs as Ident);
+    let ident = parse_macro_input!(attrs as BlazeIdent);
     let items = parse_macro_input!(items as Blaze);
 
     let mut inner = None;
@@ -63,7 +64,7 @@ pub fn blaze (attrs: proc_macro::TokenStream, items: proc_macro::TokenStream) ->
     }
 
     if let Some(inner) = inner {
-        return cl::blaze_c(ident, items, inner).into()
+        return cl::blaze_c(ident.ident, ident.generics, items, inner).into()
     }
 
     panic!("No source code specified");
@@ -79,4 +80,10 @@ pub fn docfg (attrs: proc_macro::TokenStream, items: proc_macro::TokenStream) ->
         #[cfg(#attrs)]
         #items
     }.into()
+}
+
+#[derive(Parse)]
+struct BlazeIdent {
+    ident: Ident,
+    generics: Generics
 }
