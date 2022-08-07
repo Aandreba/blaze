@@ -19,6 +19,22 @@ flat_mod!(ty, kern, access, arg);
 
 pub fn blaze_c (ident: Ident, generics: Generics, blaze: Blaze, content: Expr) -> TokenStream {
     let Blaze { vis, kernels, .. } = blaze;
+    let phantom_generics = match generics.params.is_empty() {
+        true => None,
+        false => {
+            let ty = generics.type_params().map(|p| p.to_token_stream());
+            let lt = generics.lifetimes().map(|p| quote! { &#p () });
+
+            let iter = ty.chain(lt);
+            Some(quote! { #[doc(hidden)] __blaze_phtm__: ::core::marker::PhantomData::<(#(#iter),*)>,})
+        }
+    };
+    let phantom_fill = phantom_generics.as_ref().map(|_| quote! { __blaze_phtm__: ::core::marker::PhantomData, });
+
+    let mut program_generics = generics.clone();
+    program_generics.params.push(parse_quote!(C: ::blaze_rs::context::Context = ::blaze_rs::context::Global));
+    let (prog_imp, prog_ty, prog_wher) = program_generics.split_for_impl();
+    let (glob_imp, glob_ty, glob_wher) = generics.split_for_impl();
 
     let kernel_names = kernels.iter().map(|x| &x.ident).collect::<Vec<_>>();
     let kernel_extern_names = kernels.iter().map(|x| {
@@ -30,27 +46,32 @@ pub fn blaze_c (ident: Ident, generics: Generics, blaze: Blaze, content: Expr) -
         quote! { stringify!(#ident) }
     }).collect::<Vec<_>>();
 
-    let kernel_structs = kernels.iter().map(|x| create_kernel(&vis, &ident, x));
+    let kernel_structs = kernels.iter()
+        .map(|x| create_kernel(&vis, &ident, &generics, x));
+
     let kernel_defs = kernels.iter().map(|x| {
         let name = &x.ident;
         quote!(#name: ::std::sync::Mutex<::blaze_rs::core::RawKernel>)
     });
 
     quote! {
-        #vis struct #ident<C: ::blaze_rs::context::Context = ::blaze_rs::context::Global> {
+        #vis struct #ident #program_generics {
+            #[doc(hidden)]
             __blaze_inner__: ::blaze_rs::core::RawProgram,
+            #[doc(hidden)]
             __blaze_ctx__: C,
+            #phantom_generics
             #(#kernel_defs),*
         }
 
-        impl #ident<::blaze_rs::context::Global> {
+        impl #glob_imp #ident #glob_ty #glob_wher {
             #[inline(always)]
             #vis fn new<'a> (options: impl Into<Option<&'a str>>) -> ::blaze_rs::core::Result<Self> {
                 Self::new_in(::blaze_rs::context::Global, options)
             }
         }
 
-        impl<C: ::blaze_rs::context::Context> #ident<C> {
+        impl #prog_imp #ident #prog_ty #prog_wher {
             #vis fn new_in<'a> (ctx: C, options: impl Into<Option<&'a str>>) -> ::blaze_rs::core::Result<Self> {
                 let __blaze_ctx__ = ctx;
                 let (__blaze_inner__, __blaze_kernels__) = ::blaze_rs::core::RawProgram::from_source_in(&__blaze_ctx__, #content, options)?;
@@ -73,12 +94,13 @@ pub fn blaze_c (ident: Ident, generics: Generics, blaze: Blaze, content: Expr) -
                 Ok(Self {
                     __blaze_inner__,
                     __blaze_ctx__,
+                    #phantom_fill
                     #(#kernel_names),*
                 })
             }
         }
 
-        impl<C: ::blaze_rs::context::Context> ::std::ops::Deref for #ident<C> {
+        impl #prog_imp ::std::ops::Deref for #ident #prog_ty #prog_wher {
             type Target = ::blaze_rs::core::RawProgram;
 
             #[inline(always)]
@@ -91,9 +113,10 @@ pub fn blaze_c (ident: Ident, generics: Generics, blaze: Blaze, content: Expr) -
     }
 }
 
-fn create_kernel (parent_vis: &Visibility, parent: &Ident, kernel: &Kernel) -> TokenStream {
+fn create_kernel (parent_vis: &Visibility, parent: &Ident, generics: &Generics, kernel: &Kernel) -> TokenStream {
     let Kernel { vis, ident, args, .. } = kernel;
-    let mut generics = Generics::default();
+    let mut generics = generics.clone();
+
     let vis = match vis {
         Visibility::Inherited => parent_vis,
         other => other
