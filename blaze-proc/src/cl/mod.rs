@@ -142,6 +142,7 @@ fn create_kernel (parent_vis: &Visibility, parent: &Ident, impl_generics: &Gener
 
     quote! {
         #vis struct #big_name #r#type {
+            #[doc(hidden)]
             __blaze_inner__: ::blaze_rs::event::RawEvent,
             #phantom_generics
             #(#define),*

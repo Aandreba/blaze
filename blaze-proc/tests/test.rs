@@ -1,8 +1,8 @@
 use std::mem::MaybeUninit;
 use blaze_proc::blaze;
 
-#[blaze(Arith<T: Sync>)]
+#[blaze(Arith)]
 #[link = "hello"]
 pub extern "C" {
-    fn test (n: u32, lhs: *const T, rhs: *const T, out: *mut MaybeUninit<T>);
+    fn test (n: u32, lhs: *const f32, rhs: *const f32, out: *mut MaybeUninit<f32>);
 }
