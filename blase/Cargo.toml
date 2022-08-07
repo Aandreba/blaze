@@ -4,6 +4,16 @@ version = "0.1.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[features]
+default = ["double"]
+half = ["dep:half"]
+double = []
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
-blaze = { version = "", path = "../" }
+blaze-rs = { version = "0.0.1", path = "../" }
+blaze-proc = { version = "0.0.1", path = "../blaze-proc" }
+half = { version = "2.1.0", optional = true }
