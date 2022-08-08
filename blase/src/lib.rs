@@ -1,4 +1,5 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
+#![feature(exclusive_range_pattern)]
 
 macro_rules! flat_mod {
     ($($i:ident),+) => {
@@ -19,9 +20,31 @@ macro_rules! lazy_static {
 
 flat_mod!(r#trait, ctx);
 pub mod vec;
+pub mod random;
 mod utils;
 
 pub(crate) fn include_prog<T: Real> (src: &str) -> String {
+    let mut exts = String::new();
+    for ext in T::EXTENSIONS.into_iter() {
+        exts.push_str(&format!("#pragma OPENCL EXTENSION {ext}: enable\n"));
+    }
+
+    format!(
+        "{exts}
+        #define PRECISION {}
+        #define ISFLOAT {}
+        {3}
+        typedef {} real;
+        {src}",
+        T::PRECISION,
+        T::FLOAT,
+        T::CL_NAME,
+        define_usize()
+    )
+}
+
+#[inline(always)]
+pub(crate) fn define_usize () -> String {
     cfg_if::cfg_if! {
         if #[cfg(target_pointer_width = "8")] {
             const USIZE : &'static str = "uchar";
@@ -36,22 +59,7 @@ pub(crate) fn include_prog<T: Real> (src: &str) -> String {
         }
     }
 
-    let mut exts = String::new();
-    for ext in T::EXTENSIONS.into_iter() {
-        exts.push_str(&format!("#pragma OPENCL EXTENSION {ext}: enable\n"));
-    }
-
-    format!(
-        "{exts}
-        #define PRECISION {}
-        #define ISFLOAT {}
-        typedef {USIZE} usize;
-        typedef {} real;
-        {src}",
-        T::PRECISION,
-        T::FLOAT,
-        T::CL_NAME
-    )
+    format!("typedef {USIZE} usize;")
 }
 
 #[test]

@@ -21,3 +21,15 @@ kernel void scal (const usize n, const real alpha, global const real* x, global 
         res[i] = alpha * x[i];
     }
 }
+
+kernel void scal_down (const usize n, global const real* x, const real alpha, global real* res) {
+    for (usize i = get_global_id(0); i < n; i += get_global_size(0)) {
+        res[i] = x[i] / alpha;
+    }
+}
+
+kernel void scal_down_inv (const usize n, const real alpha, global const real* x, global real* res) {
+    for (usize i = get_global_id(0); i < n; i += get_global_size(0)) {
+        res[i] = alpha / x[i];
+    }
+}

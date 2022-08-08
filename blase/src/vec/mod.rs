@@ -3,7 +3,7 @@ pub mod arith;
 use std::{mem::MaybeUninit, ops::{Deref, DerefMut}, fmt::Debug};
 use blaze_rs::{prelude::*, buffer::KernelPointer};
 use crate::{Real, include_prog};
-use self::arith::{Addition, Subtraction, Scale};
+use self::arith::*;
 
 #[blaze(VectorProgram<T: Real>)]
 #[link = include_prog::<T>(include_str!("../opencl/vec.cl"))]
@@ -11,6 +11,8 @@ pub extern "C" {
     fn add (n: usize, lhs: *const T, rhs: *const T, out: *mut MaybeUninit<T>);
     fn sub (n: usize, lhs: *const T, rhs: *const T, out: *mut MaybeUninit<T>);
     fn scal (n: usize, alpha: T, rhs: *const T, out: *mut MaybeUninit<T>);
+    fn scal_down (n: usize, lhs: *const T, alpha: T, out: *mut MaybeUninit<T>);
+    fn scal_down_inv (n: usize, alpha: T, rhs: *const T, out: *mut MaybeUninit<T>);
 }
 
 #[repr(transparent)]
@@ -50,7 +52,7 @@ impl<T: Real> Vector<T> {
             return Err(Error::new(ErrorType::InvalidBufferSize, "Vectors must be of the same length"));
         }
 
-        unsafe{
+        unsafe {
             Addition::new_custom(this, other, len, wait)
         }
     }
@@ -105,6 +107,35 @@ impl<T: Real> Vector<T> {
         let len = this.len()?;
         unsafe{
             Scale::new_custom(alpha, this, len, wait)
+        }
+    }
+}
+
+// DIVISION
+impl<T: Real> Vector<T> {
+    #[inline(always)]
+    pub fn div (&self, alpha: T, wait: impl Into<WaitList>) -> Result<Division<T, &'_ Self>> {
+        Self::div_by_deref(self, alpha, wait)
+    }
+
+    #[inline]
+    pub fn div_by_deref<LHS: Deref<Target = Self>> (this: LHS, alpha: T, wait: impl Into<WaitList>) -> Result<Division<T, LHS>> {
+        let len = this.len()?;
+        unsafe {
+            Division::new_custom(this, alpha, len, wait)
+        }
+    }
+
+    #[inline(always)]
+    pub fn div_inv (&self, alpha: T, wait: impl Into<WaitList>) -> Result<InvDivision<T, &'_ Self>> {
+        Self::div_inv_by_deref(alpha, self, wait)
+    }
+
+    #[inline]
+    pub fn div_inv_by_deref<RHS: Deref<Target = Self>> (alpha: T, this: RHS, wait: impl Into<WaitList>) -> Result<InvDivision<T, RHS>> {
+        let len = this.len()?;
+        unsafe {
+            InvDivision::new_custom(alpha, this, len, wait)
         }
     }
 }

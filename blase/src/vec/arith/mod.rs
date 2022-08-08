@@ -1,1 +1,1 @@
-flat_mod!(add, sub, mul);
+flat_mod!(add, sub, mul, div);
