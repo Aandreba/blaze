@@ -21,7 +21,7 @@ macro_rules! lazy_static {
 flat_mod!(r#trait, ctx);
 pub mod vec;
 pub mod random;
-mod utils;
+pub mod utils;
 
 pub(crate) fn include_prog<T: Real> (src: &str) -> String {
     let mut exts = String::new();

@@ -1,4 +1,5 @@
 pub mod arith;
+flat_mod!(sum);
 
 use std::{mem::MaybeUninit, ops::{Deref, DerefMut}, fmt::Debug};
 use blaze_rs::{prelude::*, buffer::KernelPointer};
@@ -13,6 +14,9 @@ pub extern "C" {
     fn scal (n: usize, alpha: T, rhs: *const T, out: *mut MaybeUninit<T>);
     fn scal_down (n: usize, lhs: *const T, alpha: T, out: *mut MaybeUninit<T>);
     fn scal_down_inv (n: usize, alpha: T, rhs: *const T, out: *mut MaybeUninit<T>);
+    #[link_name = "sum"]
+    fn vec_sum (n: usize, lhs: *const T, out: *mut MaybeUninit<T>);
+    fn sum_cpu (n: usize, lhs: *const T, out: *mut MaybeUninit<T>);
 }
 
 #[repr(transparent)]
@@ -30,6 +34,16 @@ impl<T: Copy> Vector<T> {
     pub fn new_uninit (len: usize, alloc: bool) -> Result<Vector<MaybeUninit<T>>> {
         let inner = Buffer::<T, _>::new_uninit(len, MemAccess::default(), alloc)?;
         Ok(Vector { inner })
+    }
+
+    #[inline(always)]
+    pub const fn from_buffer (inner: Buffer<T>) -> Self {
+        Self { inner }
+    }
+
+    #[inline(always)]
+    pub fn into_buffer (self) -> Buffer<T> {
+        self.inner
     }
 }
 

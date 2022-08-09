@@ -33,3 +33,27 @@ kernel void scal_down_inv (const usize n, const real alpha, global const real* x
         res[i] = alpha / x[i];
     }
 }
+
+kernel void sum (const usize n, global const real* x, global real* res) {
+    local uint mutex;
+    if (get_global_id(0) == 0) mutex = 0;
+    barrier(CLK_LOCAL_MEM_FENCE);
+
+    real local_sum = 0;
+    for (usize i = get_global_id(0); i < n; i += get_global_size(0)) {
+        local_sum += x[i];
+    }
+
+    while (atomic_cmpxchg(&mutex, 0, 1) != 0) {}
+    *res += local_sum;
+    atomic_xchg(&mutex, 0);
+}
+
+kernel void sum_cpu (const usize n, global const real* x, global real* res) {
+    real local_sum = 0;
+    for (usize i = get_global_id(0); i < n; i += get_global_size(0)) {
+        local_sum += x[i];
+    }
+
+    res[get_global_id(0)] = local_sum;
+}
