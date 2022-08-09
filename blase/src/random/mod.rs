@@ -1,4 +1,4 @@
-use blaze_proc::blaze;
+use blaze_proc::{blaze, docfg};
 use blaze_rs::prelude::*;
 use std::{mem::MaybeUninit, num::NonZeroUsize};
 use crate::define_usize;
@@ -19,7 +19,11 @@ extern "C" {
     fn random_int (n: usize, seed: *mut u64, out: *mut MaybeUninit<i32>, origin: i32, delta: i32);
     fn random_long (n: usize, seed: *mut u64, out: *mut MaybeUninit<i64>, origin: i64, delta: i64);
 
-    #[cfg(feature = "")]
+    #[cfg(feature = "half")]
+    fn random_half (n: usize, seed: *mut u64, out: *mut MaybeUninit<::half::f16>, origin: ::half::f16, delta: ::half::f16);
+    fn random_float (n: usize, seed: *mut u64, out: *mut MaybeUninit<f32>, origin: f32, delta: f32);
+    #[cfg(feature = "double")]
+    fn random_double (n: usize, seed: *mut u64, out: *mut MaybeUninit<f64>, origin: f64, delta: f64);
 
     fn loop_random_uchar (n: usize, seed: *mut u64, out: *mut MaybeUninit<u8>, origin: u8, bound: u8);
     fn loop_random_ushort (n: usize, seed: *mut u64, out: *mut MaybeUninit<u16>, origin: u16, bound: u16);
@@ -175,6 +179,101 @@ impl<C: Context + Clone> Random<C> {
         i32 as next_i32 => (random_int, loop_random_int),
         i64 as next_i64 => (random_long, loop_random_long)
     }
+
+    #[docfg(feature = "half")]
+    pub fn next_f16 (&mut self, len: usize, range: impl RangeBounds<::half::f16>, readable: bool, alloc: bool) -> Result<Buffer<::half::f16, C>> {
+        let wgs = self.seeds.len()?.min(len);
+
+        let origin = match range.start_bound() {
+            Bound::Included(x) => *x,
+            Bound::Excluded(x) => *x + ::half::f16::EPSILON,
+            Bound::Unbounded => ::half::f16::MIN,
+        };
+
+        let bound = match range.end_bound() {
+            Bound::Included(x) => *x + ::half::f16::EPSILON,
+            Bound::Excluded(x) => *x,
+            Bound::Unbounded => ::half::f16::MAX,
+        };
+
+        let mut result = Buffer::new_uninit_in(
+            self.seeds.context().clone(), len, MemAccess::new(readable, true), alloc
+        )?;
+
+        unsafe {
+            let _ = self.program.random_half(
+                len,
+                &mut self.seeds, &mut result,
+                origin, bound - origin,
+                [wgs], None, EMPTY
+            )?.wait()?;
+
+            return Ok(result.assume_init())
+        }
+    }
+
+    pub fn next_f32 (&mut self, len: usize, range: impl RangeBounds<f32>, readable: bool, alloc: bool) -> Result<Buffer<f32, C>> {
+        let wgs = self.seeds.len()?.min(len);
+
+        let origin = match range.start_bound() {
+            Bound::Included(x) => *x,
+            Bound::Excluded(x) => *x + f32::EPSILON,
+            Bound::Unbounded => f32::MIN,
+        };
+
+        let bound = match range.end_bound() {
+            Bound::Included(x) => *x + f32::EPSILON,
+            Bound::Excluded(x) => *x,
+            Bound::Unbounded => f32::MAX,
+        };
+
+        let mut result = Buffer::new_uninit_in(
+            self.seeds.context().clone(), len, MemAccess::new(readable, true), alloc
+        )?;
+
+        unsafe {
+            let _ = self.program.random_float(
+                len,
+                &mut self.seeds, &mut result,
+                origin, bound - origin,
+                [wgs], None, EMPTY
+            )?.wait()?;
+
+            return Ok(result.assume_init())
+        }
+    }
+
+    #[docfg(feature = "double")]
+    pub fn next_f64 (&mut self, len: usize, range: impl RangeBounds<f64>, readable: bool, alloc: bool) -> Result<Buffer<f64, C>> {
+        let wgs = self.seeds.len()?.min(len);
+
+        let origin = match range.start_bound() {
+            Bound::Included(x) => *x,
+            Bound::Excluded(x) => *x + f64::EPSILON,
+            Bound::Unbounded => f64::MIN,
+        };
+
+        let bound = match range.end_bound() {
+            Bound::Included(x) => *x + f64::EPSILON,
+            Bound::Excluded(x) => *x,
+            Bound::Unbounded => f64::MAX,
+        };
+
+        let mut result = Buffer::new_uninit_in(
+            self.seeds.context().clone(), len, MemAccess::new(readable, true), alloc
+        )?;
+
+        unsafe {
+            let _ = self.program.random_double(
+                len,
+                &mut self.seeds, &mut result,
+                origin, bound - origin,
+                [wgs], None, EMPTY
+            )?.wait()?;
+
+            return Ok(result.assume_init())
+        }
+    }
 }
 
 #[inline(always)]
@@ -221,7 +320,7 @@ mod test {
     fn add () -> Result<()> {
         let mut rng = Random::new(None)?;
         
-        let test = rng.next_i8(100, -2..2, true, false)?;
+        let test = rng.next_f64(100, 0.0..1., true, false)?;
         let test = test.read(.., EMPTY)?.wait()?;
         
         println!("{test:?}");

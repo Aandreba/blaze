@@ -1,4 +1,4 @@
-use std::{cell::{UnsafeCell}, sync::atomic::{AtomicU64, Ordering}, num::Wrapping, time::{SystemTime, UNIX_EPOCH}, mem::transmute, borrow::Borrow};
+use std::{cell::{UnsafeCell}, sync::atomic::{AtomicU64, Ordering}, num::Wrapping, time::{SystemTime, UNIX_EPOCH}, mem::transmute};
 use std::ops::{RangeBounds, Bound};
 
 use blaze_proc::docfg;
