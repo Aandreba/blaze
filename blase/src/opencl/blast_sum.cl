@@ -12,7 +12,7 @@
 // The main reduction kernel, performing the loading and the majority of the operation
 __kernel __attribute__((reqd_work_group_size(WGS1, 1, 1)))
 void Xasum(const int n,
-           const __global real* restrict xgm, const int x_offset, const int x_inc,
+           const __global real* restrict xgm,
            __global real* output) {
   __local real lm[WGS1];
   const int lid = get_local_id(0);
@@ -22,7 +22,7 @@ void Xasum(const int n,
   real acc = 0;
   int id = wgid*WGS1 + lid;
   while (id < n) {
-    real x = xgm[id*x_inc + x_offset];
+    real x = xgm[id];
     acc += x;
     id += WGS1*num_groups;
   }
@@ -45,7 +45,7 @@ void Xasum(const int n,
 // be launched with a single workgroup only.
 __kernel __attribute__((reqd_work_group_size(WGS2, 1, 1)))
 void XasumEpilogue(const __global real* restrict input,
-                   __global real* asum, const int asum_offset) {
+                   __global real* asum) {
   __local real lm[WGS2];
   const int lid = get_local_id(0);
   // Performs the first step of the reduction while loading the data
@@ -60,6 +60,6 @@ void XasumEpilogue(const __global real* restrict input,
   }
   // Computes the absolute value and stores the final result
   if (lid == 0) {
-    asum[asum_offset] = lm[0];
+    *asum = lm[0];
   }
 }

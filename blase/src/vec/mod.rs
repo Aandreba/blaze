@@ -3,21 +3,21 @@ flat_mod!(sum);
 
 use std::{mem::MaybeUninit, ops::{Deref, DerefMut}, fmt::Debug};
 use blaze_rs::{prelude::*, buffer::KernelPointer};
-use crate::{Real, include_prog};
+use crate::{Real, include_prog, max_work_group_size};
 use self::arith::*;
 
 #[blaze(VectorProgram<T: Real>)]
-#[link = include_prog::<T>(include_str!("../opencl/vec.cl"))]
+#[link = generate_vec_program::<T>()]
 pub extern "C" {
     fn add (n: usize, lhs: *const T, rhs: *const T, out: *mut MaybeUninit<T>);
     fn sub (n: usize, lhs: *const T, rhs: *const T, out: *mut MaybeUninit<T>);
     fn scal (n: usize, alpha: T, rhs: *const T, out: *mut MaybeUninit<T>);
     fn scal_down (n: usize, lhs: *const T, alpha: T, out: *mut MaybeUninit<T>);
     fn scal_down_inv (n: usize, alpha: T, rhs: *const T, out: *mut MaybeUninit<T>);
-    #[link_name = "sum"]
-    fn vec_sum (n: usize, lhs: *const T, out: *mut MaybeUninit<T>);
-    fn sum_cpu (n: usize, lhs: *const T, out: *mut MaybeUninit<T>);
-    fn sum_atomic (n: usize, lhs: *const u32, out: *mut MaybeUninit<u32>);
+    #[link_name = "Xasum"]
+    fn xasum (n: i32, x: *const T, output: *mut MaybeUninit<T>);
+    #[link_name = "XasumEpilogue"]
+    fn xasum_epilogue (input: *const MaybeUninit<T>, asum: *mut MaybeUninit<T>);
 }
 
 #[repr(transparent)]
@@ -195,4 +195,20 @@ unsafe impl<T: Copy + Sync> KernelPointer<T> for Vector<T> {
     fn complete (&self, event: &RawEvent) -> Result<()> {
         self.inner.complete(event)
     }
+}
+
+fn generate_vec_program<T: Real> () -> String {
+    // https://downloads.ti.com/mctools/esd/docs/opencl/execution/kernels-workgroups-workitems.html
+
+    format!(
+        "
+            {0}
+            #define WGS1 {1}
+            #define WGS2 {1}
+            {2}
+        ",
+        include_prog::<T>(include_str!("../opencl/vec.cl")),
+        usize::max(max_work_group_size().get() / 2, 2),
+        include_str!("../opencl/blast_sum.cl")
+    )
 }

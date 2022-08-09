@@ -33,6 +33,11 @@ impl BlaseContext {
 }
 
 #[inline(always)]
+pub fn max_work_group_size () -> NonZeroUsize {
+    BLASE_CTX.max_wgs
+}
+
+#[inline(always)]
 pub fn work_group_size (n: usize) -> usize {
     BLASE_CTX.max_wgs.get().min(n)
 }

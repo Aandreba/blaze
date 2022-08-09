@@ -1,32 +1,23 @@
-use std::{ops::Deref, mem::MaybeUninit};
+use std::mem::MaybeUninit;
+use std::{ops::Deref};
 use blaze_rs::prelude::*;
-use crate::{Real, utils::DerefCell, work_group_size};
+use crate::{Real, max_work_group_size, utils::DerefCell};
 use super::Vector;
 
-pub struct Sum< T: Copy, LHS> {
-    inner: super::VecSum<LHS, DerefCell<Buffer<MaybeUninit<T>>>, T>
+pub struct Sum<T: Copy, LHS> {
+    read: ReadBuffer<MaybeUninit<T>, DerefCell<Buffer<MaybeUninit<T>>>>,
+    lhs: LHS
 }
 
-pub struct SumWithSrc< T: Copy, LHS> {
-    inner: super::VecSum<LHS, DerefCell<Buffer<MaybeUninit<T>>>, T>
-}
+#[repr(transparent)]
+pub struct SumWithSrc<T: Copy, LHS> (Sum<T, LHS>);
 
-impl<T: Real, LHS: Deref<Target = Vector<T>>> Sum<T, LHS> {
-    #[inline]
-    pub fn new_custom (lhs: LHS, wait: impl Into<WaitList>) -> Result<Self> {
-        let len = lhs.len()?;
-        let result = Buffer::new_uninit(1, MemAccess::READ_WRITE, false).map(DerefCell)?;
-        let inner = unsafe {
-            T::vec_program().vec_sum(len, lhs, result, [work_group_size(len)], None, wait)?
-        };
-        Ok(Self { inner })
-    }
-
+impl<T: Copy, LHS> Sum<T, LHS> {
     /// Returns an event that will resolve to the operations result, and also the will return the references to the oprands.
     /// Usefull when, for example, those references are [`Arc`s](std::sync::Arc) or [`MutexGuard`s](std::sync::MutexGuard)
     #[inline(always)]
     pub fn with_src (self) -> SumWithSrc<T, LHS> {
-        SumWithSrc { inner: self.inner }
+        SumWithSrc(self)
     }
 }
 
@@ -35,47 +26,70 @@ impl<T: Real, LHS: Deref<Target = Vector<T>>> Event for Sum<T, LHS> {
 
     #[inline(always)]
     fn as_raw (&self) -> &RawEvent {
-        self.inner.as_raw()
+        self.read.as_raw()
     }
 
-    #[inline]
+    #[inline(always)]
     fn consume (self, err: Option<Error>) -> Result<Self::Output> {
-        let (_, out) = self.inner.consume(err)?;
+        let v = self.read.consume(err)?;
         unsafe {
-            let out : Buffer<T> = out.0.assume_init();
-            let v = out.read(0..1, EMPTY)?.wait()?;
-            Ok(*v.get_unchecked(0))
+            Ok(v.get_unchecked(0).assume_init())
         }
     }
-}
+} 
 
 impl<T: Real, LHS: Deref<Target = Vector<T>>> Event for SumWithSrc<T, LHS> {
     type Output = (T, LHS);
 
     #[inline(always)]
     fn as_raw (&self) -> &RawEvent {
-        self.inner.as_raw()
+        self.0.as_raw()
     }
 
-    #[inline]
+    #[inline(always)]
     fn consume (self, err: Option<Error>) -> Result<Self::Output> {
-        let (lhs, out) = self.inner.consume(err)?;
+        let v = self.0.read.consume(err)?;
         unsafe {
-            let out : Buffer<T> = out.0.assume_init();
-            let v = out.read(0..1, EMPTY)?.wait()?;
-            Ok((*v.get_unchecked(0), lhs))
+            Ok((v.get_unchecked(0).assume_init(), self.0.lhs))
         }
     }
-}
+} 
 
 impl<T: Real> Vector<T> {
     #[inline(always)]
     pub fn sum (&self, wait: impl Into<WaitList>) -> Result<Sum<T, &Self>> {
         Self::sum_by_deref(self, wait)
     }
-
-    #[inline(always)]
+ 
     pub fn sum_by_deref<LHS: Deref<Target = Self>> (this: LHS, wait: impl Into<WaitList>) -> Result<Sum<T, LHS>> {
-        Sum::new_custom(this, wait)
+        let wgs = usize::max(max_work_group_size().get() / 2, 2);
+        let n = this.len()?;
+
+        let temp_size = 2 * wgs;
+        let mut temp_buffer = Buffer::<T>::new_uninit(temp_size, MemAccess::default(), false)?;
+        let mut asum = Buffer::<T>::new_uninit(1, MemAccess::WRITE_ONLY, false)?;
+
+        let (evt, (lhs, _)) : (RawEvent, (LHS, _)) = unsafe {
+            let evt = T::vec_program().xasum(
+                n as i32, 
+                this,
+                &mut temp_buffer,
+                [wgs * temp_size], [wgs], 
+                wait
+            )?;
+
+            (evt.to_raw(), evt.consume(None)?)
+        };
+
+        let (evt, _) : (RawEvent, _) = unsafe {
+            let evt = T::vec_program().xasum_epilogue(&mut temp_buffer, &mut asum, [wgs], [wgs], WaitList::from_event(evt))?;
+            (evt.to_raw(), evt.consume(None)?)
+        };
+
+        let read = Buffer::read_by_deref(
+            DerefCell(asum), .., WaitList::from_event(evt)
+        )?;
+
+        Ok(Sum { read, lhs })
     }
 }
