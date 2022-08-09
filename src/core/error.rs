@@ -1,4 +1,4 @@
-use std::{backtrace::Backtrace, sync::Arc, fmt::{Display, Debug}};
+use std::{sync::Arc, fmt::{Display, Debug}};
 use blaze_proc::error;
 pub type Result<T> = ::core::result::Result<T, Error>;
 
@@ -9,17 +9,17 @@ pub struct Error {
     pub desc: Option<Arc<str>>,
     #[cfg_attr(docsrs, doc(cfg(debug_assertions)))]
     #[cfg(debug_assertions)]
-    pub backtrace: Arc<Backtrace>
+    pub backtrace: Arc<std::backtrace::Backtrace>
 }
 
 impl Error {
     #[inline(always)]
     pub fn new (ty: ErrorType, desc: impl ToString) -> Self {
-        Self::from_parts(ty, Some(Arc::from(desc.to_string())), Arc::new(Backtrace::capture()))
+        Self::from_parts(ty, Some(Arc::from(desc.to_string())), #[cfg(debug_assertions)] Arc::new(std::backtrace::Backtrace::capture()))
     }
 
     #[inline(always)]
-    pub fn from_parts (ty: ErrorType, desc: Option<Arc<str>>, #[cfg(debug_assertions)] backtrace: Arc<Backtrace>) -> Self {
+    pub fn from_parts (ty: ErrorType, desc: Option<Arc<str>>, #[cfg(debug_assertions)] backtrace: Arc<std::backtrace::Backtrace>) -> Self {
         Self { 
             ty,
             desc,
@@ -34,7 +34,7 @@ impl Error {
             ty,
             desc: None,
             #[cfg(debug_assertions)]
-            backtrace: Arc::new(Backtrace::capture())
+            backtrace: Arc::new(std::backtrace::Backtrace::capture())
         }
     }
 }

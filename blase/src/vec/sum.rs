@@ -53,7 +53,11 @@ impl<T: Real, LHS: Deref<Target = Vector<T>>> Event for SumWithSrc<T, LHS> {
             Ok((v.get_unchecked(0).assume_init(), self.0.lhs))
         }
     }
-} 
+}
+
+lazy_static! {
+    static ref WGS : usize = usize::max(max_work_group_size().get() / 2, 2);
+}
 
 impl<T: Real> Vector<T> {
     #[inline(always)]
@@ -62,7 +66,7 @@ impl<T: Real> Vector<T> {
     }
  
     pub fn sum_by_deref<LHS: Deref<Target = Self>> (this: LHS, wait: impl Into<WaitList>) -> Result<Sum<T, LHS>> {
-        let wgs = usize::max(max_work_group_size().get() / 2, 2);
+        let wgs = *WGS;
         let n = this.len()?;
 
         let temp_size = 2 * wgs;

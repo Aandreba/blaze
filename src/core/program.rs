@@ -184,7 +184,7 @@ impl RawProgram {
             #[cfg(all(debug_assertions, feature = "cl1_2"))]
             None => unreachable!(),
             #[cfg(all(not(debug_assertions), feature = "cl1_2"))]
-            None => unsafe { unreachable_unchecked() },
+            None => unsafe { core::hint::unreachable_unchecked() },
             #[cfg(not(feature = "cl1_2"))]
             None => core::ptr::null()
         };
