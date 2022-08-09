@@ -1,8 +1,9 @@
-//typedef uint usize;
+typedef uint usize;
 
 #define MULTIPLIER 0x5DEECE66Dl
 #define ADDEND 0xBl
 #define MASK() (1l << 48) - 1;
+#define FLOAT_UNIT() ((float)(1 << 24));
 
 static inline uint next (const usize bits, global ulong* seed) {
     ulong next = (*seed * MULTIPLIER + ADDEND) & MASK();
@@ -65,6 +66,36 @@ kernel void random_long (const usize n, global ulong* seed, global long* out, co
         out[i] = (out[i] % delta) + origin;
     }
 }
+
+#if HALF
+    #define HALF_UNIT() ((half)(1 << 11));
+
+    kernel void random_half (const usize n, global ulong* seed, global half* out, const half origin, const half delta) {
+        for (usize i = get_global_id(0); i < n; i += get_global_size(0)) {
+            half v = (half)next(11, &seed[get_global_id(0)]) / HALF_UNIT();
+            out[i] = (v * delta) + origin;
+        }
+    }
+#endif
+
+kernel void random_float (const usize n, global ulong* seed, global float* out, const float origin, const float delta) {
+    for (usize i = get_global_id(0); i < n; i += get_global_size(0)) {
+        float v = (float)next(24, &seed[get_global_id(0)]) / FLOAT_UNIT();
+        out[i] = (v * delta) + origin;
+    }
+}
+
+#if DOUBLE
+    #define DOUBLE_UNIT() ((double)(1l << 53));
+
+    kernel void random_double (const usize n, global ulong* seed, global double* out, const double origin, const double delta) {
+        for (usize i = get_global_id(0); i < n; i += get_global_size(0)) {
+            ulong bits = ((ulong)next(26, &seed[get_global_id(0)]) << 27) | (ulong)next(27, &seed[get_global_id(0)]);
+            double v = (double)bits / DOUBLE_UNIT();
+            out[i] = (v * delta) + origin;
+        }
+    }
+#endif
 
 // LOOP RANDOMS
 kernel void loop_random_uchar (const usize n, global ulong* seed, global uchar* out, const uchar origin, const uchar bound) {

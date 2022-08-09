@@ -19,6 +19,8 @@ extern "C" {
     fn random_int (n: usize, seed: *mut u64, out: *mut MaybeUninit<i32>, origin: i32, delta: i32);
     fn random_long (n: usize, seed: *mut u64, out: *mut MaybeUninit<i64>, origin: i64, delta: i64);
 
+    #[cfg(feature = "")]
+
     fn loop_random_uchar (n: usize, seed: *mut u64, out: *mut MaybeUninit<u8>, origin: u8, bound: u8);
     fn loop_random_ushort (n: usize, seed: *mut u64, out: *mut MaybeUninit<u16>, origin: u16, bound: u16);
     fn loop_random_uint (n: usize, seed: *mut u64, out: *mut MaybeUninit<u32>, origin: u32, bound: u32);
@@ -173,49 +175,36 @@ impl<C: Context + Clone> Random<C> {
         i32 as next_i32 => (random_int, loop_random_int),
         i64 as next_i64 => (random_long, loop_random_long)
     }
-
-    /*
-    #[inline(always)]
-    pub fn next_u32 (&mut self, len: usize, readable: bool, alloc: bool) -> Result<Buffer<u32, C>> {
-        let wgs = self.seeds.len()?.min(len);
-
-        let mut result = Buffer::new_uninit_in(
-            self.seeds.context().clone(), len, MemAccess::new(readable, true), alloc
-        )?;
-
-        unsafe {
-            let _ = self.program.random_uint(
-                len, &mut self.seeds, &mut result, 
-                [wgs], None, EMPTY
-            )?.wait()?;
-
-            Ok(result.assume_init())
-        }
-    }
-
-    #[inline(always)]
-    pub fn next_i32 (&mut self, len: usize, access: MemAccess, alloc: bool) -> Result<Buffer<i32, C>> {
-        let wgs = self.seeds.len()?.min(len);
-
-        let mut result = Buffer::new_uninit_in(
-            self.seeds.context().clone(), len, access, alloc
-        )?;
-
-        unsafe {
-            let _ = self.program.random_int(
-                len, &mut self.seeds, &mut result, 
-                [wgs], None, EMPTY
-            )?.wait()?;
-
-            Ok(result.assume_init())
-        }
-    }*/
 }
 
 #[inline(always)]
 fn generate_program (src: &str) -> String {
+    cfg_if::cfg_if! {
+        if #[cfg(all(feature = "half", feature = "double"))] {
+            const EXTENSIONS : &'static str = "
+                #pragma OPENCL EXTENSION cl_khr_fp64: enable
+                #pragma OPENCL EXTENSION cl_khr_fp16: enable
+                #define HALF true
+                #define DOUBLE true
+            ";
+        } else if #[cfg(feature = "half")] {
+            const EXTENSIONS : &'static str = "
+                #pragma OPENCL EXTENSION cl_khr_fp16: enable
+                #define HALF true
+            ";
+        } else if #[cfg(feature = "double")] {
+            const EXTENSIONS : &'static str = "
+                #pragma OPENCL EXTENSION cl_khr_fp64: enable
+                #define DOUBLE true
+            ";
+        } else {
+            const EXTENSIONS : &'static str = "";
+        }
+    }
+
     format!(
-        "{}{src}",
+        "{}{}{src}",
+        EXTENSIONS,
         define_usize()
     )
 }
