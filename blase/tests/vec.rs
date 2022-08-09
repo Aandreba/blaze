@@ -1,6 +1,6 @@
 use blase::vec::Vector;
 use blaze_proc::global_context;
-use blaze_rs::prelude::{Result, SimpleContext, EMPTY, Event, Global};
+use blaze_rs::prelude::{Result, SimpleContext, EMPTY, Event};
 
 #[global_context]
 static CTX : SimpleContext = SimpleContext::default();

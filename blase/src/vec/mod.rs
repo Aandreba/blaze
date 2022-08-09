@@ -17,6 +17,7 @@ pub extern "C" {
     #[link_name = "sum"]
     fn vec_sum (n: usize, lhs: *const T, out: *mut MaybeUninit<T>);
     fn sum_cpu (n: usize, lhs: *const T, out: *mut MaybeUninit<T>);
+    fn sum_atomic (n: usize, lhs: *const u32, out: *mut MaybeUninit<u32>);
 }
 
 #[repr(transparent)]

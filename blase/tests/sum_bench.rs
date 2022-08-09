@@ -1,9 +1,21 @@
-use std::{time::{Duration, Instant}, ops::{Deref}, fs::File, io::Write};
+use std::{time::{Duration, Instant}, ops::{Deref}, fs::File, io::Write, mem::MaybeUninit};
 use blase::{Real, utils::DerefCell, work_group_size, random::Random};
-use blaze_proc::global_context;
+use blaze_proc::{global_context, blaze};
 use blaze_rs::prelude::*;
+use once_cell::sync::Lazy;
+use rayon::prelude::{IntoParallelIterator, ParallelIterator};
 
-type Number = f32;
+type Number = u32;
+static BLAST : Lazy<BlastSum> = Lazy::new(|| BlastSum::new(None).unwrap());
+
+#[blaze(BlastSum)]
+#[link = include_str!("../src/opencl/blast_sum.cl")]
+extern "C" {
+    #[link_name = "Xasum"]
+    fn xasum (n: i32, x: *const Number, x_offset: i32, x_inc: i32, output: *mut MaybeUninit<Number>);
+    #[link_name = "XasumEpilogue"]
+    fn xasum_epilogue (input: *const MaybeUninit<Number>, asum: *mut MaybeUninit<Number>, assum_offset: i32);
+}
 
 fn full_cpu_sum_st (lhs: &[Number]) -> (Number, Duration) {
     let now = Instant::now();
@@ -13,34 +25,15 @@ fn full_cpu_sum_st (lhs: &[Number]) -> (Number, Duration) {
 }
 
 fn full_cpu_sum_mt (lhs: &[Number]) -> (Number, Duration) {
-    let threads = std::thread::available_parallelism().unwrap();
     let now = Instant::now();
-    
-    let v = std::thread::scope(|s| {
-        let handles = lhs
-            .chunks(threads.get())
-            .map(|x| s.spawn(move || x.into_iter().sum::<Number>()))
-            .collect::<Vec<_>>();
-        
-        let mut v = 0 as Number;
-        for handle in handles {
-            v += handle.join().unwrap();
-        }
-
-        return v
-    });
-
+    let v = lhs.into_par_iter()
+        .copied()
+        .sum();
     let dur = now.elapsed();
     (v, dur)
 }
 
-/*
-RAYON MT (suprisingly slow)
-let v = lhs.into_par_iter()
-        .copied()
-        .sum();
-*/
-
+// CURRENTLY NOT WORKING CORRECTLY
 fn full_gpu_sum (lhs: &Buffer<Number>) -> Result<(Number, Duration)> {
     let len = lhs.len()?;
     let wgs = work_group_size(len);
@@ -48,6 +41,50 @@ fn full_gpu_sum (lhs: &Buffer<Number>) -> Result<(Number, Duration)> {
     let result = Buffer::<Number>::new_uninit(1, MemAccess::default(), false).map(DerefCell)?;
     let evt = unsafe {
         <Number as Real>::vec_program().vec_sum(len, lhs, result, [wgs], None, EMPTY)?
+    };
+
+    let ((_, out), kernel_dur) : (_, Duration) = evt.wait_with_duration()?;
+    unsafe {
+        let out : Buffer<Number> = out.0.assume_init();
+        let (v, read_dur) = out.read(.., EMPTY)?.wait_with_duration()?;
+        Ok((v[0], kernel_dur + read_dur))
+    }
+}
+
+fn full_gpu_blast_sum (lhs: &Buffer<Number>) -> Result<(Number, Duration)> {
+    const WGS1 : usize = 64;
+    const WGS2 : usize = 64;
+
+    let n = lhs.len()?;
+    let temp_size = 2 * WGS2;
+    let mut temp_buffer = Buffer::<Number>::new_uninit(2 * WGS2, MemAccess::default(), false)?;
+    
+    let evt = unsafe {
+        BLAST.xasum(n as i32, lhs, 0, 1, &mut temp_buffer, [WGS1 * temp_size], [WGS1], EMPTY)?
+    };
+
+    let (_, kernel_dur) : (_, Duration) = evt.wait_with_duration()?;
+    let mut asum = Buffer::new_uninit(1, MemAccess::WRITE_ONLY, false)?;
+
+    let evt2 = unsafe {
+        BLAST.xasum_epilogue(&mut temp_buffer, &mut asum, 0, [WGS2], [WGS2], EMPTY)?
+    };
+
+    let (_, epilogue_dur) = evt2.wait_with_duration()?;
+    let (v, read_dur) = unsafe {
+        asum.assume_init().read(.., EMPTY)?.wait_with_duration()?
+    };
+
+    Ok((v[0], kernel_dur + epilogue_dur + read_dur))
+}
+
+fn full_gpu_atomic_sum (lhs: &Buffer<Number>) -> Result<(Number, Duration)> {
+    let len = lhs.len()?;
+    let wgs = work_group_size(len);
+
+    let result = Buffer::<Number>::new_uninit(1, MemAccess::default(), false).map(DerefCell)?;
+    let evt = unsafe {
+        <Number as Real>::vec_program().sum_atomic(len, lhs, result, [wgs], None, EMPTY)?
     };
 
     let ((_, out), kernel_dur) : (_, Duration) = evt.wait_with_duration()?;
@@ -97,17 +134,22 @@ fn bench () -> Result<()> {
     let mut file = File::options()
         .create(true)
         .write(true)
-        .open("sum_bench.csv")
+        .open("sum_bench_u32_ext.csv")
         .unwrap();
 
-    file.write_all(b"VALUES, FULL GPU, FULL CPU, FULL CPU MT, GPU-CPU, GPU-CPU MT\n").unwrap();
+    file.write_all(b"VALUES, FULL GPU, FULL CPU, FULL CPU MT, GPU-CPU, GPU-CPU MT, FULL GPU ATOMIC\n").unwrap();
 
-    for i in 1..=250 {
+    for i in 1..=500 {
         let len = 100 * i;
-        let buffer = rng.next_f32(len, 0f32..1f32, true, false)?;
+        let max_value = u32::MAX / (len as u32);
+        assert!(max_value > 0);
+
+        let buffer = rng.next_u32(len, ..=max_value, true, false)?;
         let slice = buffer.map(.., EMPTY)?.wait()?;
 
-        let gpu_time = bench_mean_gpu(&buffer, full_gpu_sum)?;
+        let gpu_time = bench_mean_gpu(&buffer, full_gpu_blast_sum)?;
+        //let gpu_time = bench_mean_gpu(&buffer, full_gpu_sum)?;
+        let gpu_atomic_time = bench_mean_gpu(&buffer, full_gpu_atomic_sum)?;
         let cpu_time_st = bench_mean_cpu(&slice, full_cpu_sum_st);
         let cpu_time_mt = bench_mean_cpu(&slice, full_cpu_sum_mt);
         let gpu_cpu_time = bench_mean_gpu(&buffer, gpu_cpu_sum_st)?;
@@ -115,12 +157,31 @@ fn bench () -> Result<()> {
 
         file.write_all(
             format!(
-                "{len},{gpu_time},{cpu_time_st},{cpu_time_mt},{gpu_cpu_time},{gpu_cpu_time_mt}\n",
+                "{len},{gpu_time},{cpu_time_st},{cpu_time_mt},{gpu_cpu_time},{gpu_cpu_time_mt},{gpu_atomic_time}\n",
             ).as_bytes()
         ).unwrap();
+
+        let pct = 100f32 * (i as f32) / 500f32;
+        println!("{pct:.2}%"); 
     }
 
     file.flush().unwrap();
+    Ok(())
+}
+
+#[test]
+fn test_atomic () -> Result<()> {
+    const LEN : usize = 100;
+    const MAX_VALUE : u32 = u32::MAX / (LEN as u32);
+    let mut rng = Random::new(None)?;
+
+    let buffer = rng.next_u32(LEN, ..=MAX_VALUE, true, false)?;
+    let slice = buffer.map(.., EMPTY)?.wait()?;
+
+    let (cpu, _) = full_cpu_sum_st(&slice);
+    let (gpu, _) = full_gpu_blast_sum(&buffer)?;
+
+    assert_eq!(cpu, gpu);
     Ok(())
 }
 

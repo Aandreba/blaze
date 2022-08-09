@@ -14,6 +14,7 @@ pub trait Real: 'static + Copy + Send + Sync + Unpin {
     const EXTENSIONS : &'static [&'static str];
     const PRECISION : u32;
     const FLOAT : bool;
+    const SIGNED : bool;
 
     fn vec_program () -> &'static VectorProgram<Self>;
 }
@@ -24,6 +25,7 @@ impl Real for ::half::f16 {
     const EXTENSIONS : &'static [&'static str] = &["cl_khr_fp16"];
     const PRECISION : u32 = 16;
     const FLOAT : bool = true;
+    const SIGNED : bool = true;
     
     #[inline(always)]
     fn vec_program () -> &'static VectorProgram<Self> { &half }
@@ -34,6 +36,7 @@ impl Real for f32 {
     const EXTENSIONS : &'static [&'static str] = &[];
     const PRECISION : u32 = 32;
     const FLOAT : bool = true;
+    const SIGNED : bool = true;
 
     #[inline(always)]
     fn vec_program () -> &'static VectorProgram<Self> { &float }
@@ -45,6 +48,7 @@ impl Real for f64 {
     const EXTENSIONS : &'static [&'static str] = &["cl_khr_fp64"];
     const PRECISION : u32 = 64;
     const FLOAT : bool = true;
+    const SIGNED : bool = true;
 
     #[inline(always)]
     fn vec_program () -> &'static VectorProgram<Self> { &double }
@@ -60,6 +64,7 @@ macro_rules! impl_int {
                 const EXTENSIONS : &'static [&'static str] = &[];
                 const PRECISION : u32 = <$i>::BITS;
                 const FLOAT : bool = false;
+                const SIGNED : bool = stringify!($i).as_bytes()[0] == b'i';
                 
                 #[inline(always)]
                 fn vec_program () -> &'static VectorProgram<Self> { &$name }

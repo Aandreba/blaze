@@ -33,10 +33,12 @@ pub(crate) fn include_prog<T: Real> (src: &str) -> String {
         "{exts}
         #define PRECISION {}
         #define ISFLOAT {}
-        {3}
+        #define ISSIGNED {}
+        {4}
         typedef {} real;
         {src}",
         T::PRECISION,
+        T::SIGNED,
         T::FLOAT,
         T::CL_NAME,
         define_usize()
