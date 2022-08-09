@@ -128,6 +128,10 @@ const EPOCHS : u128 = 100;
 #[global_context]
 static CTX : SimpleContext = SimpleContext::default();
 
+/*
+    TODO OPTIMIZE FULL GPU ATOMIC
+*/
+
 #[test]
 fn bench () -> Result<()> {
     let mut rng = Random::new(None)?;
