@@ -4,7 +4,7 @@ use std::{ops::Deref};
 use blaze_rs::event::various::Map;
 use blaze_rs::prelude::*;
 use crate::{Real, utils::DerefCell};
-use super::{EucVec, WGS};
+use super::{EucVec, sum::WGS};
 
 pub type Magn<T, LHS> = Map<Dot<T, LHS, LHS>, fn(T) -> T>;
 pub type Unit<T, LHS> = Map<DotWithSrc<T, LHS, LHS>, fn((T, LHS, LHS)) -> EucVec<T>>;
@@ -13,6 +13,39 @@ pub struct Dot<T: Copy, LHS, RHS> {
     read: ReadBuffer<MaybeUninit<T>, DerefCell<Buffer<MaybeUninit<T>>>>,
     lhs: LHS,
     rhs: RHS
+}
+
+impl<T: Real, LHS: Deref<Target = EucVec<T>>, RHS: Deref<Target = EucVec<T>>> Dot<T, LHS, RHS> {
+    pub unsafe fn new_custom (lhs: LHS, rhs: RHS, n: usize, wait: impl Into<WaitList>) -> Result<Self> {
+        let wgs = WGS.get();
+        let temp_size = 2 * wgs;
+        let mut temp_buffer = Buffer::<T>::new_uninit(temp_size, MemAccess::default(), false)?;
+        let mut asum = Buffer::<T>::new_uninit(1, MemAccess::WRITE_ONLY, false)?;
+
+        let (evt, (lhs, rhs, _)) : (RawEvent, (LHS, RHS, _)) = {
+            let evt = T::vec_program().xdot(
+                n as i32, 
+                lhs,
+                rhs,
+                &mut temp_buffer,
+                [wgs * temp_size], [wgs],
+                wait
+            )?;
+
+            (evt.to_raw(), evt.consume(None)?)
+        };
+
+        let (evt, _) : (RawEvent, _) = {
+            let evt = T::vec_program().xasum_epilogue(&mut temp_buffer, &mut asum, [wgs], [wgs], WaitList::from_event(evt))?;
+            (evt.to_raw(), evt.consume(None)?)
+        };
+
+        let read = Buffer::read_by_deref(
+            DerefCell(asum), .., WaitList::from_event(evt)
+        )?;
+
+        Ok(Dot { read, lhs, rhs })
+    }
 }
 
 #[repr(transparent)]
@@ -63,8 +96,13 @@ impl<T: Real, LHS: Deref<Target = EucVec<T>>, RHS: Deref<Target = EucVec<T>>> Ev
 
 impl<T: Real> EucVec<T> {
     #[inline(always)]
-    pub fn dot<RHS: Deref<Target = Self>> (&self, rhs: RHS, wait: impl Into<WaitList>) -> Result<Dot<T, &Self, RHS>> {
+    pub fn dot <RHS: Deref<Target = Self>> (&self, rhs: RHS, wait: impl Into<WaitList>) -> Result<Dot<T, &Self, RHS>> {
         Self::dot_by_deref(self, rhs, wait)
+    }
+    
+    #[inline(always)]
+    pub unsafe fn dot_unchecked <RHS: Deref<Target = Self>> (&self, rhs: RHS, wait: impl Into<WaitList>) -> Result<Dot<T, &Self, RHS>> {
+        Self::dot_unchecked_by_deref(self, rhs, wait)
     }
 
     #[inline(always)]
@@ -77,42 +115,35 @@ impl<T: Real> EucVec<T> {
         Self::magn_by_deref(self, wait)
     }
 
+    #[inline(always)]
     pub fn dot_by_deref<LHS: Deref<Target = Self>, RHS: Deref<Target = Self>> (this: LHS, rhs: RHS, wait: impl Into<WaitList>) -> Result<Dot<T, LHS, RHS>> {
-        let wgs = *WGS;
-        let n = this.len()?;
+        let len = this.len()?;
+        let rhs_len = rhs.len()?;
 
-        let temp_size = 2 * wgs;
-        let mut temp_buffer = Buffer::<T>::new_uninit(temp_size, MemAccess::default(), false)?;
-        let mut asum = Buffer::<T>::new_uninit(1, MemAccess::WRITE_ONLY, false)?;
+        if len != rhs_len {
+            return Err(Error::new(
+                ErrorType::InvalidBufferSize,
+                format!("Vectors must have the same length ({len} v. {rhs_len})")
+            ));
+        }
 
-        let (evt, (lhs, rhs, _)) : (RawEvent, (LHS, RHS, _)) = unsafe {
-            let evt = T::vec_program().xdot(
-                n as i32, 
-                this,
-                rhs,
-                &mut temp_buffer,
-                [wgs * temp_size], [wgs],
-                wait
-            )?;
-
-            (evt.to_raw(), evt.consume(None)?)
-        };
-
-        let (evt, _) : (RawEvent, _) = unsafe {
-            let evt = T::vec_program().xasum_epilogue(&mut temp_buffer, &mut asum, [wgs], [wgs], WaitList::from_event(evt))?;
-            (evt.to_raw(), evt.consume(None)?)
-        };
-
-        let read = Buffer::read_by_deref(
-            DerefCell(asum), .., WaitList::from_event(evt)
-        )?;
-
-        Ok(Dot { read, lhs, rhs })
+        unsafe {
+            Dot::new_custom(this, rhs, len, wait)
+        }
+    }
+    
+    #[inline(always)]
+    pub unsafe fn dot_unchecked_by_deref<LHS: Deref<Target = Self>, RHS: Deref<Target = Self>> (this: LHS, rhs: RHS, wait: impl Into<WaitList>) -> Result<Dot<T, LHS, RHS>> {
+        let len = this.len()?;
+        Dot::new_custom(this, rhs, len, wait)
     }
 
     #[inline(always)]
     pub fn square_magn_by_deref<LHS: Clone + Deref<Target = Self>> (this: LHS, wait: impl Into<WaitList>) -> Result<Dot<T, LHS, LHS>> {
-        Self::dot_by_deref(this.clone(), this, wait)
+        // SAFETY: This is safe because we are cloning a reference so the underlying vector is the same.
+        unsafe {
+            Self::dot_unchecked_by_deref(this.clone(), this, wait)
+        }
     }
 
     #[inline(always)]

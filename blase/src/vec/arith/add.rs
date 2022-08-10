@@ -1,7 +1,7 @@
 use std::{mem::MaybeUninit, ops::Deref};
 use blaze_rs::prelude::*;
 use crate::{Real, utils::DerefCell, work_group_size, vec::EucVec};
-use crate::vec::Add;
+use crate::vec::program::Add;
 
 type OutputVec<T> = DerefCell<EucVec<MaybeUninit<T>>>;
 

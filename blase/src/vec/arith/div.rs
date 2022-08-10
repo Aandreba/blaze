@@ -4,7 +4,7 @@ use blaze_rs::prelude::*;
 use crate::{Real, work_group_size};
 use blaze_proc::docfg;
 use crate::{utils::DerefCell, vec::EucVec};
-use crate::vec::{ScalDown, ScalDownInv};
+use crate::vec::program::{ScalDown, ScalDownInv};
 
 type OutputVec<T> = DerefCell<EucVec<MaybeUninit<T>>>;
 

@@ -1,4 +1,5 @@
 use std::mem::MaybeUninit;
+use std::num::NonZeroUsize;
 use std::{ops::Deref};
 use blaze_rs::prelude::*;
 use crate::{Real, max_work_group_size, utils::DerefCell};
@@ -56,7 +57,11 @@ impl<T: Real, LHS: Deref<Target = EucVec<T>>> Event for SumWithSrc<T, LHS> {
 }
 
 lazy_static! {
-    pub(super) static ref WGS : usize = usize::max(max_work_group_size().get() / 2, 2);
+    pub(super) static ref WGS : NonZeroUsize = {
+        NonZeroUsize::new(
+            max_work_group_size().get() / 2
+        ).unwrap_or_else(|| NonZeroUsize::MIN)
+    };
 }
 
 impl<T: Real> EucVec<T> {
@@ -66,7 +71,7 @@ impl<T: Real> EucVec<T> {
     }
  
     pub fn sum_by_deref<LHS: Deref<Target = Self>> (this: LHS, wait: impl Into<WaitList>) -> Result<Sum<T, LHS>> {
-        let wgs = *WGS;
+        let wgs = WGS.get();
         let n = this.len()?;
 
         let temp_size = 2 * wgs;

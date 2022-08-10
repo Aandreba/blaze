@@ -1,5 +1,5 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
-#![feature(exclusive_range_pattern, int_roundings, new_uninit)]
+#![feature(nonzero_min_max, exclusive_range_pattern, int_roundings, new_uninit)]
 
 macro_rules! flat_mod {
     ($($i:ident),+) => {
