@@ -1,5 +1,5 @@
 pub mod arith;
-flat_mod!(sum);
+flat_mod!(sum, dot);
 
 use std::{mem::MaybeUninit, ops::{Deref, DerefMut}, fmt::Debug};
 use blaze_rs::{prelude::*, buffer::KernelPointer};
@@ -18,23 +18,26 @@ pub extern "C" {
     fn xasum (n: i32, x: *const T, output: *mut MaybeUninit<T>);
     #[link_name = "XasumEpilogue"]
     fn xasum_epilogue (input: *const MaybeUninit<T>, asum: *mut MaybeUninit<T>);
+    #[link_name = "Xdot"]
+    fn xdot (n: i32, x: *const T, y: *const T, output: *mut MaybeUninit<T>);
 }
 
+/// Euclidian vector
 #[repr(transparent)]
-pub struct Vector<T: Copy> {
+pub struct EucVec<T: Copy> {
     inner: Buffer<T>
 }
 
-impl<T: Copy> Vector<T> {
+impl<T: Copy> EucVec<T> {
     pub fn new (v: &[T], alloc: bool) -> Result<Self> {
         let inner = Buffer::new(v, MemAccess::default(), alloc)?;
         Ok(Self { inner })
     }
 
     #[inline(always)]
-    pub fn new_uninit (len: usize, alloc: bool) -> Result<Vector<MaybeUninit<T>>> {
+    pub fn new_uninit (len: usize, alloc: bool) -> Result<EucVec<MaybeUninit<T>>> {
         let inner = Buffer::<T, _>::new_uninit(len, MemAccess::default(), alloc)?;
-        Ok(Vector { inner })
+        Ok(EucVec { inner })
     }
 
     #[inline(always)]
@@ -49,7 +52,7 @@ impl<T: Copy> Vector<T> {
 }
 
 // ADDITION
-impl<T: Real> Vector<T> {
+impl<T: Real> EucVec<T> {
     #[inline(always)]
     pub fn add<RHS: Deref<Target = Self>> (&self, other: RHS, wait: impl Into<WaitList>) -> Result<Addition<T, &'_ Self, RHS>> {
         Self::add_by_deref(self, other, wait)
@@ -80,7 +83,7 @@ impl<T: Real> Vector<T> {
 }
 
 // SUBTRACTION
-impl<T: Real> Vector<T> {
+impl<T: Real> EucVec<T> {
     #[inline(always)]
     pub fn sub<RHS: Deref<Target = Self>> (&self, other: RHS, wait: impl Into<WaitList>) -> Result<Subtraction<T, &'_ Self, RHS>> {
         Self::sub_by_deref(self, other, wait)
@@ -111,7 +114,7 @@ impl<T: Real> Vector<T> {
 }
 
 // MULTIPLICATION
-impl<T: Real> Vector<T> {
+impl<T: Real> EucVec<T> {
     #[inline(always)]
     pub fn mul (&self, alpha: T, wait: impl Into<WaitList>) -> Result<Scale<T, &'_ Self>> {
         Self::mul_by_deref(alpha, self, wait)
@@ -127,7 +130,7 @@ impl<T: Real> Vector<T> {
 }
 
 // DIVISION
-impl<T: Real> Vector<T> {
+impl<T: Real> EucVec<T> {
     #[inline(always)]
     pub fn div (&self, alpha: T, wait: impl Into<WaitList>) -> Result<Division<T, &'_ Self>> {
         Self::div_by_deref(self, alpha, wait)
@@ -155,14 +158,14 @@ impl<T: Real> Vector<T> {
     }
 }
 
-impl<T: Copy> Vector<MaybeUninit<T>> {
+impl<T: Copy> EucVec<MaybeUninit<T>> {
     #[inline(always)]
-    pub unsafe fn assume_init (self) -> Vector<T> {
-        Vector { inner: self.inner.assume_init() }
+    pub unsafe fn assume_init (self) -> EucVec<T> {
+        EucVec { inner: self.inner.assume_init() }
     } 
 }
 
-impl<T: Copy> Deref for Vector<T> {
+impl<T: Copy> Deref for EucVec<T> {
     type Target = Buffer<T>;
 
     #[inline(always)]
@@ -171,21 +174,21 @@ impl<T: Copy> Deref for Vector<T> {
     }
 }
 
-impl<T: Copy> DerefMut for Vector<T> {
+impl<T: Copy> DerefMut for EucVec<T> {
     #[inline(always)]
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.inner
     }
 }
 
-impl<T: Copy> Debug for Vector<T> where Buffer<T>: Debug {
+impl<T: Copy> Debug for EucVec<T> where Buffer<T>: Debug {
     #[inline(always)]
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         Debug::fmt(&self.inner, f)
     }
 }
 
-unsafe impl<T: Copy + Sync> KernelPointer<T> for Vector<T> {
+unsafe impl<T: Copy + Sync> KernelPointer<T> for EucVec<T> {
     #[inline(always)]
     unsafe fn set_arg (&self, kernel: &mut RawKernel, wait: &mut WaitList, idx: u32) -> Result<()> {
         self.inner.set_arg(kernel, wait, idx)
@@ -206,9 +209,11 @@ fn generate_vec_program<T: Real> () -> String {
             #define WGS1 {1}
             #define WGS2 {1}
             {2}
+            {3}
         ",
         include_prog::<T>(include_str!("../opencl/vec.cl")),
         usize::max(max_work_group_size().get() / 2, 2),
-        include_str!("../opencl/blast_sum.cl")
+        include_str!("../opencl/blast_sum.cl"),
+        include_str!("../opencl/blast_dot.cl")
     )
 }

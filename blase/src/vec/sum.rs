@@ -2,7 +2,7 @@ use std::mem::MaybeUninit;
 use std::{ops::Deref};
 use blaze_rs::prelude::*;
 use crate::{Real, max_work_group_size, utils::DerefCell};
-use super::Vector;
+use super::EucVec;
 
 pub struct Sum<T: Copy, LHS> {
     read: ReadBuffer<MaybeUninit<T>, DerefCell<Buffer<MaybeUninit<T>>>>,
@@ -21,7 +21,7 @@ impl<T: Copy, LHS> Sum<T, LHS> {
     }
 }
 
-impl<T: Real, LHS: Deref<Target = Vector<T>>> Event for Sum<T, LHS> {
+impl<T: Real, LHS: Deref<Target = EucVec<T>>> Event for Sum<T, LHS> {
     type Output = T;
 
     #[inline(always)]
@@ -38,7 +38,7 @@ impl<T: Real, LHS: Deref<Target = Vector<T>>> Event for Sum<T, LHS> {
     }
 } 
 
-impl<T: Real, LHS: Deref<Target = Vector<T>>> Event for SumWithSrc<T, LHS> {
+impl<T: Real, LHS: Deref<Target = EucVec<T>>> Event for SumWithSrc<T, LHS> {
     type Output = (T, LHS);
 
     #[inline(always)]
@@ -56,10 +56,10 @@ impl<T: Real, LHS: Deref<Target = Vector<T>>> Event for SumWithSrc<T, LHS> {
 }
 
 lazy_static! {
-    static ref WGS : usize = usize::max(max_work_group_size().get() / 2, 2);
+    pub(super) static ref WGS : usize = usize::max(max_work_group_size().get() / 2, 2);
 }
 
-impl<T: Real> Vector<T> {
+impl<T: Real> EucVec<T> {
     #[inline(always)]
     pub fn sum (&self, wait: impl Into<WaitList>) -> Result<Sum<T, &Self>> {
         Self::sum_by_deref(self, wait)

@@ -3,10 +3,10 @@ use std::ops::Deref;
 use blaze_rs::prelude::*;
 use crate::{Real, work_group_size};
 use blaze_proc::docfg;
-use crate::{utils::DerefCell, vec::Vector};
+use crate::{utils::DerefCell, vec::EucVec};
 use crate::vec::{ScalDown, ScalDownInv};
 
-type OutputVec<T> = DerefCell<Vector<MaybeUninit<T>>>;
+type OutputVec<T> = DerefCell<EucVec<MaybeUninit<T>>>;
 
 pub struct Division<T: Real, LHS> {
     evt: ScalDown<LHS, OutputVec<T>, T>
@@ -16,10 +16,10 @@ pub struct DivisionWithSrc<T: Real, LHS> {
     evt: ScalDown<LHS, OutputVec<T>, T>
 }
 
-impl<T: Real, LHS: Deref<Target = Vector<T>>> Division<T, LHS> {
+impl<T: Real, LHS: Deref<Target = EucVec<T>>> Division<T, LHS> {
     #[inline]
     pub unsafe fn new_custom (lhs: LHS, alpha: T, len: usize, wait: impl Into<WaitList>) -> Result<Self> {
-        let result = Vector::new_uninit(len, false).map(DerefCell)?;
+        let result = EucVec::new_uninit(len, false).map(DerefCell)?;
         let evt = T::vec_program().scal_down(len, lhs, alpha, result, [work_group_size(len)], None, wait)?;
         Ok(Self { evt })
     }
@@ -32,8 +32,8 @@ impl<T: Real, LHS: Deref<Target = Vector<T>>> Division<T, LHS> {
     }
 }
 
-impl<T: Real, RHS: Deref<Target = Vector<T>>> Event for Division<T, RHS> {
-    type Output = Vector<T>;
+impl<T: Real, RHS: Deref<Target = EucVec<T>>> Event for Division<T, RHS> {
+    type Output = EucVec<T>;
 
     #[inline(always)]
     fn as_raw (&self) -> &RawEvent {
@@ -47,8 +47,8 @@ impl<T: Real, RHS: Deref<Target = Vector<T>>> Event for Division<T, RHS> {
     }
 }
 
-impl<T: Real, RHS: Deref<Target = Vector<T>>> Event for DivisionWithSrc<T, RHS> {
-    type Output = (Vector<T>, RHS);
+impl<T: Real, RHS: Deref<Target = EucVec<T>>> Event for DivisionWithSrc<T, RHS> {
+    type Output = (EucVec<T>, RHS);
 
     #[inline(always)]
     fn as_raw (&self) -> &RawEvent {
@@ -62,8 +62,8 @@ impl<T: Real, RHS: Deref<Target = Vector<T>>> Event for DivisionWithSrc<T, RHS> 
     }
 }
 
-impl<T: Real> ::core::ops::Div<T> for &Vector<T> {
-    type Output = Vector<T>;
+impl<T: Real> ::core::ops::Div<T> for &EucVec<T> {
+    type Output = EucVec<T>;
 
     #[inline(always)]
     fn div(self, rhs: T) -> Self::Output {
@@ -71,8 +71,8 @@ impl<T: Real> ::core::ops::Div<T> for &Vector<T> {
     }
 }
 
-impl<T: Real> ::core::ops::Div<&T> for &Vector<T> {
-    type Output = Vector<T>;
+impl<T: Real> ::core::ops::Div<&T> for &EucVec<T> {
+    type Output = EucVec<T>;
 
     #[inline(always)]
     fn div(self, rhs: &T) -> Self::Output {
@@ -80,8 +80,8 @@ impl<T: Real> ::core::ops::Div<&T> for &Vector<T> {
     }
 }
 
-impl<T: Real> ::core::ops::Div<T> for Vector<T> {
-    type Output = Vector<T>;
+impl<T: Real> ::core::ops::Div<T> for EucVec<T> {
+    type Output = EucVec<T>;
 
     #[inline(always)]
     fn div(self, rhs: T) -> Self::Output {
@@ -89,8 +89,8 @@ impl<T: Real> ::core::ops::Div<T> for Vector<T> {
     }
 }
 
-impl<T: Real> ::core::ops::Div<&T> for Vector<T> {
-    type Output = Vector<T>;
+impl<T: Real> ::core::ops::Div<&T> for EucVec<T> {
+    type Output = EucVec<T>;
 
     #[inline(always)]
     fn div(self, rhs: &T) -> Self::Output {
@@ -107,10 +107,10 @@ pub struct InvDivisionWithSrc<T: Real, RHS> {
     evt: ScalDownInv<RHS, OutputVec<T>, T>
 }
 
-impl<T: Real, RHS: Deref<Target = Vector<T>>> InvDivision<T, RHS> {
+impl<T: Real, RHS: Deref<Target = EucVec<T>>> InvDivision<T, RHS> {
     #[inline]
     pub unsafe fn new_custom (alpha: T, rhs: RHS, len: usize, wait: impl Into<WaitList>) -> Result<Self> {
-        let result = Vector::new_uninit(len, false).map(DerefCell)?;
+        let result = EucVec::new_uninit(len, false).map(DerefCell)?;
         let evt = T::vec_program().scal_down_inv(len, alpha, rhs, result, [work_group_size(len)], None, wait)?;
         Ok(Self { evt })
     }
@@ -123,8 +123,8 @@ impl<T: Real, RHS: Deref<Target = Vector<T>>> InvDivision<T, RHS> {
     }
 }
 
-impl<T: Real, RHS: Deref<Target = Vector<T>>> Event for InvDivision<T, RHS> {
-    type Output = Vector<T>;
+impl<T: Real, RHS: Deref<Target = EucVec<T>>> Event for InvDivision<T, RHS> {
+    type Output = EucVec<T>;
 
     #[inline(always)]
     fn as_raw (&self) -> &RawEvent {
@@ -138,8 +138,8 @@ impl<T: Real, RHS: Deref<Target = Vector<T>>> Event for InvDivision<T, RHS> {
     }
 }
 
-impl<T: Real, RHS: Deref<Target = Vector<T>>> Event for InvDivisionWithSrc<T, RHS> {
-    type Output = (Vector<T>, RHS);
+impl<T: Real, RHS: Deref<Target = EucVec<T>>> Event for InvDivisionWithSrc<T, RHS> {
+    type Output = (EucVec<T>, RHS);
 
     #[inline(always)]
     fn as_raw (&self) -> &RawEvent {
@@ -157,41 +157,41 @@ macro_rules! impl_div {
     ($($(#[cfg(feature = $feat:literal)])? $t:ty),+) => {
         $(
             $(#[docfg(feature = $feat)])?
-            impl ::core::ops::Div<&Vector<$t>> for $t {
-                type Output = Vector<$t>;
+            impl ::core::ops::Div<&EucVec<$t>> for $t {
+                type Output = EucVec<$t>;
             
                 #[inline(always)]
-                fn div(self, rhs: &Vector<$t>) -> Self::Output {
+                fn div(self, rhs: &EucVec<$t>) -> Self::Output {
                     rhs.div_inv(self, WaitList::EMPTY).unwrap().wait_unwrap()
                 }
             }
             
             $(#[docfg(feature = $feat)])?
-            impl ::core::ops::Div<Vector<$t>> for $t {
-                type Output = Vector<$t>;
+            impl ::core::ops::Div<EucVec<$t>> for $t {
+                type Output = EucVec<$t>;
             
                 #[inline(always)]
-                fn div(self, rhs: Vector<$t>) -> Self::Output {
+                fn div(self, rhs: EucVec<$t>) -> Self::Output {
                     self / &rhs
                 }
             }
 
             $(#[docfg(feature = $feat)])?
-            impl ::core::ops::Div<&Vector<$t>> for &$t {
-                type Output = Vector<$t>;
+            impl ::core::ops::Div<&EucVec<$t>> for &$t {
+                type Output = EucVec<$t>;
             
                 #[inline(always)]
-                fn div(self, rhs: &Vector<$t>) -> Self::Output {
+                fn div(self, rhs: &EucVec<$t>) -> Self::Output {
                     *self / rhs
                 }
             }
             
             $(#[docfg(feature = $feat)])?
-            impl ::core::ops::Div<Vector<$t>> for &$t {
-                type Output = Vector<$t>;
+            impl ::core::ops::Div<EucVec<$t>> for &$t {
+                type Output = EucVec<$t>;
             
                 #[inline(always)]
-                fn div(self, rhs: Vector<$t>) -> Self::Output {
+                fn div(self, rhs: EucVec<$t>) -> Self::Output {
                     *self / &rhs
                 }
             }

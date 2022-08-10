@@ -3,10 +3,10 @@ use std::ops::Deref;
 use blaze_rs::prelude::*;
 use blaze_proc::docfg;
 use crate::{Real, work_group_size};
-use crate::{utils::DerefCell, vec::Vector};
+use crate::{utils::DerefCell, vec::EucVec};
 use crate::vec::Scal;
 
-type OutputVec<T> = DerefCell<Vector<MaybeUninit<T>>>;
+type OutputVec<T> = DerefCell<EucVec<MaybeUninit<T>>>;
 
 pub struct Scale<T: Real, RHS> {
     evt: Scal<RHS, OutputVec<T>, T>
@@ -16,10 +16,10 @@ pub struct ScaleWithSrc<T: Real, RHS> {
     evt: Scal<RHS, OutputVec<T>, T>
 }
 
-impl<T: Real, RHS: Deref<Target = Vector<T>>> Scale<T, RHS> {
+impl<T: Real, RHS: Deref<Target = EucVec<T>>> Scale<T, RHS> {
     #[inline]
     pub unsafe fn new_custom (alpha: T, rhs: RHS, len: usize, wait: impl Into<WaitList>) -> Result<Self> {
-        let result = Vector::new_uninit(len, false).map(DerefCell)?;
+        let result = EucVec::new_uninit(len, false).map(DerefCell)?;
         let evt = T::vec_program().scal(len, alpha, rhs, result, [work_group_size(len)], None, wait)?;
         Ok(Self { evt })
     }
@@ -32,8 +32,8 @@ impl<T: Real, RHS: Deref<Target = Vector<T>>> Scale<T, RHS> {
     }
 }
 
-impl<T: Real, RHS: Deref<Target = Vector<T>>> Event for Scale<T, RHS> {
-    type Output = Vector<T>;
+impl<T: Real, RHS: Deref<Target = EucVec<T>>> Event for Scale<T, RHS> {
+    type Output = EucVec<T>;
 
     #[inline(always)]
     fn as_raw (&self) -> &RawEvent {
@@ -47,8 +47,8 @@ impl<T: Real, RHS: Deref<Target = Vector<T>>> Event for Scale<T, RHS> {
     }
 }
 
-impl<T: Real, RHS: Deref<Target = Vector<T>>> Event for ScaleWithSrc<T, RHS> {
-    type Output = (Vector<T>, RHS);
+impl<T: Real, RHS: Deref<Target = EucVec<T>>> Event for ScaleWithSrc<T, RHS> {
+    type Output = (EucVec<T>, RHS);
 
     #[inline(always)]
     fn as_raw (&self) -> &RawEvent {
@@ -62,8 +62,8 @@ impl<T: Real, RHS: Deref<Target = Vector<T>>> Event for ScaleWithSrc<T, RHS> {
     }
 }
 
-impl<T: Real> ::core::ops::Mul<T> for &Vector<T> {
-    type Output = Vector<T>;
+impl<T: Real> ::core::ops::Mul<T> for &EucVec<T> {
+    type Output = EucVec<T>;
 
     #[inline(always)]
     fn mul(self, rhs: T) -> Self::Output {
@@ -71,8 +71,8 @@ impl<T: Real> ::core::ops::Mul<T> for &Vector<T> {
     }
 }
 
-impl<T: Real> ::core::ops::Mul<&T> for &Vector<T> {
-    type Output = Vector<T>;
+impl<T: Real> ::core::ops::Mul<&T> for &EucVec<T> {
+    type Output = EucVec<T>;
 
     #[inline(always)]
     fn mul(self, rhs: &T) -> Self::Output {
@@ -80,8 +80,8 @@ impl<T: Real> ::core::ops::Mul<&T> for &Vector<T> {
     }
 }
 
-impl<T: Real> ::core::ops::Mul<T> for Vector<T> {
-    type Output = Vector<T>;
+impl<T: Real> ::core::ops::Mul<T> for EucVec<T> {
+    type Output = EucVec<T>;
 
     #[inline(always)]
     fn mul(self, rhs: T) -> Self::Output {
@@ -89,8 +89,8 @@ impl<T: Real> ::core::ops::Mul<T> for Vector<T> {
     }
 }
 
-impl<T: Real> ::core::ops::Mul<&T> for Vector<T> {
-    type Output = Vector<T>;
+impl<T: Real> ::core::ops::Mul<&T> for EucVec<T> {
+    type Output = EucVec<T>;
 
     #[inline(always)]
     fn mul(self, rhs: &T) -> Self::Output {
@@ -102,41 +102,41 @@ macro_rules! impl_mul {
     ($($(#[cfg(feature = $feat:literal)])? $t:ty),+) => {
         $(
             $(#[docfg(feature = $feat)])?
-            impl ::core::ops::Mul<&Vector<$t>> for $t {
-                type Output = Vector<$t>;
+            impl ::core::ops::Mul<&EucVec<$t>> for $t {
+                type Output = EucVec<$t>;
             
                 #[inline(always)]
-                fn mul(self, rhs: &Vector<$t>) -> Self::Output {
+                fn mul(self, rhs: &EucVec<$t>) -> Self::Output {
                     rhs * self
                 }
             }
             
             $(#[docfg(feature = $feat)])?
-            impl ::core::ops::Mul<Vector<$t>> for $t {
-                type Output = Vector<$t>;
+            impl ::core::ops::Mul<EucVec<$t>> for $t {
+                type Output = EucVec<$t>;
             
                 #[inline(always)]
-                fn mul(self, rhs: Vector<$t>) -> Self::Output {
+                fn mul(self, rhs: EucVec<$t>) -> Self::Output {
                     self * &rhs
                 }
             }
 
             $(#[docfg(feature = $feat)])?
-            impl ::core::ops::Mul<&Vector<$t>> for &$t {
-                type Output = Vector<$t>;
+            impl ::core::ops::Mul<&EucVec<$t>> for &$t {
+                type Output = EucVec<$t>;
             
                 #[inline(always)]
-                fn mul(self, rhs: &Vector<$t>) -> Self::Output {
+                fn mul(self, rhs: &EucVec<$t>) -> Self::Output {
                     *self * rhs
                 }
             }
             
             $(#[docfg(feature = $feat)])?
-            impl ::core::ops::Mul<Vector<$t>> for &$t {
-                type Output = Vector<$t>;
+            impl ::core::ops::Mul<EucVec<$t>> for &$t {
+                type Output = EucVec<$t>;
             
                 #[inline(always)]
-                fn mul(self, rhs: Vector<$t>) -> Self::Output {
+                fn mul(self, rhs: EucVec<$t>) -> Self::Output {
                     *self * &rhs
                 }
             }

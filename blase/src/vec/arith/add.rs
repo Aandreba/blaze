@@ -1,9 +1,9 @@
 use std::{mem::MaybeUninit, ops::Deref};
 use blaze_rs::prelude::*;
-use crate::{Real, utils::DerefCell, work_group_size, vec::Vector};
+use crate::{Real, utils::DerefCell, work_group_size, vec::EucVec};
 use crate::vec::Add;
 
-type OutputVec<T> = DerefCell<Vector<MaybeUninit<T>>>;
+type OutputVec<T> = DerefCell<EucVec<MaybeUninit<T>>>;
 
 pub struct Addition<T: Real, LHS, RHS> {
     evt: Add<LHS, RHS, OutputVec<T>, T>
@@ -13,10 +13,10 @@ pub struct AdditionWithSrc<T: Real, LHS, RHS> {
     evt: Add<LHS, RHS, OutputVec<T>, T>
 }
 
-impl<T: Real, LHS: Deref<Target = Vector<T>>, RHS: Deref<Target = Vector<T>>> Addition<T, LHS, RHS> {
+impl<T: Real, LHS: Deref<Target = EucVec<T>>, RHS: Deref<Target = EucVec<T>>> Addition<T, LHS, RHS> {
     #[inline]
     pub unsafe fn new_custom (lhs: LHS, rhs: RHS, len: usize, wait: impl Into<WaitList>) -> Result<Self> {
-        let result = Vector::new_uninit(len, false).map(DerefCell)?;
+        let result = EucVec::new_uninit(len, false).map(DerefCell)?;
         let evt = T::vec_program().add(len, lhs, rhs, result, [work_group_size(len)], None, wait)?;
         Ok(Self { evt })
     }
@@ -29,8 +29,8 @@ impl<T: Real, LHS: Deref<Target = Vector<T>>, RHS: Deref<Target = Vector<T>>> Ad
     }
 }
 
-impl<T: Real, LHS: Deref<Target = Vector<T>>, RHS: Deref<Target = Vector<T>>> Event for Addition<T, LHS, RHS> {
-    type Output = Vector<T>;
+impl<T: Real, LHS: Deref<Target = EucVec<T>>, RHS: Deref<Target = EucVec<T>>> Event for Addition<T, LHS, RHS> {
+    type Output = EucVec<T>;
 
     #[inline(always)]
     fn as_raw (&self) -> &RawEvent {
@@ -44,8 +44,8 @@ impl<T: Real, LHS: Deref<Target = Vector<T>>, RHS: Deref<Target = Vector<T>>> Ev
     }
 }
 
-impl<T: Real, LHS: Deref<Target = Vector<T>>, RHS: Deref<Target = Vector<T>>> Event for AdditionWithSrc<T, LHS, RHS> {
-    type Output = (Vector<T>, LHS, RHS);
+impl<T: Real, LHS: Deref<Target = EucVec<T>>, RHS: Deref<Target = EucVec<T>>> Event for AdditionWithSrc<T, LHS, RHS> {
+    type Output = (EucVec<T>, LHS, RHS);
 
     #[inline(always)]
     fn as_raw (&self) -> &RawEvent {
@@ -59,8 +59,8 @@ impl<T: Real, LHS: Deref<Target = Vector<T>>, RHS: Deref<Target = Vector<T>>> Ev
     }
 }
 
-impl<T: Real> ::core::ops::Add<Self> for &Vector<T> {
-    type Output = Vector<T>;
+impl<T: Real> ::core::ops::Add<Self> for &EucVec<T> {
+    type Output = EucVec<T>;
 
     #[inline(always)]
     fn add(self, rhs: Self) -> Self::Output {
@@ -68,26 +68,26 @@ impl<T: Real> ::core::ops::Add<Self> for &Vector<T> {
     }
 }
 
-impl<T: Real> ::core::ops::Add<&Vector<T>> for Vector<T> {
-    type Output = Vector<T>;
+impl<T: Real> ::core::ops::Add<&EucVec<T>> for EucVec<T> {
+    type Output = EucVec<T>;
 
     #[inline(always)]
-    fn add(self, rhs: &Vector<T>) -> Self::Output {
+    fn add(self, rhs: &EucVec<T>) -> Self::Output {
         &self + rhs
     }
 }
 
-impl<T: Real> ::core::ops::Add<Vector<T>> for &Vector<T> {
-    type Output = Vector<T>;
+impl<T: Real> ::core::ops::Add<EucVec<T>> for &EucVec<T> {
+    type Output = EucVec<T>;
 
     #[inline(always)]
-    fn add(self, rhs: Vector<T>) -> Self::Output {
+    fn add(self, rhs: EucVec<T>) -> Self::Output {
         self + &rhs
     }
 }
 
-impl<T: Real> ::core::ops::Add<Self> for Vector<T> {
-    type Output = Vector<T>;
+impl<T: Real> ::core::ops::Add<Self> for EucVec<T> {
+    type Output = EucVec<T>;
 
     #[inline(always)]
     fn add(self, rhs: Self) -> Self::Output {
