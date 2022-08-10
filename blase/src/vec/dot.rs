@@ -1,11 +1,13 @@
 use std::mem::MaybeUninit;
 use std::ops::Mul;
 use std::{ops::Deref};
+use blaze_rs::event::various::Map;
 use blaze_rs::prelude::*;
 use crate::{Real, utils::DerefCell};
 use super::{EucVec, WGS};
 
-//pub type SquareMagn<T: Copy, LHS, RHS> = ();
+pub type Magn<T, LHS> = Map<Dot<T, LHS, LHS>, fn(T) -> T>;
+pub type Unit<T, LHS> = Map<DotWithSrc<T, LHS, LHS>, fn((T, LHS, LHS)) -> EucVec<T>>;
 
 pub struct Dot<T: Copy, LHS, RHS> {
     read: ReadBuffer<MaybeUninit<T>, DerefCell<Buffer<MaybeUninit<T>>>>,
@@ -65,12 +67,16 @@ impl<T: Real> EucVec<T> {
         Self::dot_by_deref(self, rhs, wait)
     }
 
-    pub fn square_magn_by_deref<LHS: Deref<Target = Self>, RHS: Deref<Target = Self>> (this: LHS, rhs: RHS, wait: impl Into<WaitList>) -> Result<()> {
-        let dot = Self::dot_by_deref(this, rhs, wait)?;
-        let a = dot.map(|x| x * x);
-        todo!()
+    #[inline(always)]
+    pub fn square_magn (&self, wait: impl Into<WaitList>) -> Result<Dot<T, &Self, &Self>> {
+        Self::square_magn_by_deref(self, wait)
     }
- 
+
+    #[inline(always)]
+    pub fn magn (&self, wait: impl Into<WaitList>) -> Result<Magn<T, &Self>> where T: num_traits::real::Real {
+        Self::magn_by_deref(self, wait)
+    }
+
     pub fn dot_by_deref<LHS: Deref<Target = Self>, RHS: Deref<Target = Self>> (this: LHS, rhs: RHS, wait: impl Into<WaitList>) -> Result<Dot<T, LHS, RHS>> {
         let wgs = *WGS;
         let n = this.len()?;
@@ -85,7 +91,7 @@ impl<T: Real> EucVec<T> {
                 this,
                 rhs,
                 &mut temp_buffer,
-                [wgs * temp_size], [wgs], 
+                [wgs * temp_size], [wgs],
                 wait
             )?;
 
@@ -102,6 +108,17 @@ impl<T: Real> EucVec<T> {
         )?;
 
         Ok(Dot { read, lhs, rhs })
+    }
+
+    #[inline(always)]
+    pub fn square_magn_by_deref<LHS: Clone + Deref<Target = Self>> (this: LHS, wait: impl Into<WaitList>) -> Result<Dot<T, LHS, LHS>> {
+        Self::dot_by_deref(this.clone(), this, wait)
+    }
+
+    #[inline(always)]
+    pub fn magn_by_deref<LHS: Clone + Deref<Target = Self>> (this: LHS, wait: impl Into<WaitList>) -> Result<Magn<T, LHS>> where T: num_traits::real::Real {
+        let square = Self::square_magn_by_deref(this, wait)?;
+        square.map(T::sqrt)
     }
 }
 

@@ -1,5 +1,5 @@
 pub mod arith;
-flat_mod!(sum, dot);
+flat_mod!(sum, dot, cmp);
 
 use std::{mem::MaybeUninit, ops::{Deref, DerefMut}, fmt::Debug};
 use blaze_rs::{prelude::*, buffer::KernelPointer};
@@ -14,6 +14,8 @@ pub extern "C" {
     fn scal (n: usize, alpha: T, rhs: *const T, out: *mut MaybeUninit<T>);
     fn scal_down (n: usize, lhs: *const T, alpha: T, out: *mut MaybeUninit<T>);
     fn scal_down_inv (n: usize, alpha: T, rhs: *const T, out: *mut MaybeUninit<T>);
+    #[link_name = "cmp"]
+    fn vec_cmp_eq (n: usize, lhs: *const T, rhs: *const T, out: *mut MaybeUninit<u32>);
     #[link_name = "Xasum"]
     fn xasum (n: i32, x: *const T, output: *mut MaybeUninit<T>);
     #[link_name = "XasumEpilogue"]
@@ -162,7 +164,7 @@ impl<T: Copy> EucVec<MaybeUninit<T>> {
     #[inline(always)]
     pub unsafe fn assume_init (self) -> EucVec<T> {
         EucVec { inner: self.inner.assume_init() }
-    } 
+    }
 }
 
 impl<T: Copy> Deref for EucVec<T> {

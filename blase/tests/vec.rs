@@ -34,19 +34,18 @@ fn dot () -> Result<()> {
     const LEN : usize = 100;
     let mut rng = Random::new(None)?;
 
-    let alpha = EucVec::from_buffer(rng.next_f32(LEN, 0f32..1f32, true, false)?);
-    let beta = EucVec::from_buffer(rng.next_f32(LEN, 0f32..1f32, true, false)?);
+    let alpha = EucVec::from_buffer(rng.next_u8(LEN, 0..5, true, false)?);
+    let beta = EucVec::from_buffer(rng.next_u8(LEN, 0..5, true, false)?);
     
-    let alpha_slice = alpha.map(.., EMPTY)?;
-    let beta_slice = beta.map(.., EMPTY)?;
-    let join = MapBuffer::join_blocking([alpha_slice, beta_slice])?;
-
-    let gpu_dot = &alpha * &beta;
-    let cpu_dot = join[0].into_iter()
-        .zip(join[1].into_iter())
-        .map(|(x, y)| x * y)
-        .sum::<f32>(); 
-
-    println!("{gpu_dot} v. {cpu_dot}");
+    let (eq, len) = alpha.lane_eq(&beta, EMPTY)?.wait()?;
+    let eq = eq.into_iter()
+        .take(len)
+        .enumerate()
+        .filter_map(|(i, x)| x.then(|| i));
+    
+    for idx in eq {
+        println!("{idx}");
+    }
+    
     Ok(())
 }
