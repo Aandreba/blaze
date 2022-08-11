@@ -2,6 +2,7 @@ pub mod arith;
 pub mod sum;
 pub mod dot;
 pub mod cmp;
+pub mod sort;
 
 use std::{mem::MaybeUninit, ops::{Deref, DerefMut}, fmt::Debug};
 use blaze_rs::{prelude::*, buffer::KernelPointer};
@@ -30,6 +31,8 @@ pub mod program {
         fn xasum_epilogue (input: *const MaybeUninit<T>, asum: *mut MaybeUninit<T>);
         #[link_name = "Xdot"]
         fn xdot (n: i32, x: *const T, y: *const T, output: *mut MaybeUninit<T>);
+        fn block_sort (n: usize, values: *mut T);
+        fn merge_blocks (n: usize, block_size: usize, values: *mut T);
     }
 
     fn generate_vec_program<T: Real> () -> String {
@@ -41,11 +44,13 @@ pub mod program {
                 #define WGS2 {1}
                 {2}
                 {3}
+                {4}
             ",
             include_prog::<T>(include_str!("../opencl/vec.cl")),
             usize::max(max_work_group_size().get() / 2, 2),
             include_str!("../opencl/blast_sum.cl"),
-            include_str!("../opencl/blast_dot.cl")
+            include_str!("../opencl/blast_dot.cl"),
+            include_str!("../opencl/sort.cl"),
         )
     }
 }
