@@ -28,6 +28,7 @@ impl<T: Real> Event for Sort<T> {
 
 impl<T: Real> EucVec<T> {
     // https://github.com/Gram21/GPUSorting/blob/master/Code/CSortTask.cpp
+    /* !TODO FIX! */
     pub fn sort (&self, desc: bool, wait: impl Into<WaitList>) -> Result<Sort<T>> {
         let local_work_size = 256;
         let wait : WaitList = wait.into();
