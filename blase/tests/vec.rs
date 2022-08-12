@@ -1,8 +1,6 @@
-use std::f64::consts::PI;
-
 use blase::{vec::EucVec, random::Random};
 use blaze_proc::global_context;
-use blaze_rs::{prelude::{Result, SimpleContext, EMPTY, Event, EventExt}, buffer::events::MapBuffer};
+use blaze_rs::{prelude::{Result, SimpleContext, EMPTY, Event}};
 
 #[global_context]
 static CTX : SimpleContext = SimpleContext::default();
@@ -47,5 +45,19 @@ fn dot () -> Result<()> {
         println!("{idx}");
     }
     
+    Ok(())
+}
+
+#[test]
+fn ord () -> Result<()>{
+    let alpha = EucVec::new(&[1.0, 2.0, 3.0, 4.0, f32::NAN], false)?;
+    let beta = EucVec::new(&[2.6, -5e-8, f32::NAN, 8.29, f32::INFINITY, -1.0, 0.0, -f32::INFINITY, -0.0], false)?;
+    let beta = beta.sort(true, EMPTY)?.wait()?;
+    println!("{beta:?}");
+
+    let ord = alpha.lane_ord(&beta, EMPTY)?.wait()?;
+    let partial = alpha.lane_partial_ord(&beta, EMPTY)?.wait()?;
+    println!("{ord:?}, {partial:?}");
+
     Ok(())
 }

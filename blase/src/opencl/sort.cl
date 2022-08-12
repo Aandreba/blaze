@@ -1,38 +1,77 @@
 // Source: https://github.com/Gram21/GPUSorting/blob/master/Code/Sort.cl
 
 #ifndef MAX_LOCAL_SIZE
-    typedef float real;
-    typedef uint usize;
     #define MAX_LOCAL_SIZE 256 // set via compile options
 #endif
+
+#ifndef PRECISION
+    typedef float real;
+    typedef uint usize;
+#endif
+
+static inline char compare (const uchar desc, real a, real b) {
+	// Float total_cmp from rust
+	// https://doc.rust-lang.org/stable/std/primitive.f32.html#method.total_cmp
+	#if ISFLOAT
+		#if PRECISION == 16
+			typedef short bits;
+			typedef ushort ubits;
+		#elif PRECISION == 32
+			typedef int bits;
+			typedef uint ubits;
+		#elif PRECISION == 64
+			typedef long bits;
+			typedef ulong ubits;
+		#endif
+
+		union { real a; bits b; } w;
+
+		// Get left bits
+		w.a = a;
+		bits left = w.b;
+
+		// Get right bits
+		w.a = b;
+		bits right = w.b;
+
+		left ^= (bits)((ubits)(left >> (PRECISION - 1)) >> 1);
+		right ^= (bits)((ubits)(right >> (PRECISION - 1)) >> 1);
+
+		if (desc != 0) return left > right;
+		return left < right;
+	#else
+		if (desc != 0) return a > b;
+		return a < b;
+	#endif
+} 
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // needed helper methods
 static inline void swap(real *a, real *b) {
-	uint tmp;
+	real tmp;
 	tmp = *b;
 	*b = *a;
 	*a = tmp;
 }
 
 // dir == 1 means ascending
-static inline void sort(real *a, real *b, char dir) {
-	if ((*a > *b) == dir) swap(a, b);
+static inline void sort(const uchar desc, real *a, real *b, char dir) {
+	if (compare(desc, *a, *b) == dir) swap(a, b);
 }
 
 static inline void swapLocal(__local real *a, __local real *b) {
-	uint tmp;
+	real tmp;
 	tmp = *b;
 	*b = *a;
 	*a = tmp;
 }
 
 // dir == 1 means ascending
-static inline void sortLocal(__local real *a, __local real *b, char dir) {
-	if ((*a > *b) == dir) swapLocal(a, b);
+static inline void sortLocal(const uchar desc, __local real *a, __local real *b, char dir) {
+	if (compare(desc, *a, *b) == dir) swapLocal(a, b);
 }
 
-__kernel void Sort_BitonicMergesortStart(const __global real* inArray, __global real* outArray) {
+__kernel void Sort_BitonicMergesortStart(const uchar desc, const __global real* inArray, __global real* outArray) {
 	__local real local_buffer[MAX_LOCAL_SIZE * 2];
 	const usize gid = get_global_id(0);
 	const usize lid = get_local_id(0);
@@ -45,13 +84,13 @@ __kernel void Sort_BitonicMergesortStart(const __global real* inArray, __global 
 	usize clampedGID = gid & (MAX_LOCAL_SIZE - 1);
 
 	// bitonic merge
-	for (uint blocksize = 2; blocksize < MAX_LOCAL_SIZE * 2; blocksize <<= 1) {
+	for (usize blocksize = 2; blocksize < MAX_LOCAL_SIZE * 2; blocksize <<= 1) {
 		char dir = (clampedGID & (blocksize / 2)) == 0; // sort every other block in the other direction (faster % calc)
 #pragma unroll
 		for (usize stride = blocksize >> 1; stride > 0; stride >>= 1){
 			barrier(CLK_LOCAL_MEM_FENCE);
 			usize idx = 2 * lid - (lid & (stride - 1)); //take every other input BUT starting neighbouring within one block
-			sortLocal(&local_buffer[idx], &local_buffer[idx + stride], dir);
+			sortLocal(desc, &local_buffer[idx], &local_buffer[idx + stride], dir);
 		}
 	}
 
@@ -61,7 +100,7 @@ __kernel void Sort_BitonicMergesortStart(const __global real* inArray, __global 
 	for (usize stride = MAX_LOCAL_SIZE; stride > 0; stride >>= 1){
 		barrier(CLK_LOCAL_MEM_FENCE);
 		usize idx = 2 * lid - (lid & (stride - 1));
-		sortLocal(&local_buffer[idx], &local_buffer[idx + stride], dir);
+		sortLocal(desc, &local_buffer[idx], &local_buffer[idx + stride], dir);
 	}
 
 	// sync and write back
@@ -70,7 +109,7 @@ __kernel void Sort_BitonicMergesortStart(const __global real* inArray, __global 
 	outArray[index + MAX_LOCAL_SIZE] = local_buffer[lid + MAX_LOCAL_SIZE];
 }
 
-__kernel void Sort_BitonicMergesortLocal(__global real* data, const usize size, const usize blocksize, usize stride)
+__kernel void Sort_BitonicMergesortLocal(const uchar desc, __global real* data, const usize size, const usize blocksize, usize stride)
 {
 	// This Kernel is basically the same as Sort_BitonicMergesortStart except of the "unrolled" part and the provided parameters
 	__local real local_buffer[2 * MAX_LOCAL_SIZE];
@@ -90,7 +129,7 @@ __kernel void Sort_BitonicMergesortLocal(__global real* data, const usize size, 
 	for (; stride > 0; stride >>= 1) {
 		barrier(CLK_LOCAL_MEM_FENCE);
 		usize idx = 2 * lid - (lid & (stride - 1));
-		sortLocal(&local_buffer[idx], &local_buffer[idx + stride], dir);
+		sortLocal(desc, &local_buffer[idx], &local_buffer[idx + stride], dir);
 	}
 
 	// sync and write back
@@ -99,7 +138,7 @@ __kernel void Sort_BitonicMergesortLocal(__global real* data, const usize size, 
 	data[index + MAX_LOCAL_SIZE] = local_buffer[lid + MAX_LOCAL_SIZE];
 }
 
-__kernel void Sort_BitonicMergesortGlobal(__global real* data, const usize size, const usize blocksize, const usize stride)
+__kernel void Sort_BitonicMergesortGlobal(const uchar desc, __global real* data, const usize size, const usize blocksize, const usize stride)
 {
 	// TO DO: Kernel implementation
 	usize gid = get_global_id(0);
@@ -113,7 +152,7 @@ __kernel void Sort_BitonicMergesortGlobal(__global real* data, const usize size,
 	real left = data[index];
 	real right = data[index + stride];
 
-	sort(&left, &right, dir);
+	sort(desc, &left, &right, dir);
 
 	// writeback
 	data[index] = left;

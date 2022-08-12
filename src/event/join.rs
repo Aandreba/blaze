@@ -1,5 +1,4 @@
 use box_iter::BoxIntoIter;
-
 use crate::prelude::{Result, RawCommandQueue, Global, Context};
 use super::{RawEvent, Event, WaitList};
 

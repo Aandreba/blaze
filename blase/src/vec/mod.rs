@@ -2,6 +2,7 @@ pub mod arith;
 pub mod sum;
 pub mod dot;
 pub mod cmp;
+pub mod ord;
 pub mod sort;
 
 use std::{mem::MaybeUninit, ops::{Deref, DerefMut}, fmt::Debug};
@@ -18,6 +19,7 @@ pub mod program {
     #[blaze(VectorProgram<T: Real>)]
     #[link = generate_vec_program::<T>()]
     pub extern "C" {
+        // Vertical ops
         fn add (n: usize, lhs: *const T, rhs: *const T, out: *mut MaybeUninit<T>);
         fn sub (n: usize, lhs: *const T, rhs: *const T, out: *mut MaybeUninit<T>);
         fn scal (n: usize, alpha: T, rhs: *const T, out: *mut MaybeUninit<T>);
@@ -25,14 +27,26 @@ pub mod program {
         fn scal_down_inv (n: usize, alpha: T, rhs: *const T, out: *mut MaybeUninit<T>);
         #[link_name = "cmp"]
         fn vec_cmp_eq (n: usize, lhs: *const T, rhs: *const T, out: *mut MaybeUninit<u32>);
+        #[link_name = "ord"]
+        fn vec_cmp_ord (n: usize, lhs: *const T, rhs: *const T, out: *mut MaybeUninit<i8>);
+        #[link_name = "partial_ord"]
+        fn vec_cmp_partial_ord (n: usize, lhs: *const T, rhs: *const T, out: *mut MaybeUninit<i8>);
+
+        // Horizontal ops
         #[link_name = "Xasum"]
         fn xasum (n: i32, x: *const T, output: *mut MaybeUninit<T>);
         #[link_name = "XasumEpilogue"]
         fn xasum_epilogue (input: *const MaybeUninit<T>, asum: *mut MaybeUninit<T>);
         #[link_name = "Xdot"]
         fn xdot (n: i32, x: *const T, y: *const T, output: *mut MaybeUninit<T>);
-        fn block_sort (n: usize, values: *mut T);
-        fn merge_blocks (n: usize, values: *mut T);
+        
+        // Sort
+        #[link_name = "Sort_BitonicMergesortStart"]
+        fn sort_start (desc: bool, in_array: *const T, out_array: *mut MaybeUninit<T>);
+        #[link_name = "Sort_BitonicMergesortLocal"]
+        fn sort_local (desc: bool, data: *mut MaybeUninit<T>, size: usize, blocksize: usize, stride: usize);
+        #[link_name = "Sort_BitonicMergesortGlobal"]
+        fn sort_global (desc: bool, data: *mut MaybeUninit<T>, size: usize, blocksize: usize, stride: usize);
     }
 
     fn generate_vec_program<T: Real> () -> String {

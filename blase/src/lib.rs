@@ -1,5 +1,5 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
-#![feature(nonzero_min_max, exclusive_range_pattern, int_roundings, new_uninit)]
+#![feature(nonzero_min_max, exclusive_range_pattern, is_sorted, int_roundings, int_log, new_uninit)]
 
 macro_rules! flat_mod {
     ($($i:ident),+) => {
@@ -35,13 +35,15 @@ pub(crate) fn include_prog<T: Real> (src: &str) -> String {
         #define ISFLOAT {}
         #define ISSIGNED {}
         #define FMA(a,b,c) {}
-        {5}
+        #define ORD_NONE {}
+        {6}
         typedef {} real;
         {src}",
         T::PRECISION,
         T::SIGNED,
         T::FLOAT,
         T::FMA,
+        unsafe { std::mem::transmute::<_,i8>(Option::<std::cmp::Ordering>::None) },
         T::CL_NAME,
         define_usize()
     )
