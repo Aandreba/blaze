@@ -8,7 +8,6 @@ impl<T: Real> EucVec<T> {
         
         let len = this.len()?;
         let wgs = work_group_size(len);
-        let init_block_size = len / wgs;
 
         let evt = unsafe {
             let evt = T::vec_program().block_sort(len, this, [wgs], None, wait)?;
@@ -18,7 +17,7 @@ impl<T: Real> EucVec<T> {
         };
 
         let evt = unsafe {
-            T::vec_program().merge_blocks(len, init_block_size, this, [wgs], None, WaitList::from_event(evt))?
+            T::vec_program().merge_blocks(len, this, [wgs], None, WaitList::from_event(evt))?
         };
 
         evt.wait_by_ref()
@@ -35,7 +34,7 @@ mod tests {
 
     #[test]
     fn test () -> Result<()> {
-        let mut buf = EucVec::new(&[1, 8, 3, 9, 4, 5, 7], false)?;
+        let mut buf = EucVec::new(&[8, 1, 3, 9, 4, 5, 7], false)?;
         buf.sort(EMPTY)?;
 
         println!("{buf:?}");

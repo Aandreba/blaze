@@ -32,7 +32,7 @@ pub mod program {
         #[link_name = "Xdot"]
         fn xdot (n: i32, x: *const T, y: *const T, output: *mut MaybeUninit<T>);
         fn block_sort (n: usize, values: *mut T);
-        fn merge_blocks (n: usize, block_size: usize, values: *mut T);
+        fn merge_blocks (n: usize, values: *mut T);
     }
 
     fn generate_vec_program<T: Real> () -> String {

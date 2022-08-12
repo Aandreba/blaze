@@ -1,95 +1,121 @@
-#ifndef PRECISION
+// Source: https://github.com/Gram21/GPUSorting/blob/master/Code/Sort.cl
+
+#ifndef MAX_LOCAL_SIZE
     typedef float real;
     typedef uint usize;
+    #define MAX_LOCAL_SIZE 256 // set via compile options
 #endif
 
-typedef struct Block {
-    usize start;
-    usize end;
-} block;
-
-static inline void swap (global real* ptr, usize a, usize b) {
-    const real tmp = ptr[a];
-    ptr[a] = ptr[b];
-    ptr[b] = tmp;
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// needed helper methods
+static inline void swap(real *a, real *b) {
+	uint tmp;
+	tmp = *b;
+	*b = *a;
+	*a = tmp;
 }
 
-static inline block calculate_block (const usize n, const usize id, const usize size) {
-    const usize step = n / size;
-    const usize step_rem = n % size;
-
-    usize start = id * step;
-    usize end = start + step;
-    
-    if (id == 0) {
-        start += step_rem;
-    } else {
-        end += step_rem;
-    }
-
-    block block = {
-        start,
-        end
-    };
-
-    return block;
+// dir == 1 means ascending
+static inline void sort(real *a, real *b, char dir) {
+	if ((*a > *b) == dir) swap(a, b);
 }
 
-static inline void quicksort (global real* ptr, const block block) {
-    if (block.end - block.start < 2) return;
-
-    const real pivot = ptr[block.end - 1];
-    usize left_ptr = block.start;
-    usize right_ptr = block.end - 1;
-
-    while (true) {
-        while (ptr[left_ptr] <= pivot && left_ptr < right_ptr) {
-            left_ptr++;
-        }
-
-        while (ptr[right_ptr] >= pivot && left_ptr < right_ptr) {
-            right_ptr--;
-        }
-
-        if (left_ptr == right_ptr) {
-            swap(ptr, left_ptr, block.end - 1);
-
-            struct Block left = { block.start, left_ptr };
-            struct Block right = { left_ptr + 1, block.end };
-
-            quicksort(ptr, left);
-            quicksort(ptr, right);
-            break;
-        }
-        
-        swap(ptr, left_ptr, right_ptr);
-    }
+static inline void swapLocal(__local real *a, __local real *b) {
+	uint tmp;
+	tmp = *b;
+	*b = *a;
+	*a = tmp;
 }
 
-// Initial sorting of smaller blocks (with quicksort)
-kernel void block_sort (const usize n, global real* values) {
-    const block blk = calculate_block(n, get_global_id(0), get_global_size(0));
-    quicksort(values, blk);
+// dir == 1 means ascending
+static inline void sortLocal(__local real *a, __local real *b, char dir) {
+	if ((*a > *b) == dir) swapLocal(a, b);
 }
 
-/// Merging of sorted block (with merge sort)
-kernel void merge_blocks (const usize n, global real* values) {
-    const usize id = get_global_id(0);
-    usize block_size = n / get_global_size(0);
+__kernel void Sort_BitonicMergesortStart(const __global real* inArray, __global real* outArray) {
+	__local real local_buffer[MAX_LOCAL_SIZE * 2];
+	const usize gid = get_global_id(0);
+	const usize lid = get_local_id(0);
 
-    // Get block    
-    block left_blk = calculate_block(n, id, get_global_size(0));
-    block right_blk = calculate_block(n, id + 1, get_global_size(0));
+	usize index = get_group_id(0) * (MAX_LOCAL_SIZE * 2) + lid;
+	//load into local mem
+	local_buffer[lid] = inArray[index];
+	local_buffer[lid + MAX_LOCAL_SIZE] = inArray[index + MAX_LOCAL_SIZE];
 
-    // Shift positions to match block sizes
-    left_blk.start *= init_block_size;
-    left_blk.end *= init_block_size;
+	usize clampedGID = gid & (MAX_LOCAL_SIZE - 1);
 
-    right_blk.start *= init_block_size;
-    right_blk.end = min(right_blk.end * init_block_size, n);
+	// bitonic merge
+	for (uint blocksize = 2; blocksize < MAX_LOCAL_SIZE * 2; blocksize <<= 1) {
+		char dir = (clampedGID & (blocksize / 2)) == 0; // sort every other block in the other direction (faster % calc)
+#pragma unroll
+		for (usize stride = blocksize >> 1; stride > 0; stride >>= 1){
+			barrier(CLK_LOCAL_MEM_FENCE);
+			usize idx = 2 * lid - (lid & (stride - 1)); //take every other input BUT starting neighbouring within one block
+			sortLocal(&local_buffer[idx], &local_buffer[idx + stride], dir);
+		}
+	}
 
-    printf("\n%d,%d\n%d,%d\n", 
-        (int)left_blk.start, (int)left_blk.end,
-        (int)right_blk.start, (int)right_blk.end
-    );
+	// bitonic merge for biggest group is special (unrolling this so we dont need ifs in the part above)
+	char dir = (clampedGID & 0); //even or odd? sort accordingly
+#pragma unroll
+	for (usize stride = MAX_LOCAL_SIZE; stride > 0; stride >>= 1){
+		barrier(CLK_LOCAL_MEM_FENCE);
+		usize idx = 2 * lid - (lid & (stride - 1));
+		sortLocal(&local_buffer[idx], &local_buffer[idx + stride], dir);
+	}
+
+	// sync and write back
+	barrier(CLK_LOCAL_MEM_FENCE);
+	outArray[index] = local_buffer[lid];
+	outArray[index + MAX_LOCAL_SIZE] = local_buffer[lid + MAX_LOCAL_SIZE];
+}
+
+__kernel void Sort_BitonicMergesortLocal(__global real* data, const usize size, const usize blocksize, usize stride)
+{
+	// This Kernel is basically the same as Sort_BitonicMergesortStart except of the "unrolled" part and the provided parameters
+	__local real local_buffer[2 * MAX_LOCAL_SIZE];
+	usize gid = get_global_id(0);
+	usize groupId = get_group_id(0);
+	usize lid = get_local_id(0);
+	usize clampedGID = gid & (size / 2 - 1);
+
+	usize index = groupId * (MAX_LOCAL_SIZE * 2) + lid;
+	//load into local mem
+	local_buffer[lid] = data[index];
+	local_buffer[lid + MAX_LOCAL_SIZE] = data[index + MAX_LOCAL_SIZE];
+
+	// bitonic merge
+	char dir = (clampedGID & (blocksize / 2)) == 0; //same as above, % calc
+#pragma unroll
+	for (; stride > 0; stride >>= 1) {
+		barrier(CLK_LOCAL_MEM_FENCE);
+		usize idx = 2 * lid - (lid & (stride - 1));
+		sortLocal(&local_buffer[idx], &local_buffer[idx + stride], dir);
+	}
+
+	// sync and write back
+	barrier(CLK_LOCAL_MEM_FENCE);
+	data[index] = local_buffer[lid];
+	data[index + MAX_LOCAL_SIZE] = local_buffer[lid + MAX_LOCAL_SIZE];
+}
+
+__kernel void Sort_BitonicMergesortGlobal(__global real* data, const usize size, const usize blocksize, const usize stride)
+{
+	// TO DO: Kernel implementation
+	usize gid = get_global_id(0);
+	usize clampedGID = gid & (size / 2 - 1);
+
+	//calculate index and dir like above
+	usize index = 2 * clampedGID - (clampedGID & (stride - 1));
+	char dir = (clampedGID & (blocksize / 2)) == 0; //same as above, % calc
+
+	//bitonic merge
+	real left = data[index];
+	real right = data[index + stride];
+
+	sort(&left, &right, dir);
+
+	// writeback
+	data[index] = left;
+	data[index + stride] = right;
 }
