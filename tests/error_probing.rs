@@ -1,17 +1,48 @@
+#![feature(nonzero_min_max)]
+
 use blaze_rs::prelude::*;
+use rand::random;
+use tokio::spawn;
 
 #[global_context]
 static CONTEXT : SimpleContext = SimpleContext::default();
 
 #[test]
 fn invalid_raw () -> Result<()> {
-    let buffer = Buffer::new(&[1, 2, 3, 4, 5], MemAccess::default(), false)?;
-    let read = buffer.read(.., EMPTY)?;
-    let raw = read.to_raw();
+    let mut buffer = Buffer::new(&[1, 2, 3, 4, 5], MemAccess::default(), false)?;
+    let read = buffer.read(.., EMPTY)?.to_raw();
+    // Problem. The status of read is unknown
+    let write = buffer.write(2, vec![2], EMPTY)?;
 
     read.wait()?;
-    raw.as_raw().on_run(move |_, _| println!("Hello"))?;
-    raw.as_raw().on_complete(move |_, _| println!("I'm done"))?;
 
     Ok(())
+}
+
+
+#[tokio::test]
+async fn sync () {
+    const SIZE : usize = 100_000;
+    let big_buffer : &'static mut [f32] = Vec::<f32>::with_capacity(SIZE).leak();
+
+    let write = spawn(async {
+        for v in big_buffer {
+            *v = random();
+        }
+    });
+    drop(write);
+
+    let read = &big_buffer[..10];
+}
+
+async fn write_buffer (v: &'static mut [f32]) {
+    spawn(async move {
+        for v in v {
+            *v = random();
+        }
+    }).await.unwrap()
+}
+
+async fn read_buffer (v: &'static [f32]) {
+    todo!()
 }

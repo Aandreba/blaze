@@ -53,6 +53,7 @@ elor = "1"
 
 [dev-dependencies]
 tokio = { version = "1.19.2", features = ["full"] }
+rand = "0.8.5"
 
 [workspace]
 members = ["blaze-proc"]

@@ -1,27 +1,26 @@
 use std::ops::Deref;
 use blaze_proc::docfg;
-
 use crate::{core::*};
-use super::{Context, RawContext, ContextProperties};
+use super::{Context, RawContext, ContextProperties, CommandQueue};
 
 #[doc = include_str!("../../docs/src/context/simple.md")]
 #[derive(Clone)]
 pub struct SimpleContext {
     ctx: RawContext,
-    queue: RawCommandQueue
+    queue: CommandQueue
 }
 
 impl SimpleContext {
     pub fn new (device: &RawDevice, ctx_props: ContextProperties, props: impl Into<QueueProperties>) -> Result<Self> {
         let ctx = RawContext::new(ctx_props, core::slice::from_ref(device))?;
-        let queue = RawCommandQueue::new(&ctx, props.into(), device)?;
+        let queue = RawCommandQueue::new(&ctx, props.into(), device).map(CommandQueue::new)?;
         Ok(Self { ctx, queue })
     }
 
     #[docfg(feature = "cl3")]
     pub fn with_logger (device: &RawDevice, ctx_props: ContextProperties, props: impl Into<QueueProperties>, loger: impl 'static + Fn(&str) + Send) -> Result<Self> {
         let ctx = RawContext::with_logger(ctx_props, core::slice::from_ref(device), loger)?;
-        let queue = RawCommandQueue::new(&ctx, props.into(), device)?;
+        let queue = RawCommandQueue::new(&ctx, props.into(), device).map(CommandQueue::new)?;
         Ok(Self { ctx, queue })
     }
 
@@ -41,12 +40,12 @@ impl SimpleContext {
 
 impl Context for SimpleContext {
     #[inline(always)]
-    fn queues (&self) -> &[RawCommandQueue] {
+    fn queues (&self) -> &[CommandQueue] {
         core::slice::from_ref(&self.queue)
     }
 
     #[inline(always)]
-    fn next_queue (&self) -> &RawCommandQueue {
+    fn next_queue (&self) -> &CommandQueue {
         &self.queue
     }
 }

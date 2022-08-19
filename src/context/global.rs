@@ -1,11 +1,10 @@
 use std::ops::Deref;
-use crate::core::RawCommandQueue;
-use super::{Context, RawContext};
+use super::{Context, RawContext, CommandQueue};
 
 extern "Rust" {
     fn __blaze__global__as_raw () -> &'static RawContext;
-    fn __blaze__global__queues () -> &'static [RawCommandQueue];
-    fn __blaze__global__next_queue () -> &'static RawCommandQueue;
+    fn __blaze__global__queues () -> &'static [CommandQueue];
+    fn __blaze__global__next_queue () -> &'static CommandQueue;
 }
 
 #[doc = include_str!("../../docs/src/context/global.md")]
@@ -14,7 +13,7 @@ pub struct Global;
 
 impl Context for Global {
     #[inline(always)]
-    fn next_queue (&self) -> &RawCommandQueue {
+    fn next_queue (&self) -> &CommandQueue {
         unsafe { __blaze__global__next_queue() } 
     }
 
@@ -24,7 +23,7 @@ impl Context for Global {
     }
 
     #[inline(always)]
-    fn queues (&self) -> &[RawCommandQueue] {
+    fn queues (&self) -> &[CommandQueue] {
         unsafe { __blaze__global__queues() }
     }
 }
