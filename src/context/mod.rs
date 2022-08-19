@@ -1,7 +1,6 @@
 flat_mod!(raw, flags, global, single, queue, scope);
 
-use std::{ops::Deref, panic::{catch_unwind, AssertUnwindSafe, resume_unwind}};
-use utils_atomics::FillQueue;
+use std::{ops::Deref, panic::{catch_unwind, AssertUnwindSafe, resume_unwind}, sync::atomic::Ordering};
 use crate::{core::*, prelude::RawEvent};
 
 /// An object that can be used as a Blaze context, with a similar syntax to Rust allocators.\
@@ -35,25 +34,57 @@ pub trait Context: Deref<Target = RawContext> {
         Ok(())
     }
 
-    #[inline]
-    fn scope<'scope, T, F: FnOnce(&'scope Scope<'scope, Self>) -> T > (&'scope self, f: F) -> Result<T> {
-        let scope = Scope {
-            ctx: self,
-            events: FillQueue::new()
-        };
+    /// Enqueues an event into the provided [`CommandQueue`] by [`next_queue`](Context::next_queue).
+    #[inline(always)]
+    fn enqueue<F: 'static + FnOnce(&RawCommandQueue) -> Result<RawEvent>> (&self, f: F) -> Result<RawEvent> {
+        self.next_queue().enqueue(f)
+    }
 
+    #[inline]
+    fn scope<'scope, T, F: 'scope + FnOnce(&Scope<'scope, Self>) -> Result<T>> (&'scope self, f: F) -> Result<T> {
+        let mut scope = Scope::new(self);
         let result = catch_unwind(AssertUnwindSafe(|| f(&scope)));
-        let events = scope.events.chop_mut().collect::<Vec<_>>();
-        
-        match (result, RawEvent::wait_all(&events)) {
-            (Err(e), _) => resume_unwind(e),
-            (_, Err(e)) => return Err(e),
-            (Ok(x), _) => return Ok(x)
+
+        while scope.event_count.load(Ordering::Acquire) != 0 {
+            std::thread::park();
+        }
+
+        let remaining = scope.fallback_events.chop_mut();
+        let remaining = remaining.collect::<Vec<_>>();
+        let _ = RawEvent::wait_all(&remaining);
+
+        match result {
+            Err(e) => resume_unwind(e),
+            Ok(res) => res
         }
     }
+}
 
-    #[inline(always)]
-    fn enqueue<F: FnOnce(&RawCommandQueue) -> Result<RawEvent>> (&self, f: F) -> Result<RawEvent> {
-       self.next_queue().enqueue(f)
-    }
+fn test () {
+    let mut alpha = 1;
+
+    std::thread::scope(|s| {
+        s.spawn(|| alpha = 2);
+    });
+
+    println!("{alpha}");
+    
+    /*scope(|s| {
+        s.spawn(|| alpha = 2);
+        s.spawn(|| alpha = 3);
+    });*/
+    /* 
+    let v = Global.scope(|s| {
+        s.enqueue(|_| {
+            alpha = 2;
+            Err(crate::prelude::ErrorType::InvalidValue.into())
+        })
+    });
+
+    let _ = Global.enqueue(|_| {
+        alpha = 3;
+        Err(crate::prelude::ErrorType::InvalidValue.into())
+    }).unwrap();
+
+    println!("{alpha}");*/
 }

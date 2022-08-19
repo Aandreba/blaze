@@ -1,10 +1,10 @@
-use std::{sync::{Arc, atomic::{AtomicUsize, Ordering}}, ops::{Deref, DerefMut}};
+use std::{sync::{Arc}, ops::{Deref, DerefMut}};
 use crate::prelude::{RawCommandQueue, RawEvent, Result};
 
 #[derive(Debug, Clone)]
 pub struct CommandQueue {
     inner: RawCommandQueue,
-    size: Arc<AtomicUsize>
+    size: Arc<()>
 }
 
 impl CommandQueue {
@@ -12,26 +12,28 @@ impl CommandQueue {
     pub fn new (inner: RawCommandQueue) -> Self {
         Self {
             inner,
-            size: Arc::new(AtomicUsize::default())
+            size: Arc::new(())
         }
     }
 
     #[inline(always)]
     pub fn size (&self) -> usize {
-        self.size.load(Ordering::Acquire)
+        Arc::strong_count(&self.size) - 1
+    }
+
+    #[inline(always)]
+    pub fn enqueue<'a, F: 'a + FnOnce(&RawCommandQueue) -> Result<RawEvent>> (&'a self, f: F) -> Result<RawEvent> {
+        self.enqueue_scoped(f)
     }
 
     #[inline]
-    pub fn enqueue<F: FnOnce(&RawCommandQueue) -> Result<RawEvent>> (&self, f: F) -> Result<RawEvent> {
+    pub(super) fn enqueue_scoped<'a, F: 'a + FnOnce(&RawCommandQueue) -> Result<RawEvent>> (&self, f: F) -> Result<RawEvent> {
         // Generate event
         let event = f(&self)?;
-        self.size.fetch_add(1, Ordering::AcqRel);
 
-        // Keep track of queue size
+        // Decrement event count when it completes (if callback setup fails, do it now)
         let size = self.size.clone();
-        if event.on_complete(move |_, _| {size.fetch_sub(1, Ordering::AcqRel);}).is_err() {
-            self.size.fetch_sub(1, Ordering::AcqRel);
-        }
+        let _ = event.on_complete(move |_, _| drop(size));
 
         Ok(event)
     }

@@ -1,5 +1,5 @@
 use core::{mem::MaybeUninit, num::NonZeroUsize};
-use std::{borrow::Cow, ptr::{NonNull, addr_of_mut}, ffi::{c_void}};
+use std::{borrow::Cow, ptr::{NonNull, addr_of_mut}, ffi::{c_void}, ops::Deref};
 use box_iter::BoxIntoIter;
 use opencl_sys::*;
 use blaze_proc::docfg;
@@ -199,7 +199,7 @@ impl RawProgram {
 
         let build_result = ErrorType::from(build_result);
 
-        for device in ctx.queues().into_iter().map(RawCommandQueue::device) {
+        for device in ctx.queues().into_iter().map(Deref::deref).map(RawCommandQueue::device) {
             let device = device?;
             
             let mut len = 0;
