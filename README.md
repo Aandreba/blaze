@@ -3,7 +3,6 @@
 [![GitHub](https://img.shields.io/github/license/Aandreba/blaze)](https://github.com/Aandreba/blaze)
 
 # Blaze
-
 > **Note**\
 > Blaze is still very much unstable and in early development. At this stage, methods and traits may be changed without deprecation period, backwards compatibility isn't guaranteed, and unexpected bugs may arise.
 
@@ -15,3 +14,11 @@ This goal is achieved with the introduction of various abstractions, most of the
 - [Crates.io](https://crates.io/crates/blaze-rs)
 - [docs.rs](https://docs.rs/blaze-rs/latest)
 - [GitHub](https://github.com/Aandreba/blaze)
+
+> **Warning**\
+> When cloning the Blaze repo, you might have to clone the `docs` submodule manually. To do so, run the following commands.
+> ```
+> git clone https://github.com/Aandreba/blaze.git
+> git submodule update --recursive --init
+> make check
+> ```
