@@ -17,6 +17,7 @@ pub extern "C" {
 }
 
 #[test]
+#[cfg(feature = "cl3")]
 fn main () -> Result<()> {
     const SIZE : usize = 50;
 
