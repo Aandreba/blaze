@@ -4,20 +4,15 @@ use crate::prelude::{RawCommandQueue, Result, Event, RawEvent};
 #[derive(Debug, Clone)]
 pub struct CommandQueue {
     inner: RawCommandQueue,
-    size: Size
+    pub(super) size: Size
 }
 
 impl CommandQueue {
     #[inline(always)]
     pub fn new (inner: RawCommandQueue) -> Self {
-        let size = unsafe {
-            let alloc = std::alloc::alloc_zeroed(Layout::new::<AtomicUsize>());
-            NonNull::new(alloc.cast()).map(Size).unwrap()
-        };
-
         Self {
             inner,
-            size
+            size: Size::new()
         }
     }
 
@@ -63,7 +58,17 @@ impl DerefMut for CommandQueue {
 
 #[derive(Debug)]
 #[repr(transparent)]
-struct Size (NonNull<AtomicUsize>);
+pub(super) struct Size (NonNull<AtomicUsize>);
+
+impl Size {
+    #[inline(always)]
+    pub fn new () -> Size {
+        unsafe {
+            let alloc = std::alloc::alloc_zeroed(Layout::new::<AtomicUsize>());
+            NonNull::new(alloc.cast()).map(Size).unwrap()
+        }
+    }
+}
 
 impl Clone for Size {
     #[inline(always)]

@@ -2,6 +2,7 @@ use std::ops::Deref;
 use super::{Context, RawContext, CommandQueue};
 
 extern "Rust" {
+    fn __blaze__global__ref () -> &'static Global;
     fn __blaze__global__as_raw () -> &'static RawContext;
     fn __blaze__global__queues () -> &'static [CommandQueue];
     fn __blaze__global__next_queue () -> &'static CommandQueue;
@@ -10,6 +11,13 @@ extern "Rust" {
 #[doc = include_str!("../../docs/src/context/global.md")]
 #[derive(Copy, Clone, Default, Debug)]
 pub struct Global;
+
+impl Global {
+    #[inline(always)]
+    pub fn get () -> &'static Global {
+        unsafe { __blaze__global__ref() }
+    }
+}
 
 impl Context for Global {
     #[inline(always)]
