@@ -413,7 +413,11 @@ unsafe impl<T: Sync, C: crate::prelude::Context> crate::buffer::KernelPointer<T>
             let size = core::mem::size_of::<T>() * crate::svm::SvmPointer::<T>::len(self);
             
             unsafe {
-                let _ = alloc.map::<&crate::prelude::RawEvent, {opencl_sys::CL_MAP_READ | opencl_sys::CL_MAP_WRITE}>(self.as_ptr() as *mut _, size, event)?;
+                let _ = alloc.map::<{opencl_sys::CL_MAP_READ | opencl_sys::CL_MAP_WRITE}>(
+                    self.as_ptr() as *mut _,
+                    size,
+                    core::slice::from_ref(event)
+                )?;
             }
         }
 

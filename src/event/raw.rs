@@ -34,9 +34,12 @@ impl RawEvent {
 
     #[inline(always)]
     pub fn join_by_ref (&self) -> Result<()> {
+        let slice = &[self.0.as_ptr()];
+
         unsafe {
-            tri!(clWaitForEvents(1, self.0.as_ptr().cast()))
+            tri!(clWaitForEvents(1, slice.as_ptr()))
         }
+
         Ok(())
     }
 

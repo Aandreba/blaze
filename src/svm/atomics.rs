@@ -111,7 +111,7 @@ macro_rules! impl_atomic {
             #[cfg(target_has_atomic = $len)]
             unsafe impl<C: Context> KernelPointer<$atomic> for $svm<C> where C: 'static + Send + Clone {
                 #[inline(always)]
-                unsafe fn set_arg (&self, kernel: &mut RawKernel, _wait: &mut WaitList, idx: u32) -> Result<()> {
+                unsafe fn set_arg (&self, kernel: &mut RawKernel, _wait: &mut Vec<RawEvent>, idx: u32) -> Result<()> {
                     kernel.set_svm_argument::<$atomic, Self>(idx, self)?;
                     // SVM atomic pointers are allways fine grained
                     Ok(())

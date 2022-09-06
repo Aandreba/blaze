@@ -34,7 +34,7 @@ impl CommandQueue {
         let evt = Event::new(inner, f);
 
         let size = self.size.clone();
-        evt.on_complete(move |_, _| drop(size));
+        evt.on_complete(move |_, _| drop(size)).unwrap();
 
         return Ok(evt)
     }

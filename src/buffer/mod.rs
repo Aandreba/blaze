@@ -60,7 +60,11 @@ unsafe impl<T: Sync, C: Context> KernelPointer<T> for SvmBox<[T], C> where C: 's
             let ptr = self.as_ptr() as *const T as usize;
             
             unsafe {
-                let _ = alloc.map::<&RawEvent, {opencl_sys::CL_MAP_READ | opencl_sys::CL_MAP_WRITE}>(ptr as *mut _, size, event)?;
+                let _ = alloc.map::<{opencl_sys::CL_MAP_READ | opencl_sys::CL_MAP_WRITE}>(
+                    ptr as *mut _,
+                    size,
+                    core::slice::from_ref(event)
+                )?;
             }
         }
 
@@ -90,7 +94,11 @@ unsafe impl<T: Sync, C: Context> KernelPointer<T> for SvmBox<T, C> where C: 'sta
             let ptr = self.as_ptr() as *const T as usize;
             
             unsafe {
-                let _ = alloc.map::<&RawEvent, {opencl_sys::CL_MAP_READ | opencl_sys::CL_MAP_WRITE}>(ptr as *mut _, size, event)?;
+                let _ = alloc.map::<{opencl_sys::CL_MAP_READ | opencl_sys::CL_MAP_WRITE}>(
+                    ptr as *mut _,
+                    size,
+                    core::slice::from_ref(event)
+                )?;
             }
         }
 
@@ -105,7 +113,7 @@ unsafe impl<T: Sync, C: Context> KernelPointer<T> for SvmVec<T, C> where C: 'sta
         kernel.set_svm_argument::<T, Self>(idx, self)?;
 
         if Vec::allocator(self).is_coarse() {
-            let evt = Vec::allocator(self).unmap(SvmPointer::<T>::as_ptr(self) as *mut _, WaitList::EMPTY)?;
+            let evt = Vec::allocator(self).unmap(SvmPointer::<T>::as_ptr(self) as *mut _, &[])?;
             wait.push(evt)
         }
 
@@ -120,7 +128,11 @@ unsafe impl<T: Sync, C: Context> KernelPointer<T> for SvmVec<T, C> where C: 'sta
             let ptr = self.as_ptr() as *const T as usize;
             
             unsafe {
-                let _ = alloc.map::<&RawEvent, {opencl_sys::CL_MAP_READ | opencl_sys::CL_MAP_WRITE}>(ptr as *mut _, size, event)?;
+                let _ = alloc.map::<{opencl_sys::CL_MAP_READ | opencl_sys::CL_MAP_WRITE}>(
+                    ptr as *mut _,
+                    size,
+                    core::slice::from_ref(event)
+                )?;
             }
         }
 

@@ -66,11 +66,7 @@ pub mod prelude {
     pub use crate::context::{Context, Global, RawContext, SimpleContext};
     pub use crate::event::{RawEvent, Event};
     pub use crate::memobj::RawMemObject;
-    #[blaze_proc::docfg(feature = "cl1_1")]
-    pub use crate::event::FlagEvent;
     pub use crate::buffer::rect::{BufferRect2D, Rect2D};
-    #[blaze_proc::docfg(feature = "cl1_1")]
-    pub use crate::buffer::rect::{ReadBufferRect2D, WriteBufferRect2D};
 }
 
 #[doc(hidden)]
@@ -78,8 +74,8 @@ pub extern crate once_cell;
 
 extern crate blaze_proc;
 pub mod macros {
-    #[doc = include_str!("../docs/src/program/README.md")]
-    pub use blaze_proc::blaze;
+    //#[doc = include_str!("../docs/src/program/README.md")]
+    //pub use blaze_proc::blaze;
     pub use blaze_proc::{global_context};
 }
 

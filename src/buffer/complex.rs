@@ -115,14 +115,20 @@ impl<T: Copy + Unpin, C: Context> Buffer<T, C> {
     #[inline(always)]
     pub fn read<'a, R: IntoRange> (&'a self, range: R, wait: &[RawEvent]) -> Result<Event<'a, Vec<T>>> {
         let range = range.into_range::<T>(&self.inner)?;
-        let mut result = Pin::new(Vec::<T>::with_capacity(range.cb / core::mem::size_of::<T>()));
+        let len = range.cb / core::mem::size_of::<T>();
+        let mut result = Vec::<T>::with_capacity(len);
         
-        let dst = result.as_mut_ptr();
+        let dst = Vec::as_mut_ptr(&mut result);
         let supplier = |queue| unsafe {
             self.inner.read_to_ptr_in(range, dst, queue, wait)
         };
 
-        let f = move || Ok(Pin::into_inner(result));
+        let f = move || unsafe {
+            //let _ = self;
+            result.set_len(len);
+            Ok(result)
+        };
+
         self.ctx.next_queue().enqueue(supplier, f)
     }
 
