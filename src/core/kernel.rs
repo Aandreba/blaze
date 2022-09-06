@@ -1,7 +1,7 @@
 use std::{mem::MaybeUninit, ffi::c_void, ptr::{addr_of_mut, NonNull}};
 use opencl_sys::*;
 use blaze_proc::docfg;
-use crate::{core::*, context::{RawContext, Context, Global}, event::{RawEvent, WaitList}};
+use crate::{core::*, context::{RawContext, Context, Global}, event::{RawEvent}, wait_list};
 
 #[derive(Debug, PartialEq, Eq, Hash)]
 #[repr(transparent)]
@@ -54,16 +54,16 @@ impl RawKernel {
     }
 
     #[inline(always)]
-    pub unsafe fn enqueue<const N: usize> (&mut self, global_work_dims: [usize; N], local_work_dims: impl Into<Option<[usize; N]>>, wait: impl Into<WaitList>) -> Result<RawEvent> {
+    pub unsafe fn enqueue<const N: usize> (&mut self, global_work_dims: [usize; N], local_work_dims: impl Into<Option<[usize; N]>>, wait: &[RawEvent]) -> Result<RawEvent> {
         self.enqueue_with_queue(Global.next_queue(), global_work_dims, local_work_dims, wait)
     }
 
     #[inline(always)]
-    pub unsafe fn enqueue_with_context<C: Context, const N: usize> (&mut self, ctx: &C, global_work_dims: [usize; N], local_work_dims: impl Into<Option<[usize; N]>>, wait: impl Into<WaitList>) -> Result<RawEvent> {
+    pub unsafe fn enqueue_with_context<C: Context, const N: usize> (&mut self, ctx: &C, global_work_dims: [usize; N], local_work_dims: impl Into<Option<[usize; N]>>, wait: &[RawEvent]) -> Result<RawEvent> {
         self.enqueue_with_queue(ctx.next_queue(), global_work_dims, local_work_dims, wait)
     }
 
-    pub unsafe fn enqueue_with_queue<const N: usize> (&mut self, queue: &RawCommandQueue, global_work_dims: [usize; N], local_work_dims: impl Into<Option<[usize; N]>>, wait: impl Into<WaitList>) -> Result<RawEvent> {
+    pub unsafe fn enqueue_with_queue<const N: usize> (&mut self, queue: &RawCommandQueue, global_work_dims: [usize; N], local_work_dims: impl Into<Option<[usize; N]>>, wait: &[RawEvent]) -> Result<RawEvent> {
         let work_dim = u32::try_from(N).expect("Integer overflow");
         let local_work_dims = local_work_dims.into();
         let local_work_dims = match local_work_dims {
@@ -71,8 +71,7 @@ impl RawKernel {
             None => core::ptr::null()
         };
 
-        let wait : WaitList = wait.into();
-        let (num_events_in_wait_list, event_wait_list) = wait.raw_parts();
+        let (num_events_in_wait_list, event_wait_list) = wait_list(wait);
 
         let mut event = core::ptr::null_mut();
         tri!(clEnqueueNDRangeKernel(queue.id(), self.id(), work_dim, core::ptr::null(), global_work_dims.as_ptr(), local_work_dims, num_events_in_wait_list, event_wait_list, addr_of_mut!(event)));

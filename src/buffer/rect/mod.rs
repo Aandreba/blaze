@@ -1,11 +1,8 @@
 flat_mod!(host);
 
-#[cfg(feature = "cl1_1")]
-flat_mod!(read, write);
-
 use std::{ptr::NonNull, ops::{Deref, DerefMut}, num::NonZeroUsize, mem::MaybeUninit, fmt::Debug};
 use blaze_proc::docfg;
-use crate::{prelude::*, event::WaitList};
+use crate::{prelude::*};
 use super::{Buffer, flags::{MemFlags, MemAccess, HostPtr}};
 
 /// Buffer that conatins a 2D rectangle.
@@ -132,35 +129,7 @@ impl<T: Copy, C: Context> BufferRect2D<T, C> {
 
 #[docfg(feature = "cl1_1")]
 impl<T: Copy + Unpin, C: Context> BufferRect2D<T, C> {
-    #[inline(always)]
-    pub fn read<'src> (&'src self, slice: impl crate::memobj::IntoSlice2D, wait: impl Into<WaitList>) -> Result<ReadBufferRect2D<'src, T>> {
-        let (buffer_row_pitch, buffer_slice_pitch) = self.row_and_slice_pitch();
-        unsafe { ReadBufferRect2D::new(self, self.width.get(), self.height.get(), slice, Some(buffer_row_pitch), Some(buffer_slice_pitch), self.inner.ctx.next_queue(), wait) }
-    }
-
-    #[inline(always)]
-    pub fn read_into<'src, Dst: DerefMut<Target = Rect2D<T>>> (&'src self, offset_src: [usize; 2], dst: Dst, offset_dst: [usize; 2], region: [usize; 2], wait: impl Into<WaitList>) -> Result<ReadIntoBufferRect2D<&'src Self, Dst>> {
-        Self::read_into_by_deref(self, offset_src, dst, offset_dst, region, wait)
-    }
-
-    #[inline(always)]
-    pub fn write<'dst, Src: Deref<Target = Rect2D<T>>> (&'dst mut self, offset_dst: [usize; 2], src: Src, offset_src: [usize; 2], region: [usize; 2], wait: impl Into<WaitList>) -> Result<WriteBufferRect2D<Src, &'dst mut Self>> {
-        Self::write_by_deref(self, offset_dst, src, offset_src, region, wait)
-    }
-
-    #[inline(always)]
-    pub fn read_into_by_deref<Src: Deref<Target = Self>, Dst: DerefMut<Target = Rect2D<T>>> (this: Src, offset_src: [usize; 2], dst: Dst, offset_dst: [usize; 2], region: [usize; 2], wait: impl Into<WaitList>) -> Result<ReadIntoBufferRect2D<Src, Dst>> {
-        let (buffer_row_pitch, buffer_slice_pitch) = this.row_and_slice_pitch();
-        let queue = this.inner.ctx.next_queue().clone();
-        unsafe { ReadIntoBufferRect2D::<Src, Dst>::new(this, offset_src, dst, offset_dst, region, Some(buffer_row_pitch), Some(buffer_slice_pitch), &queue, wait) }
-    }
-
-    #[inline(always)]
-    pub fn write_by_deref<Dst: DerefMut<Target = Self>, Src: Deref<Target = Rect2D<T>>> (this: Dst, offset_dst: [usize; 2], src: Src, offset_src: [usize; 2], region: [usize; 2], wait: impl Into<WaitList>) -> Result<WriteBufferRect2D<Src, Dst>> {
-        let (buffer_row_pitch, buffer_slice_pitch) = this.row_and_slice_pitch();
-        let queue = this.inner.ctx.next_queue().clone();
-        unsafe { WriteBufferRect2D::new(src, offset_src, this, offset_dst, region, Some(buffer_row_pitch), Some(buffer_slice_pitch), &queue, wait) }
-    }
+    
 }
 
 impl<T: Copy, C: Context> Deref for BufferRect2D<T, C> {
@@ -195,9 +164,10 @@ impl<T: Copy + Unpin + Debug, C: Context> Debug for BufferRect2D<T, C> {
 
         cfg_if::cfg_if! {
             if #[cfg(feature = "cl1_1")] {
-                all = self.read((.., ..), WaitList::EMPTY).unwrap().wait_unwrap();
+                all = todo!()
+                //all = self.read((.., ..), &[]).unwrap().join_unwrap();
             } else {
-                let mut all_plain = Buffer::read(&self, .., WaitList::EMPTY).unwrap().wait_unwrap();
+                let mut all_plain = Buffer::read(&self, .., &[]).unwrap().join_unwrap();
                 all_plain.shrink_to_fit();
                 let (ptr, _, _) = Vec::into_raw_parts(all_plain);
 

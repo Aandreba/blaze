@@ -2,7 +2,7 @@ use super::*;
 use std::{mem::MaybeUninit, ptr::NonNull, ffi::c_void};
 use opencl_sys::*;
 use blaze_proc::docfg;
-use crate::{context::RawContext};
+use crate::{context::RawContext, prelude::RawEvent, wait_list};
 use std::ptr::addr_of_mut;
 
 #[derive(Debug, PartialEq, Eq, Hash)]
@@ -185,9 +185,8 @@ impl RawCommandQueue {
     /// queued before this command to the command queue, have completed.
     #[docfg(feature = "cl1_2")]
     #[inline(always)]
-    pub fn barrier (&self, wait: impl Into<crate::event::WaitList>) -> Result<crate::prelude::RawEvent> {
-        let wait : crate::event::WaitList = wait.into();
-        let (num_events_in_wait_list, event_wait_list) = wait.raw_parts();
+    pub fn barrier (&self, wait: &[RawEvent]) -> Result<crate::prelude::RawEvent> {
+        let (num_events_in_wait_list, event_wait_list) = wait_list(wait);
 
         let mut evt = core::ptr::null_mut();
         unsafe {
@@ -200,10 +199,8 @@ impl RawCommandQueue {
     /// Enqueues a marker command which waits for either a list of events to complete, or all previously enqueued commands to complete.
     #[docfg(feature = "cl1_2")]
     #[inline(always)]
-    pub fn marker (&self, wait: impl Into<crate::event::WaitList>) -> Result<crate::prelude::RawEvent> {
-        let wait : crate::event::WaitList = wait.into();
-        let (num_events_in_wait_list, event_wait_list) = wait.raw_parts();
-
+    pub fn marker (&self, wait: &[RawEvent]) -> Result<crate::prelude::RawEvent> {
+        let (num_events_in_wait_list, event_wait_list) = wait_list(wait);
 
         let mut evt = core::ptr::null_mut();
         unsafe {

@@ -1,10 +1,11 @@
-use std::{marker::PhantomData, ptr::{NonNull}, ops::{Deref, DerefMut}, fmt::Debug, mem::MaybeUninit, sync::Arc, rc::Rc};
-use blaze_proc::docfg;
+use std::{marker::PhantomData, ptr::{NonNull}, ops::{Deref, DerefMut}, fmt::Debug, mem::MaybeUninit, pin::Pin};
+//use blaze_proc::docfg;
 
-use crate::{context::{Context, Global}, event::{WaitList}, prelude::{Event, EventExt}};
+use crate::{context::{Context, Global}, prelude::{Event, RawEvent}, event::CoarseEvent};
 use crate::core::*;
-use crate::buffer::{flags::{MemFlags, HostPtr, MemAccess}, events::{ReadBuffer, WriteBuffer, ReadBufferInto}, RawBuffer};
-use super::{events::{CopyBuffer}, IntoRange};
+use crate::buffer::{flags::{MemFlags, HostPtr, MemAccess}, RawBuffer};
+
+use super::{IntoRange, BufferRange};
 
 #[derive(Hash)]
 #[doc = include_str!("../../docs/src/buffer/README.md")]
@@ -62,9 +63,11 @@ impl<T: Copy, C: Context> Buffer<T, C> {
     pub fn new_zeroed_in (ctx: C, len: usize, access: MemAccess, alloc: bool) -> Result<Buffer<MaybeUninit<T>, C>> where T: Unpin {
         let mut buffer = Self::new_uninit_in(ctx, len, access, alloc)?;
         #[cfg(feature = "cl1_2")]
-        buffer.fill(MaybeUninit::zeroed(), .., WaitList::EMPTY)?.wait()?;
+        //buffer.fill(MaybeUninit::zeroed(), .., WaitList::EMPTY)?.wait()?;
+        todo!();
         #[cfg(not(feature = "cl1_2"))]
-        buffer.write(0, vec![MaybeUninit::zeroed(); len], WaitList::EMPTY)?.wait()?;
+        todo!();
+        //buffer.write(0, vec![MaybeUninit::zeroed(); len], WaitList::EMPTY)?.wait()?;
         
         Ok(buffer)
     }
@@ -106,152 +109,32 @@ impl<T: Copy, C: Context> Buffer<MaybeUninit<T>, C> {
     pub unsafe fn assume_init (self) -> Buffer<T, C> {
         self.transmute()
     }
-
-    /// Fills the buffer with the given value. Helper function for [`fill`](Self::write)
-    #[inline(always)]
-    pub fn write_init<'src, 'dst> (&'dst mut self, offset: usize, src: &'src [T], wait: impl Into<WaitList>) -> Result<WriteBuffer<&'src [MaybeUninit<T>], &'dst mut Self>> where T: Unpin {
-        debug_assert_eq!(core::mem::size_of::<T>(), core::mem::size_of::<MaybeUninit<T>>());
-        let src = unsafe { core::slice::from_raw_parts(src.as_ptr().cast(), src.len()) };
-        Self::write_by_deref(self, offset, src, wait)
-    }
-
-    #[docfg(feature = "cl1_2")]
-    #[inline(always)]
-    pub fn fill_init<'dst> (&'dst mut self, v: T, range: impl IntoRange, wait: impl Into<WaitList>) -> Result<super::events::FillBuffer<&'dst mut Self>> where T: Unpin {
-        self.fill(MaybeUninit::new(v), range, wait)
-    }
 }
 
 impl<T: Copy + Unpin, C: Context> Buffer<T, C> {
-    /// Returns an event that reads the contents of the buffer into a `Vec<T>`
     #[inline(always)]
-    pub fn read<'src> (&'src self, range: impl IntoRange, wait: impl Into<WaitList>) -> Result<ReadBuffer<T, &'src Self>> {
-        Self::read_by_deref(self, range, wait)
-    }
+    pub fn read<'a, R: IntoRange> (&'a self, range: R, wait: &[RawEvent]) -> Result<Event<'a, Vec<T>>> {
+        let range = range.into_range::<T>(&self.inner)?;
+        let mut result = Pin::new(Vec::<T>::with_capacity(range.cb / core::mem::size_of::<T>()));
+        
+        let dst = result.as_mut_ptr();
+        let supplier = |queue| unsafe {
+            self.inner.read_to_ptr_in(range, dst, queue, wait)
+        };
 
-    /// Returns an event that reads the contents of the buffer into `dst`
-    #[inline(always)]
-    pub fn read_into<'src, Dst: DerefMut<Target = [T]>> (&'src self, offset: usize, dst: Dst, wait: impl Into<WaitList>) -> Result<ReadBufferInto<&'src Self, Dst>> {
-        Self::read_into_by_deref(self, offset, dst, wait)
-    }
-
-    /// Returns an event that writes the contents of `src` into the buffer.
-    #[inline(always)]
-    pub fn write<'dst, Src: Deref<Target = [T]>> (&'dst mut self, offset: usize, src: Src, wait: impl Into<WaitList>) -> Result<WriteBuffer<Src, &'dst mut Self>> {
-        Self::write_by_deref(self, offset, src, wait)
-    }
-
-    /// Copies the contens from `src` ino the buffer.
-    #[inline(always)]
-    pub fn copy_from<'dst, Src: Deref<Target = Self>> (&'dst mut self, offset_dst: usize, src: Src, offset_src: usize, len: usize, wait: impl Into<WaitList>) -> Result<CopyBuffer<Src, &'dst mut Self>> {
-        Self::copy_from_by_deref(self, offset_dst, src, offset_src, len, wait)
-    }
-
-    /// Copies the contents of the buffer into `dst`
-    #[inline(always)]
-    pub fn copy_to<'src, Dst: DerefMut<Target = Self>> (&'src self, offset_src: usize, dst: Dst, offset_dst: usize, len: usize, wait: impl Into<WaitList>) -> Result<CopyBuffer<&'src Self, Dst>> {
-        Self::copy_to_by_deref(self, offset_src, dst, offset_dst, len, wait)
-    }
-
-    /// Fills a region of the buffer with `v`
-    #[docfg(feature = "cl1_2")]
-    #[inline(always)]
-    pub fn fill<'dst> (&'dst mut self, v: T, range: impl IntoRange, wait: impl Into<WaitList>) -> Result<super::events::FillBuffer<&'dst mut Self>> {
-        Self::fill_by_deref(self, v, range, wait)
-    }
-
-    /// Maps a region of the buffer's device memory into host memory. The mapped region will be read-only.
-    #[inline(always)]
-    pub fn map<'a> (&'a self, range: impl IntoRange, wait: impl Into<WaitList>) -> Result<super::events::MapBuffer<T, &'a Self>> where T: 'static, C: 'static + Clone {
-        Self::map_by_deref(self, range, wait)
-    }
-
-    /// Maps a region of the buffer's device memory into host memory. The mapped region will be read-write.
-    #[inline(always)]
-    pub fn map_mut<'a> (&'a mut self, range: impl IntoRange, wait: impl Into<WaitList>) -> Result<super::events::MapBufferMut<T, &'a mut Self>> where T: 'static, C: 'static {
-        Self::map_by_deref_mut(self, range, wait)
-    }
-
-    /* RC */
-
-    #[inline(always)]
-    pub fn read_local (self: Rc<Self>, range: impl IntoRange, wait: impl Into<WaitList>) -> Result<ReadBuffer<T, Rc<Self>>> {
-        Self::read_by_deref(self, range, wait)
+        let f = move || Ok(Pin::into_inner(result));
+        self.ctx.next_queue().enqueue(supplier, f)
     }
 
     #[inline(always)]
-    pub fn read_into_local<Dst: DerefMut<Target = [T]>> (self: Rc<Self>, offset: usize, dst: Dst, wait: impl Into<WaitList>) -> Result<ReadBufferInto<Rc<Self>, Dst>> {
-        Self::read_into_by_deref(self, offset, dst, wait)
-    }
-    
-    #[inline(always)]
-    pub fn copy_to_local<Dst: DerefMut<Target = Self>> (self: Rc<Self>, offset_src: usize, dst: Dst, offset_dst: usize, len: usize, wait: impl Into<WaitList>) -> Result<CopyBuffer<Rc<Self>, Dst>> {
-        Self::copy_to_by_deref(self, offset_src, dst, offset_dst, len, wait)
-    }
+    pub fn write<'a> (&'a mut self, offset: usize, src: &'a [T], wait: &[RawEvent]) -> Result<CoarseEvent<'a>> {
+        let range = BufferRange::from_parts::<T>(offset, src.len()).unwrap();
 
-    /* ARC */
+        let supplier = |queue| unsafe {
+            self.inner.write_from_ptr_in(range, src.as_ptr(), queue, wait)
+        };
 
-    #[inline(always)]
-    pub fn read_owned (self: Arc<Self>, range: impl IntoRange, wait: impl Into<WaitList>) -> Result<ReadBuffer<T, Arc<Self>>> {
-        Self::read_by_deref(self, range, wait)
-    }
-
-    #[inline(always)]
-    pub fn read_into_owned<Dst: DerefMut<Target = [T]>> (self: Arc<Self>, offset: usize, dst: Dst, wait: impl Into<WaitList>) -> Result<ReadBufferInto<Arc<Self>, Dst>> {
-        Self::read_into_by_deref(self, offset, dst, wait)
-    }
-    
-    #[inline(always)]
-    pub fn copy_to_owned<Dst: DerefMut<Target = Self>> (self: Arc<Self>, offset_src: usize, dst: Dst, offset_dst: usize, len: usize, wait: impl Into<WaitList>) -> Result<CopyBuffer<Arc<Self>, Dst>> {
-        Self::copy_to_by_deref(self, offset_src, dst, offset_dst, len, wait)
-    }
-
-    /* BY DEREF */
-
-    #[inline(always)]
-    pub fn read_by_deref<Src: Deref<Target = Self>> (this: Src, range: impl IntoRange, wait: impl Into<WaitList>) -> Result<ReadBuffer<T, Src>> {
-        let queue = this.ctx.next_queue().clone();
-        unsafe { ReadBuffer::new(this, range, &queue, wait) }
-    }
-
-    #[inline(always)]
-    pub fn read_into_by_deref<Src: Deref<Target = Self>, Dst: DerefMut<Target = [T]>> (this: Src, offset: usize, dst: Dst, wait: impl Into<WaitList>) -> Result<ReadBufferInto<Src, Dst>> {
-        let queue = this.ctx.next_queue().clone();
-        unsafe { ReadBufferInto::new(this, offset, dst, &queue, wait) }
-    }
-
-    #[inline(always)]
-    pub fn write_by_deref<Dst: DerefMut<Target = Self>, Src: Deref<Target = [T]>> (this: Dst, offset: usize, src: Src, wait: impl Into<WaitList>) -> Result<WriteBuffer<Src, Dst>> {
-        let queue = this.ctx.next_queue().clone();
-        unsafe { WriteBuffer::new(src, offset, this, &queue, wait) }
-    }
-
-    #[inline(always)]
-    pub fn copy_from_by_deref<Dst: DerefMut<Target = Self>, Src: Deref<Target = Self>> (this: Dst, offset_dst: usize, src: Src, offset_src: usize, len: usize, wait: impl Into<WaitList>) -> Result<CopyBuffer<Src, Dst>> {
-        let queue = this.ctx.next_queue().clone();
-        unsafe { CopyBuffer::new(src, offset_src, this, offset_dst, len, &queue, wait) }
-    }
-
-    #[inline(always)]
-    pub fn copy_to_by_deref<Src: Deref<Target = Self>, Dst: DerefMut<Target = Self>> (this: Src, offset_src: usize, dst: Dst, offset_dst: usize, len: usize, wait: impl Into<WaitList>) -> Result<CopyBuffer<Src, Dst>> {
-        Self::copy_from_by_deref(dst, offset_dst, this, offset_src, len, wait)
-    }
-
-    #[docfg(feature = "cl1_2")]
-    #[inline(always)]
-    pub fn fill_by_deref<Dst: DerefMut<Target = Self>> (this: Dst, v: T, range: impl IntoRange, wait: impl Into<WaitList>) -> Result<super::events::FillBuffer<Dst>> {
-        let queue = this.ctx.next_queue().clone();
-        unsafe { super::events::FillBuffer::new(v, this, range, &queue, wait) }
-    }
-
-    #[inline(always)]
-    pub fn map_by_deref<D: Deref<Target = Self>> (this: D, range: impl IntoRange, wait: impl Into<WaitList>) -> Result<super::events::MapBuffer<T,D>> where T: 'static, C: 'static {
-        super::events::MapBuffer::new(this, range, wait)
-    }
-
-    #[inline(always)]
-    pub fn map_by_deref_mut<D: DerefMut<Target = Self>> (this: D, range: impl IntoRange, wait: impl Into<WaitList>) -> Result<super::events::MapBufferMut<T,D>> where T: 'static, C: 'static {
-        super::events::MapBufferMut::new(this, range, wait)
+        self.ctx.next_queue().enqueue_noop(supplier)
     }
 }
 
@@ -273,12 +156,13 @@ impl<T: Copy, C: Context> DerefMut for Buffer<T, C> {
 
 impl<T: Copy + Unpin + PartialEq, C: Context> PartialEq for Buffer<T, C> {
     fn eq(&self, other: &Self) -> bool {
-        let this = match self.read(.., WaitList::EMPTY) {
+        todo!()
+        /*let this = match self.read(.., &[]) {
             Ok(x) => x,
             Err(_) => return false
         };
 
-        let other = match other.read(.., WaitList::EMPTY) {
+        let other = match other.read(.., &[]) {
             Ok(x) => x,
             Err(_) => return false
         };
@@ -288,14 +172,14 @@ impl<T: Copy + Unpin + PartialEq, C: Context> PartialEq for Buffer<T, C> {
             Err(_) => return false
         };
 
-        join[0] == join[1]
+        join[0] == join[1]*/
     }
 }
 
 impl<T: Copy + Unpin + Debug, C: Context> Debug for Buffer<T, C> {
     #[inline(always)]
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let v = self.read(.., WaitList::EMPTY).unwrap().wait().unwrap();
+        let v = self.read(.., &[]).unwrap().join_unwrap();
         Debug::fmt(&v, f)
     }
 }

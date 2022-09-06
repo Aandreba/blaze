@@ -20,7 +20,7 @@ impl MemFlags {
     #[docfg(feature = "cl1_2")]
     #[inline(always)]
     pub const fn with_host_access (access: MemAccess, host_access: MemAccess, host: HostPtr) -> Self {
-        Self { access, host, host_access }
+        Self { access, host, #[cfg(feature = "cl1_2")] host_access }
     }
 
     #[inline(always)]

@@ -60,13 +60,11 @@ macro_rules! tri_panic {
 }
 
 pub mod prelude {
-    pub const EMPTY : WaitList = WaitList::EMPTY;
-
     pub use crate::core::*;
     pub use crate::macros::*;
-    pub use crate::buffer::{RawBuffer, Buffer, flags::*, events::{ReadBuffer, WriteBuffer, CopyBuffer}};
+    pub use crate::buffer::{RawBuffer, Buffer, flags::*};
     pub use crate::context::{Context, Global, RawContext, SimpleContext};
-    pub use crate::event::{RawEvent, Event, EventExt, WaitList};
+    pub use crate::event::{RawEvent, Event};
     pub use crate::memobj::RawMemObject;
     #[blaze_proc::docfg(feature = "cl1_1")]
     pub use crate::event::FlagEvent;
@@ -104,3 +102,14 @@ pub mod image;
 #[cfg_attr(docsrs, doc(cfg(feature = "svm")))]
 #[cfg(feature = "svm")]
 pub mod svm;
+
+#[inline(always)]
+pub(crate) const fn wait_list (v: &[prelude::RawEvent]) -> (u32, *const opencl_sys::cl_event) {
+    const MAX_WAIT_LIST : usize = u32::MAX as usize;
+
+    return match v.len() {
+        0 => (0, ::core::ptr::null()),
+        len @ 1..=MAX_WAIT_LIST => (len as u32, v.as_ptr().cast()),
+        _ => panic!("Wait list overflow")
+    }
+}
