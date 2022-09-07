@@ -138,13 +138,13 @@ impl<T: Copy + Unpin, C: Context> Buffer<T, C> {
         let range = range.into_range::<T>(&self.inner)?;
         let len = range.cb / core::mem::size_of::<T>();
         let mut result = Vec::<T>::with_capacity(len);
-        
+
         let dst = Vec::as_mut_ptr(&mut result);
         let supplier = |queue| unsafe {
             self.inner.read_to_ptr_in(range, dst, queue, wait)
         };
 
-        return scope.enqueue(supplier, BufferRead(result, PhantomData))
+        return scope.enqueue(supplier, BufferRead(result, len, PhantomData))
     }
 
     pub fn write<'scope, 'env> (&'scope mut self, scope: &'scope Scope<'scope, 'env, C>, offset: usize, src: &'env [T], wait: &[RawEvent]) -> Result<WriteEvent<'scope>> {
@@ -206,12 +206,12 @@ impl<T: Copy + Unpin + Debug, C: Context> Debug for Buffer<T, C> {
 
 impl<T: Copy + Unpin + Eq, C: Context> Eq for Buffer<T, C> {}
 
-#[repr(transparent)]
-pub struct BufferRead<'a, T> (Vec<T>, PhantomData<&'a RawBuffer>);
+pub struct BufferRead<'a, T> (Vec<T>, usize, PhantomData<&'a RawBuffer>);
 
 impl<'a, T: 'a> Consumer<'a, Vec<T>> for BufferRead<'a, T> {
     #[inline(always)]
-    fn consume (self) -> Result<Vec<T>> {
+    fn consume (mut self) -> Result<Vec<T>> {
+        unsafe { self.0.set_len(self.1); }
         Ok(self.0)
     }
 } 

@@ -16,13 +16,17 @@ impl<'scope, 'env: 'scope, C: 'env + Context> Scope<'scope, 'env, C> {
         let inner = supplier(&queue)?;
         let evt = Event::new(inner, consumer);
 
+        if self.size.fetch_add(1, Ordering::Relaxed) == usize::MAX {
+            panic!("too many events in scope")
+        }
+
         let queue_size = queue.size.clone();
         let scope_size = self.size.clone();
         let scope_thread = self.thread.clone();
 
         evt.on_complete(move |_, _| {
             drop(queue_size);
-            if scope_size.fetch_sub(1, Ordering::AcqRel) == 1 {
+            if scope_size.fetch_sub(1, Ordering::Relaxed) == 1 {
                 scope_thread.unpark();
             }
         }).unwrap();
