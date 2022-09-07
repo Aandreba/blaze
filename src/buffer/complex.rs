@@ -114,6 +114,7 @@ impl<T: Copy, C: Context> Buffer<MaybeUninit<T>, C> {
 }
 
 impl<T: Copy + Unpin, C: Context> Buffer<T, C> {
+    /// Reads the contents of the buffer, blocking the current thread until the operation has completed.
     pub fn read_blocking<R: IntoRange> (&self, range: R, wait: &[RawEvent]) -> Result<Vec<T>> {
         let range = range.into_range::<T>(&self.inner)?;
         let len = range.cb / core::mem::size_of::<T>();
@@ -134,6 +135,7 @@ impl<T: Copy + Unpin, C: Context> Buffer<T, C> {
         }
     }
 
+    /// Reads the contents of the buffer
     pub fn read<'scope, 'env, R: IntoRange> (&'env self, scope: &'scope Scope<'scope, 'env, C>, range: R, wait: &[RawEvent]) -> Result<ReadEvent<'scope, T>> {
         let range = range.into_range::<T>(&self.inner)?;
         let len = range.cb / core::mem::size_of::<T>();
@@ -147,6 +149,7 @@ impl<T: Copy + Unpin, C: Context> Buffer<T, C> {
         return scope.enqueue(supplier, BufferRead(result, len, PhantomData))
     }
 
+    /// Writes the contents of `src` into the buffer
     pub fn write<'scope, 'env> (&'scope mut self, scope: &'scope Scope<'scope, 'env, C>, offset: usize, src: &'env [T], wait: &[RawEvent]) -> Result<WriteEvent<'scope>> {
         let range = BufferRange::from_parts::<T>(offset, src.len()).unwrap();
         let supplier = |queue| unsafe {
@@ -156,6 +159,7 @@ impl<T: Copy + Unpin, C: Context> Buffer<T, C> {
         scope.enqueue_noop(supplier)
     }
 
+    /// Writes the contents of `src` into the buffer, blocking the current thread until the operation has completed.
     pub fn write_blocking (&mut self, offset: usize, src: &[T], wait: &[RawEvent]) -> Result<()> {
         let range = BufferRange::from_parts::<T>(offset, src.len()).unwrap();
         let supplier = |queue| unsafe {

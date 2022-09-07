@@ -18,13 +18,13 @@ pub(super) fn get_sender () -> ListenerSender {
             std::thread::spawn(move || {
                 let mut listeners = Vec::<Listener>::new();
 
-                loop {
+                'out: loop {
                     // Check for new listeners to add to the queue
-                    loop {
+                    '_inner: loop {
                         match recv.try_recv() {
                             Ok((evt, recv)) => listeners.push(Listener { evt, recv, cbs: Vec::new(), closed: false }),
                             Err(TryRecvError::Empty) => break,
-                            Err(TryRecvError::Disconnected) => todo!()
+                            Err(TryRecvError::Disconnected) => break 'out
                         }
                     }
 
@@ -84,8 +84,7 @@ pub(super) fn get_sender () -> ListenerSender {
                 }
             });
 
-            todo!()
-            //return send
+            return send
         }).clone()
     })
 }
