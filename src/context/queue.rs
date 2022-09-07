@@ -23,8 +23,8 @@ impl CommandQueue {
         }
     }
 
-    #[inline(always)]
-    pub fn enqueue<'a, 'b, 'r: 'b, T, E: 'b + FnOnce(&'r RawCommandQueue) -> Result<RawEvent>, F: 'a + FnOnce() -> Result<T>> (&'r self, supplier: E, f: F) -> Result<Event<'a, T>> {
+    #[inline]
+    pub unsafe fn enqueue_unchecked<'a, 'b, 'r: 'b, T, E: 'b + FnOnce(&'r RawCommandQueue) -> Result<RawEvent>, F: 'a + FnOnce() -> Result<T>> (&'r self, supplier: E, f: F) -> Result<Event<'a, T>> {
         let inner = supplier(&self.inner)?;
         let evt = Event::new(inner, f);
 
@@ -35,7 +35,19 @@ impl CommandQueue {
     }
 
     #[inline(always)]
-    pub fn enqueue_noop<'a, 'b, 'r: 'b, E: 'b + FnOnce(&'r RawCommandQueue) -> Result<RawEvent>> (&'r self, supplier: E) -> Result<Event<'a, ()>> {
+    pub unsafe fn enqueue_noop_unchecked<'a, 'b, 'r: 'b, E: 'b + FnOnce(&'r RawCommandQueue) -> Result<RawEvent>> (&'r self, supplier: E) -> Result<Event<'a, ()>> {
+        self.enqueue_unchecked(supplier, || Ok(()))
+    }
+
+    #[inline(always)]
+    pub fn enqueue<'b, 'r: 'b, T, E: 'b + FnOnce(&'r RawCommandQueue) -> Result<RawEvent>, F: 'static + FnOnce() -> Result<T>> (&'r self, supplier: E, f: F) -> Result<Event<'static, T>> {
+        unsafe {
+            self.enqueue_unchecked(supplier, f)
+        }
+    }
+
+    #[inline(always)]
+    pub fn enqueue_noop<'b, 'r: 'b, E: 'b + FnOnce(&'r RawCommandQueue) -> Result<RawEvent>> (&'r self, supplier: E) -> Result<Event<'static, ()>> {
         self.enqueue(supplier, || Ok(()))
     }
 }

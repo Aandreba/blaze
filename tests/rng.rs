@@ -28,6 +28,6 @@ fn main () -> Result<()> {
         random.assume_init()  
     };
 
-    let _ = random.read(.., EMPTY)?.wait()?;
+    let _ = random.read_event(.., EMPTY)?.wait()?;
     Ok(())
 }

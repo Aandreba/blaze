@@ -1,10 +1,9 @@
-use std::{marker::PhantomData, ptr::{NonNull}, ops::{Deref, DerefMut}, fmt::Debug, mem::MaybeUninit, pin::Pin};
+use std::{marker::PhantomData, ptr::{NonNull}, ops::{Deref, DerefMut}, fmt::Debug, mem::MaybeUninit};
 //use blaze_proc::docfg;
 
-use crate::{context::{Context, Global}, prelude::{Event, RawEvent}, event::CoarseEvent};
+use crate::{context::{Context, Global, LocalScope}, prelude::{Event, RawEvent, scope::local_scope}};
 use crate::core::*;
 use crate::buffer::{flags::{MemFlags, HostPtr, MemAccess}, RawBuffer};
-
 use super::{IntoRange, BufferRange};
 
 #[derive(Hash)]
@@ -112,8 +111,27 @@ impl<T: Copy, C: Context> Buffer<MaybeUninit<T>, C> {
 }
 
 impl<T: Copy + Unpin, C: Context> Buffer<T, C> {
-    #[inline(always)]
-    pub fn read<'a, R: IntoRange> (&'a self, range: R, wait: &[RawEvent]) -> Result<Event<'a, Vec<T>>> {
+    pub fn read_blocking<R: IntoRange> (&self, range: R, wait: &[RawEvent]) -> Result<Vec<T>> {
+        let range = range.into_range::<T>(&self.inner)?;
+        let len = range.cb / core::mem::size_of::<T>();
+        let mut result = Vec::<T>::with_capacity(len);
+
+        let dst = Vec::as_mut_ptr(&mut result);
+        let supplier = |queue| unsafe {
+            self.inner.read_to_ptr_in(range, dst, queue, wait)
+        };
+
+        let f = move || unsafe {
+            result.set_len(len);
+            Ok(result)
+        };
+
+        unsafe {
+            self.ctx.next_queue().enqueue_unchecked(supplier, f)?.join()
+        }
+    }
+
+    pub fn read<'ctx, 'scope, 'env, R: IntoRange> (&'scope self, scope: &'scope LocalScope<'ctx, 'scope, 'env>, range: R, wait: &[RawEvent]) -> Result<Event<'_, Vec<T>>> where C: 'ctx, T: 'scope {
         let range = range.into_range::<T>(&self.inner)?;
         let len = range.cb / core::mem::size_of::<T>();
         let mut result = Vec::<T>::with_capacity(len);
@@ -129,18 +147,27 @@ impl<T: Copy + Unpin, C: Context> Buffer<T, C> {
             Ok(result)
         };
 
-        self.ctx.next_queue().enqueue(supplier, f)
+        return scope.enqueue(supplier, f)
     }
 
-    #[inline(always)]
-    pub fn write<'a> (&'a mut self, offset: usize, src: &'a [T], wait: &[RawEvent]) -> Result<CoarseEvent<'a>> {
+    pub fn write<'ctx, 'scope, 'env> (&'scope mut self, scope: &'scope LocalScope<'ctx, 'scope, 'env>, offset: usize, src: &'env [T], wait: &[RawEvent]) -> Result<Event<'scope, ()>> {
         let range = BufferRange::from_parts::<T>(offset, src.len()).unwrap();
-
         let supplier = |queue| unsafe {
             self.inner.write_from_ptr_in(range, src.as_ptr(), queue, wait)
         };
 
-        self.ctx.next_queue().enqueue_noop(supplier)
+        scope.enqueue_noop(supplier)
+    }
+
+    pub fn write_blocking (&mut self, offset: usize, src: &[T], wait: &[RawEvent]) -> Result<()> {
+        let range = BufferRange::from_parts::<T>(offset, src.len()).unwrap();
+        let supplier = |queue| unsafe {
+            self.inner.write_from_ptr_in(range, src.as_ptr(), queue, wait)
+        };
+
+        unsafe {
+            self.ctx.next_queue().enqueue_noop_unchecked(supplier)?.join()
+        }
     }
 }
 
@@ -162,7 +189,14 @@ impl<T: Copy, C: Context> DerefMut for Buffer<T, C> {
 
 impl<T: Copy + Unpin + PartialEq, C: Context> PartialEq for Buffer<T, C> {
     fn eq(&self, other: &Self) -> bool {
+        local_scope(&self.ctx, |s| {
+            let this = self.read(s, .., &[])?;
+            let other = other.read(s, .., &[])?;
+            todo!()
+        });
+
         todo!()
+
         /*let this = match self.read(.., &[]) {
             Ok(x) => x,
             Err(_) => return false
@@ -185,7 +219,7 @@ impl<T: Copy + Unpin + PartialEq, C: Context> PartialEq for Buffer<T, C> {
 impl<T: Copy + Unpin + Debug, C: Context> Debug for Buffer<T, C> {
     #[inline(always)]
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let v = self.read(.., &[]).unwrap().join_unwrap();
+        let v = self.read_blocking(.., &[]).unwrap();
         Debug::fmt(&v, f)
     }
 }

@@ -4,8 +4,6 @@ use blaze_proc::docfg;
 use crate::prelude::*;
 use super::{RawEvent, EventStatus, ProfilingInfo};
 
-pub type CoarseEvent<'a> = Event<'a, ()>;
-
 pub struct Event<'a, T> {
     inner: RawEvent,
     f: Box<dyn 'a + FnOnce() -> Result<T>>,
@@ -90,6 +88,11 @@ impl<'a, T> Event<'a, T> {
     #[docfg(feature = "futures")]
     pub fn join_async (self) -> Result<crate::event::EventWait<'a, T>> {
         crate::event::EventWait::new(self)
+    }
+
+    #[inline(always)]
+    pub fn join_all<I: IntoIterator<Item = Self>> (iter: I) -> Result<Vec<T>> {
+        todo!()
     }
 }
 

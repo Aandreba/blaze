@@ -12,12 +12,6 @@ pub fn global_context (input: ItemStatic) -> TokenStream {
 
         #[doc(hidden)]
         #[no_mangle]
-        extern "Rust" fn __blaze__global__ref () -> &'static Global {
-            ::blaze_rs::once_cell::sync::Lazy::force(&#ident)
-        }
-
-        #[doc(hidden)]
-        #[no_mangle]
         extern "Rust" fn __blaze__global__as_raw () -> &'static ::blaze_rs::context::RawContext {
             ::blaze_rs::context::Context::as_raw(::blaze_rs::once_cell::sync::Lazy::force(&#ident))
         }
