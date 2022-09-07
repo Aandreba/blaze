@@ -2,18 +2,16 @@ use std::{sync::{Arc, atomic::{AtomicUsize, Ordering}}, marker::PhantomData, pan
 use crate::{prelude::{Result, RawCommandQueue, RawEvent, Event}, event::{Consumer, NoopEvent, Noop}};
 use super::{Global, Context};
 
-pub type Scope<'scope, 'env> = LocalScope<'static, 'scope, 'env, Global>;
-
-pub struct LocalScope<'ctx: 'scope, 'scope, 'env: 'scope, C: 'ctx + Context> {
-    ctx: &'ctx C,
+pub struct Scope<'scope, 'env: 'scope, C: 'env + Context = Global> {
+    ctx: &'env C,
     size: Arc<AtomicUsize>,
     thread: Thread,
     scope: PhantomData<&'scope mut &'scope ()>,
     env: PhantomData<&'env mut &'env ()>
 }
 
-impl<'ctx, 'scope, 'env: 'scope, C: 'ctx + Context> LocalScope<'ctx, 'scope, 'env, C> {
-    pub fn enqueue<T, E: FnOnce(&'ctx RawCommandQueue) -> Result<RawEvent>, F: Consumer<'scope, T>> (&'scope self, supplier: E, consumer: F) -> Result<Event<T, F>> {
+impl<'scope, 'env: 'scope, C: 'env + Context> Scope<'scope, 'env, C> {
+    pub fn enqueue<T, E: FnOnce(&'env RawCommandQueue) -> Result<RawEvent>, F: Consumer<'scope, T>> (&'scope self, supplier: E, consumer: F) -> Result<Event<T, F>> {
         let queue = self.ctx.next_queue();
         let inner = supplier(&queue)?;
         let evt = Event::new(inner, consumer);
@@ -33,7 +31,7 @@ impl<'ctx, 'scope, 'env: 'scope, C: 'ctx + Context> LocalScope<'ctx, 'scope, 'en
     }
 
     #[inline(always)]
-    pub fn enqueue_noop<E: FnOnce(&'ctx RawCommandQueue) -> Result<RawEvent>> (&'scope self, supplier: E) -> Result<NoopEvent<'scope>> {
+    pub fn enqueue_noop<E: FnOnce(&'env RawCommandQueue) -> Result<RawEvent>> (&'scope self, supplier: E) -> Result<NoopEvent<'scope>> {
         self.enqueue(supplier, Noop::new())
     }
 }
@@ -43,8 +41,8 @@ pub fn scope<'env, T, F: for<'scope> FnOnce(&'scope Scope<'scope, 'env>) -> Resu
     local_scope(Global::get(), f)
 }
 
-pub fn local_scope<'ctx, 'env, T, C: 'ctx + Context, F: for<'scope> FnOnce(&'scope LocalScope<'ctx, 'scope, 'env, C>) -> Result<T>> (ctx: &'ctx C, f: F) -> Result<T> {
-    let scope = LocalScope {
+pub fn local_scope<'env, T, C: 'env + Context, F: for<'scope> FnOnce(&'scope Scope<'scope, 'env, C>) -> Result<T>> (ctx: &'env C, f: F) -> Result<T> {
+    let scope = Scope {
         ctx,
         size: Arc::new(AtomicUsize::new(0)),
         thread: std::thread::current(),

@@ -1,7 +1,7 @@
 use std::{marker::PhantomData, ptr::{NonNull}, ops::{Deref, DerefMut}, fmt::Debug, mem::MaybeUninit};
 //use blaze_proc::docfg;
 
-use crate::{context::{Context, Global, LocalScope, local_scope}, prelude::{Event, RawEvent}, event::{NoopEvent, Consumer}};
+use crate::{context::{Context, Global, Scope, local_scope}, prelude::{Event, RawEvent}, event::{NoopEvent, Consumer}};
 use crate::core::*;
 use crate::buffer::{flags::{MemFlags, HostPtr, MemAccess}, RawBuffer};
 use super::{IntoRange, BufferRange};
@@ -134,7 +134,7 @@ impl<T: Copy + Unpin, C: Context> Buffer<T, C> {
         }
     }
 
-    pub fn read<'ctx, 'scope, 'env, R: IntoRange> (&'scope self, scope: &'scope LocalScope<'ctx, 'scope, 'env, C>, range: R, wait: &[RawEvent]) -> Result<ReadEvent<'scope, T>> where C: 'ctx, T: 'scope {
+    pub fn read<'scope, 'env, R: IntoRange> (&'env self, scope: &'scope Scope<'scope, 'env, C>, range: R, wait: &[RawEvent]) -> Result<ReadEvent<'scope, T>> {
         let range = range.into_range::<T>(&self.inner)?;
         let len = range.cb / core::mem::size_of::<T>();
         let mut result = Vec::<T>::with_capacity(len);
@@ -147,7 +147,7 @@ impl<T: Copy + Unpin, C: Context> Buffer<T, C> {
         return scope.enqueue(supplier, BufferRead(result, PhantomData))
     }
 
-    pub fn write<'ctx, 'scope, 'env> (&'scope mut self, scope: &'scope LocalScope<'ctx, 'scope, 'env, C>, offset: usize, src: &'env [T], wait: &[RawEvent]) -> Result<WriteEvent<'scope>> {
+    pub fn write<'scope, 'env> (&'scope mut self, scope: &'scope Scope<'scope, 'env, C>, offset: usize, src: &'env [T], wait: &[RawEvent]) -> Result<WriteEvent<'scope>> {
         let range = BufferRange::from_parts::<T>(offset, src.len()).unwrap();
         let supplier = |queue| unsafe {
             self.inner.write_from_ptr_in(range, src.as_ptr(), queue, wait)
