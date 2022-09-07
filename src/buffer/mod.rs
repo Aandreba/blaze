@@ -17,7 +17,7 @@ pub unsafe trait KernelPointer<T: Sync> {
 unsafe impl<T: Copy + Sync, C: Context> KernelPointer<T> for Buffer<T, C> {
     #[inline(always)]
     unsafe fn set_arg (&self, kernel: &mut RawKernel, _wait: &mut Vec<RawEvent>, idx: u32) -> Result<()> {
-        kernel.set_argument(idx, self.id_ref())
+        kernel.set_argument::<opencl_sys::cl_mem, _>(idx, self.id_ref())
     }
 
     #[inline(always)]
@@ -29,7 +29,7 @@ unsafe impl<T: Copy + Sync, C: Context> KernelPointer<T> for Buffer<T, C> {
 unsafe impl<T: Copy + Sync, C: Context> KernelPointer<T> for rect::BufferRect2D<T, C> {
     #[inline(always)]
     unsafe fn set_arg (&self, kernel: &mut RawKernel, _wait: &mut Vec<RawEvent>, idx: u32) -> Result<()> {
-        kernel.set_argument(idx, self.id_ref())
+        kernel.set_argument::<opencl_sys::cl_mem, _>(idx, self.id_ref())
     }
 
     #[inline(always)]

@@ -11,13 +11,11 @@ fn invalid_raw () -> Result<()> {
     buffer.write_blocking(1, &[9, 8], &[])?;
     println!("{buffer:?}");
 
-    let [left, right] = scope(|s| {
+    scope(|s| {
         let left = buffer.read(s, ..2, &[])?;
-        let right = buffer.read(s, 2.., &[])?;
-        return Event::join_all_sized_blocking([left, right])
+        let right = buffer.write(s, 0, &[3], &[])?;
+        return Ok(())
     })?;
-
-    println!("{left:?} {right:?}");
 
     // Problem. The status of read is unknown
     //let write = buffer.write(2, &[2], &[])?;

@@ -17,7 +17,8 @@ pub struct Event<T, C> {
 
 impl<'a> NoopEvent<'a> {
     #[inline(always)]
-    pub(crate) fn new_noop (inner: RawEvent) -> Self {
+    #[doc(hidden)]
+    pub fn new_noop (inner: RawEvent) -> Self {
         Self::new(inner, Noop::new())
     }
 }

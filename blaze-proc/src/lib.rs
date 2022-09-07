@@ -48,7 +48,6 @@ pub fn error (items: proc_macro::TokenStream) -> proc_macro::TokenStream {
     input.to_token_stream().into()
 }
 
-/*
 #[proc_macro_attribute]
 pub fn blaze (attrs: proc_macro::TokenStream, items: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let ident = parse_macro_input!(attrs as BlazeIdent);
@@ -70,7 +69,6 @@ pub fn blaze (attrs: proc_macro::TokenStream, items: proc_macro::TokenStream) ->
 
     panic!("No source code specified");
 }
-*/
 
 #[proc_macro_attribute]
 pub fn docfg (attrs: proc_macro::TokenStream, items: proc_macro::TokenStream) -> proc_macro::TokenStream {

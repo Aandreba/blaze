@@ -1,4 +1,4 @@
-use std::{mem::MaybeUninit, ffi::c_void, ptr::{addr_of_mut, NonNull}};
+use std::{mem::MaybeUninit, ffi::c_void, ptr::{addr_of_mut, NonNull}, borrow::Borrow};
 use opencl_sys::*;
 use blaze_proc::docfg;
 use crate::{core::*, context::{RawContext, Context, Global}, event::{RawEvent}, wait_list};
@@ -30,9 +30,9 @@ impl RawKernel {
     }
 
     #[inline(always)]
-    pub unsafe fn set_argument<T: Copy> (&mut self, idx: u32, v: &T) -> Result<()> {
-        let ptr = v as *const _ as *const _;
-        tri!(clSetKernelArg(self.id(), idx, core::mem::size_of_val(v), ptr));
+    pub unsafe fn set_argument<T: Copy, R: Borrow<T>> (&mut self, idx: u32, v: R) -> Result<()> {
+        let ptr = v.borrow() as *const _ as *const _;
+        tri!(clSetKernelArg(self.id(), idx, core::mem::size_of_val(v.borrow()), ptr));
         Ok(())
     }
 

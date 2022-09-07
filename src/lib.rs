@@ -74,8 +74,8 @@ pub extern crate once_cell;
 
 extern crate blaze_proc;
 pub mod macros {
-    //#[doc = include_str!("../docs/src/program/README.md")]
-    //pub use blaze_proc::blaze;
+    #[doc = include_str!("../docs/src/program/README.md")]
+    pub use blaze_proc::blaze;
     pub use blaze_proc::{global_context};
 }
 
