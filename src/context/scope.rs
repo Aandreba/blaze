@@ -1,10 +1,10 @@
 use std::{sync::{Arc, atomic::{AtomicUsize, Ordering}}, marker::PhantomData, panic::{catch_unwind, AssertUnwindSafe, resume_unwind}, thread::Thread};
-use crate::prelude::{Result, RawCommandQueue, RawEvent, Event};
+use crate::{prelude::{Result, RawCommandQueue, RawEvent, Event}, event::{Consumer, NoopEvent, Noop}};
 use super::{Global, Context};
 
 pub type Scope<'scope, 'env> = LocalScope<'static, 'scope, 'env, Global>;
 
-pub struct LocalScope<'ctx: 'scope, 'scope, 'env: 'scope, C: 'ctx + Context = Global> {
+pub struct LocalScope<'ctx: 'scope, 'scope, 'env: 'scope, C: 'ctx + Context> {
     ctx: &'ctx C,
     size: Arc<AtomicUsize>,
     thread: Thread,
@@ -13,10 +13,10 @@ pub struct LocalScope<'ctx: 'scope, 'scope, 'env: 'scope, C: 'ctx + Context = Gl
 }
 
 impl<'ctx, 'scope, 'env: 'scope, C: 'ctx + Context> LocalScope<'ctx, 'scope, 'env, C> {
-    pub fn enqueue<T, E: FnOnce(&'ctx RawCommandQueue) -> Result<RawEvent>, F: 'scope + FnOnce() -> Result<T>> (&'scope self, supplier: E, f: F) -> Result<Event<'scope, T>> {
+    pub fn enqueue<T, E: FnOnce(&'ctx RawCommandQueue) -> Result<RawEvent>, F: Consumer<'scope, T>> (&'scope self, supplier: E, consumer: F) -> Result<Event<T, F>> {
         let queue = self.ctx.next_queue();
         let inner = supplier(&queue)?;
-        let evt = Event::new(inner, f);
+        let evt = Event::new(inner, consumer);
 
         let queue_size = queue.size.clone();
         let scope_size = self.size.clone();
@@ -33,8 +33,8 @@ impl<'ctx, 'scope, 'env: 'scope, C: 'ctx + Context> LocalScope<'ctx, 'scope, 'en
     }
 
     #[inline(always)]
-    pub fn enqueue_noop<E: FnOnce(&'ctx RawCommandQueue) -> Result<RawEvent>> (&'scope self, supplier: E) -> Result<Event<'scope, ()>> {
-        self.enqueue(supplier, || Ok(()))
+    pub fn enqueue_noop<E: FnOnce(&'ctx RawCommandQueue) -> Result<RawEvent>> (&'scope self, supplier: E) -> Result<NoopEvent<'scope>> {
+        self.enqueue(supplier, Noop::new())
     }
 }
 

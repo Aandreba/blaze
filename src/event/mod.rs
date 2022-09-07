@@ -1,5 +1,8 @@
 flat_mod!(raw, complex, status, profiling, consumer);
 
+#[cfg(feature = "cl1_1")]
+flat_mod!(flag);
+
 #[cfg(not(feature = "cl1_1"))]
 mod listener;
 

@@ -1,5 +1,5 @@
-use std::{sync::{atomic::{AtomicUsize, Ordering}}, ops::{Deref, DerefMut}, ptr::NonNull, alloc::Layout, num::NonZeroUsize};
-use crate::prelude::{RawCommandQueue, Result, Event, RawEvent};
+use std::{sync::{atomic::{AtomicUsize, Ordering}}, ops::{Deref, DerefMut}, ptr::NonNull, alloc::Layout, num::NonZeroUsize, mem::ManuallyDrop};
+use crate::{prelude::{RawCommandQueue, Result, Event, RawEvent}, event::{Consumer, NoopEvent, Noop}};
 
 #[derive(Debug, Clone)]
 pub struct CommandQueue {
@@ -24,9 +24,9 @@ impl CommandQueue {
     }
 
     #[inline]
-    pub unsafe fn enqueue_unchecked<'a, 'b, 'r: 'b, T, E: 'b + FnOnce(&'r RawCommandQueue) -> Result<RawEvent>, F: 'a + FnOnce() -> Result<T>> (&'r self, supplier: E, f: F) -> Result<Event<'a, T>> {
+    pub unsafe fn enqueue_unchecked<'a, 'b, 'r: 'b, T, E: 'b + FnOnce(&'r RawCommandQueue) -> Result<RawEvent>, C: Consumer<'a, T>> (&'r self, supplier: E, consumer: C) -> Result<Event<T, C>> {
         let inner = supplier(&self.inner)?;
-        let evt = Event::new(inner, f);
+        let evt = Event::new(inner, consumer);
 
         let size = self.size.clone();
         evt.on_complete(move |_, _| drop(size)).unwrap();
@@ -35,20 +35,20 @@ impl CommandQueue {
     }
 
     #[inline(always)]
-    pub unsafe fn enqueue_noop_unchecked<'a, 'b, 'r: 'b, E: 'b + FnOnce(&'r RawCommandQueue) -> Result<RawEvent>> (&'r self, supplier: E) -> Result<Event<'a, ()>> {
-        self.enqueue_unchecked(supplier, || Ok(()))
+    pub unsafe fn enqueue_noop_unchecked<'a, 'b, 'r: 'b, E: 'b + FnOnce(&'r RawCommandQueue) -> Result<RawEvent>> (&'r self, supplier: E) -> Result<NoopEvent<'a>> {
+        self.enqueue_unchecked(supplier, Noop::new())
     }
 
     #[inline(always)]
-    pub fn enqueue<'b, 'r: 'b, T, E: 'b + FnOnce(&'r RawCommandQueue) -> Result<RawEvent>, F: 'static + FnOnce() -> Result<T>> (&'r self, supplier: E, f: F) -> Result<Event<'static, T>> {
+    pub fn enqueue<'b, 'r: 'b, T, E: 'b + FnOnce(&'r RawCommandQueue) -> Result<RawEvent>, C: Consumer<'static, T>> (&'r self, supplier: E, consumer: C) -> Result<Event<T, C>> {
         unsafe {
-            self.enqueue_unchecked(supplier, f)
+            self.enqueue_unchecked(supplier, consumer)
         }
     }
 
     #[inline(always)]
-    pub fn enqueue_noop<'b, 'r: 'b, E: 'b + FnOnce(&'r RawCommandQueue) -> Result<RawEvent>> (&'r self, supplier: E) -> Result<Event<'static, ()>> {
-        self.enqueue(supplier, || Ok(()))
+    pub fn enqueue_noop<'b, 'r: 'b, E: 'b + FnOnce(&'r RawCommandQueue) -> Result<RawEvent>> (&'r self, supplier: E) -> Result<NoopEvent<'static>> {
+        self.enqueue(supplier, Noop::new())
     }
 }
 
@@ -70,7 +70,7 @@ impl DerefMut for CommandQueue {
 
 #[derive(Debug)]
 #[repr(transparent)]
-pub(super) struct Size (NonNull<AtomicUsize>);
+pub(crate) struct Size (NonNull<AtomicUsize>);
 
 impl Size {
     #[inline(always)]
@@ -78,6 +78,19 @@ impl Size {
         unsafe {
             let alloc = std::alloc::alloc_zeroed(Layout::new::<AtomicUsize>());
             NonNull::new(alloc.cast()).map(Size).unwrap()
+        }
+    }
+
+    #[inline(always)]
+    pub fn drop_last (self) -> bool {
+        let this = ManuallyDrop::new(self);
+
+        unsafe {
+            if this.0.as_ref().fetch_sub(1, Ordering::AcqRel) == 0 {
+                std::alloc::dealloc(this.0.as_ptr().cast(), Layout::new::<AtomicUsize>());
+                return true
+            }
+            return false
         }
     }
 }

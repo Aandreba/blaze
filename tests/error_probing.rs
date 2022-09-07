@@ -8,8 +8,11 @@ static CONTEXT : SimpleContext = SimpleContext::default();
 #[test]
 fn invalid_raw () -> Result<()> {
     let mut buffer = Buffer::new(&[1, 2, 3, 4, 5], MemAccess::default(), false)?;
-    
-    let write = scope(|| );
+    buffer.write_blocking(1, &[9, 8], &[])?;
+
+    let left = 0;
+    let right = 0;
+
     // Problem. The status of read is unknown
     //let write = buffer.write(2, &[2], &[])?;
 

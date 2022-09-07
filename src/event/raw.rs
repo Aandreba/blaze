@@ -4,7 +4,7 @@ use std::time::{Duration, SystemTime};
 use std::{mem::MaybeUninit, ptr::{NonNull}};
 use opencl_sys::*;
 use blaze_proc::docfg;
-use super::{EventStatus, ProfilingInfo, CommandType, Event};
+use super::{EventStatus, ProfilingInfo, CommandType, Event, NoopEvent};
 
 #[derive(Debug, PartialEq, Eq, Hash)]
 #[repr(transparent)]
@@ -171,9 +171,9 @@ impl RawEvent {
     }
 }
 
-impl<'a> Into<Event<'a, ()>> for RawEvent {
+impl<'a> Into<NoopEvent<'a>> for RawEvent {
     #[inline(always)]
-    fn into(self) -> Event<'a, ()> {
+    fn into(self) -> NoopEvent<'a> {
         Event::new_noop(self)
     }
 }

@@ -1,30 +1,30 @@
-use std::{sync::mpsc::{channel, Sender}, ops::Deref, ffi::c_void, time::{SystemTime, Duration}};
+use std::{sync::mpsc::{channel, Sender}, ops::Deref, ffi::c_void, time::{SystemTime, Duration}, marker::PhantomData, mem::MaybeUninit};
 use opencl_sys::*;
 use blaze_proc::docfg;
-use crate::prelude::*;
-use super::{RawEvent, EventStatus, ProfilingInfo};
+use crate::{prelude::*};
+use super::{RawEvent, EventStatus, ProfilingInfo, Consumer, Noop};
 
-pub struct Event<'a, T> {
+pub type DynEvent<'a, T> = Event<T, Box<dyn Consumer<'a, T>>>;
+pub type NoopEvent<'a> = Event<(), Noop::<'a>>;
+
+pub struct Event<T, C> {
     inner: RawEvent,
-    f: Box<dyn 'a + FnOnce() -> Result<T>>,
+    consumer: C,
     #[cfg(not(feature = "cl1_1"))]
-    send: Sender<super::listener::EventCallback>
+    send: Sender<super::listener::EventCallback>,
+    phtm: PhantomData<T>
 }
 
-impl<'a> Event<'a, ()> {
+impl<'a> NoopEvent<'a> {
     #[inline(always)]
     pub(crate) fn new_noop (inner: RawEvent) -> Self {
-        Self::new(inner, || Ok(()))
+        Self::new(inner, Noop::new())
     }
 }
 
-impl<'a, T> Event<'a, T> {
+impl<'a, T, C: Consumer<'a, T>> Event<T, C> {
     #[inline(always)]
-    pub(crate) fn new<F: 'a + FnOnce() -> Result<T>> (inner: RawEvent, f: F) -> Self {
-        Self::new_boxed(inner, Box::new(f))
-    }
-
-    pub(crate) fn new_boxed (inner: RawEvent, f: Box<dyn 'a + FnOnce() -> Result<T>>) -> Self {
+    pub(crate) fn new (inner: RawEvent, consumer: C) -> Self {
         #[cfg(not(feature = "cl1_1"))]
         let (send, recv) = channel();
         #[cfg(not(feature = "cl1_1"))]
@@ -34,19 +34,31 @@ impl<'a, T> Event<'a, T> {
 
         Self {
             inner,
-            f,
+            consumer,
             #[cfg(not(feature = "cl1_1"))]
-            send
+            send,
+            phtm: PhantomData
+        }
+    }
+
+    #[inline(always)]
+    pub fn into_dyn (self) -> DynEvent<'a, T> {
+        DynEvent {
+            inner: self.inner,
+            consumer: Box::new(self.consumer),
+            #[cfg(not(feature = "cl1_1"))]
+            send: self.send,
+            phtm: self.phtm
         }
     }
 
     #[inline(always)]
     pub(super) fn consume (self) -> Result<T> {
-        (self.f)()
+        self.consumer.consume()
     }
 }
 
-impl<'a, T> Event<'a, T> {
+impl<'a, T, C: Consumer<'a, T>> Event<T, C> {
     #[inline(always)]
     pub fn join (self) -> Result<T> {
         self.join_by_ref()?;
@@ -86,17 +98,102 @@ impl<'a, T> Event<'a, T> {
     /// Returns a future that waits for the event to complete without blocking.
     #[inline(always)]
     #[docfg(feature = "futures")]
-    pub fn join_async (self) -> Result<crate::event::EventWait<'a, T>> {
+    pub fn join_async (self) -> Result<crate::event::EventWait<T, C>> {
         crate::event::EventWait::new(self)
     }
 
+    #[cfg_attr(docsrs, doc(cfg(feature = "cl1_1")))]
+    #[cfg(feature = "cl1_2")]
     #[inline(always)]
-    pub fn join_all<I: IntoIterator<Item = Self>> (iter: I) -> Result<Vec<T>> {
-        todo!()
+    pub fn join_all<I: IntoIterator<Item = Self>> (iter: I) -> Result<JoinAll<T, C>> {
+        let (raw, consumers) = iter.into_iter()
+            .map(|x| (x.inner, x.consumer))
+            .unzip::<_, _, Vec<_>, Vec<_>>();
+        
+        if raw.is_empty() {
+            return Err(Error::new(ErrorType::InvalidEventWaitList, "no events inside the iterator"));
+        }
+
+        let queue = raw[0].command_queue()?
+            .ok_or_else(|| Error::new(ErrorType::InvalidCommandQueue, "command queue not found"))?;
+
+        let barrier = queue.barrier(&raw)?;
+        return Ok(Event::new(barrier, JoinAllConsumer(consumers)));
+    }
+
+    #[cfg_attr(docsrs, doc(cfg(feature = "cl1_1")))]
+    #[cfg(all(feature = "cl1_1", not(feature = "cl1_2")))]
+    #[inline(always)]
+    pub fn join_all<I: IntoIterator<Item = Self>> (iter: I) -> Result<JoinAll<T, C>> {
+        let mut iter = iter.into_iter().peekable();
+        let mut size = crate::context::Size::new();
+        let mut consumers = Vec::with_capacity(match iter.size_hint() {
+            (_, Some(len)) => len,
+            (len, _) => len
+        });
+
+        let ctx = match iter.peek() {
+            Some(evt) => evt.raw_context()?,
+            None => return Err(Error::new(ErrorType::InvalidEventWaitList, "no events inside the iterator"))
+        };
+
+        let mut flag = super::FlagEvent::new_in(&ctx)?.into_inner();
+
+        for evt in iter.into_iter() {
+            let flag = flag.clone();
+            let size = size.clone();
+
+            evt.on_complete(move |_, err| unsafe {
+                if let Err(e) = err {
+                    clSetUserEventStatus(flag.id(), e.ty as i32);
+                    return;
+                }
+
+                if size.drop_last() {
+                    clSetUserEventStatus(flag.id(), CL_COMPLETE);
+                    return;
+                }
+            })?;
+
+            consumers.push(evt.consumer);
+        }
+
+        return Ok(Event::new(flag, JoinAllConsumer(consumers)));
+    }
+
+    /// Blocks the current thread until all the events in the iterator have completed, returning their values.
+    #[inline(always)]
+    pub fn join_all_blocking<I: IntoIterator<Item = Self>> (iter: I) -> Result<Vec<T>> {
+        let (raw, consumers) = iter.into_iter()
+            .map(|x| (x.inner, x.consumer))
+            .unzip::<_, _, Vec<_>, Vec<_>>();
+        
+        RawEvent::join_all_by_ref(&raw)?;
+        return consumers.into_iter().map(Consumer::consume).try_collect()
+    }
+
+    /// Blocks the current thread until all the events in the iterator have completed, returning their values.
+    #[inline(always)]
+    pub fn join_all_sized_blocking<const N: usize> (iter: [Self; N]) -> Result<[T; N]> {
+        let mut raw = MaybeUninit::uninit_array::<N>();
+        let mut consumers = MaybeUninit::uninit_array::<N>();
+
+        unsafe {
+            for (i, event) in iter.into_iter().enumerate() {
+                raw.get_unchecked_mut(i).write(event.inner);
+                consumers.get_unchecked_mut(i).write(event.consumer);
+            }
+
+            let raw = MaybeUninit::array_assume_init(raw);
+            let consumers = MaybeUninit::array_assume_init(consumers);
+
+            RawEvent::join_all_by_ref(&raw)?;
+            return consumers.try_map(Consumer::consume);
+        }
     }
 }
 
-impl<'a, T> Event<'a, T> {
+impl<'a, T, C: Consumer<'a, T>> Event<T, C> {
     /// Adds a callback function that will be executed when the event is submitted.
     #[inline(always)]
     pub fn on_submit (&self, f: impl 'static + FnOnce(RawEvent, Result<EventStatus>) + Send) -> Result<()> {
@@ -198,12 +295,26 @@ impl<'a, T> Event<'a, T> {
     }
 }
 
-impl<T> Deref for Event<'_, T> {
+impl<'a, T, C: Consumer<'a, T>> Deref for Event<T, C> {
     type Target = RawEvent;
 
     #[inline(always)]
     fn deref(&self) -> &Self::Target {
         &self.inner
+    }
+}
+
+#[docfg(feature = "cl1_1")]
+pub type JoinAll<T, C> = Event<Vec<T>, JoinAllConsumer<C>>;
+
+#[docfg(feature = "cl1_1")]
+pub struct JoinAllConsumer<C> (Vec<C>);
+
+#[cfg(feature = "cl1_1")]
+impl<'a, T, C: Consumer<'a, T>> Consumer<'a, Vec<T>> for JoinAllConsumer<C> {
+    #[inline]
+    fn consume (self) -> Result<Vec<T>> {
+        self.0.into_iter().map(Consumer::consume).try_collect()
     }
 }
 

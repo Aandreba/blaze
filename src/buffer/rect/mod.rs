@@ -167,7 +167,7 @@ impl<T: Copy + Unpin + Debug, C: Context> Debug for BufferRect2D<T, C> {
                 all = todo!()
                 //all = self.read((.., ..), &[]).unwrap().join_unwrap();
             } else {
-                let mut all_plain = Buffer::read(&self, .., &[]).unwrap().join_unwrap();
+                let mut all_plain = Buffer::read_blocking(&self, .., &[]).unwrap();
                 all_plain.shrink_to_fit();
                 let (ptr, _, _) = Vec::into_raw_parts(all_plain);
 

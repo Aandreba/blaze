@@ -1,10 +1,13 @@
 use std::{marker::PhantomData, ptr::{NonNull}, ops::{Deref, DerefMut}, fmt::Debug, mem::MaybeUninit};
 //use blaze_proc::docfg;
 
-use crate::{context::{Context, Global, LocalScope}, prelude::{Event, RawEvent, scope::local_scope}};
+use crate::{context::{Context, Global, LocalScope, local_scope}, prelude::{Event, RawEvent}, event::{NoopEvent, Consumer}};
 use crate::core::*;
 use crate::buffer::{flags::{MemFlags, HostPtr, MemAccess}, RawBuffer};
 use super::{IntoRange, BufferRange};
+
+pub type ReadEvent<'a, T> = Event<Vec<T>, BufferRead<'a, T>>;
+pub type WriteEvent<'a> = NoopEvent<'a>; 
 
 #[derive(Hash)]
 #[doc = include_str!("../../docs/src/buffer/README.md")]
@@ -131,7 +134,7 @@ impl<T: Copy + Unpin, C: Context> Buffer<T, C> {
         }
     }
 
-    pub fn read<'ctx, 'scope, 'env, R: IntoRange> (&'scope self, scope: &'scope LocalScope<'ctx, 'scope, 'env>, range: R, wait: &[RawEvent]) -> Result<Event<'_, Vec<T>>> where C: 'ctx, T: 'scope {
+    pub fn read<'ctx, 'scope, 'env, R: IntoRange> (&'scope self, scope: &'scope LocalScope<'ctx, 'scope, 'env, C>, range: R, wait: &[RawEvent]) -> Result<ReadEvent<'scope, T>> where C: 'ctx, T: 'scope {
         let range = range.into_range::<T>(&self.inner)?;
         let len = range.cb / core::mem::size_of::<T>();
         let mut result = Vec::<T>::with_capacity(len);
@@ -141,16 +144,10 @@ impl<T: Copy + Unpin, C: Context> Buffer<T, C> {
             self.inner.read_to_ptr_in(range, dst, queue, wait)
         };
 
-        let f = move || unsafe {
-            //let _ = self;
-            result.set_len(len);
-            Ok(result)
-        };
-
-        return scope.enqueue(supplier, f)
+        return scope.enqueue(supplier, BufferRead(result, PhantomData))
     }
 
-    pub fn write<'ctx, 'scope, 'env> (&'scope mut self, scope: &'scope LocalScope<'ctx, 'scope, 'env>, offset: usize, src: &'env [T], wait: &[RawEvent]) -> Result<Event<'scope, ()>> {
+    pub fn write<'ctx, 'scope, 'env> (&'scope mut self, scope: &'scope LocalScope<'ctx, 'scope, 'env, C>, offset: usize, src: &'env [T], wait: &[RawEvent]) -> Result<WriteEvent<'scope>> {
         let range = BufferRange::from_parts::<T>(offset, src.len()).unwrap();
         let supplier = |queue| unsafe {
             self.inner.write_from_ptr_in(range, src.as_ptr(), queue, wait)
@@ -189,30 +186,13 @@ impl<T: Copy, C: Context> DerefMut for Buffer<T, C> {
 
 impl<T: Copy + Unpin + PartialEq, C: Context> PartialEq for Buffer<T, C> {
     fn eq(&self, other: &Self) -> bool {
-        local_scope(&self.ctx, |s| {
+        let [this, other] = local_scope(&self.ctx, |s| {
             let this = self.read(s, .., &[])?;
             let other = other.read(s, .., &[])?;
-            todo!()
-        });
+            Event::join_all_sized_blocking([this, other])
+        }).unwrap();
 
-        todo!()
-
-        /*let this = match self.read(.., &[]) {
-            Ok(x) => x,
-            Err(_) => return false
-        };
-
-        let other = match other.read(.., &[]) {
-            Ok(x) => x,
-            Err(_) => return false
-        };
-        
-        let join = match ReadBuffer::join_blocking([this, other]) {
-            Ok(x) => x,
-            Err(_) => return false
-        };
-
-        join[0] == join[1]*/
+        this == other
     }
 }
 
@@ -225,3 +205,13 @@ impl<T: Copy + Unpin + Debug, C: Context> Debug for Buffer<T, C> {
 }
 
 impl<T: Copy + Unpin + Eq, C: Context> Eq for Buffer<T, C> {}
+
+#[repr(transparent)]
+pub struct BufferRead<'a, T> (Vec<T>, PhantomData<&'a RawBuffer>);
+
+impl<'a, T: 'a> Consumer<'a, Vec<T>> for BufferRead<'a, T> {
+    #[inline(always)]
+    fn consume (self) -> Result<Vec<T>> {
+        Ok(self.0)
+    }
+} 

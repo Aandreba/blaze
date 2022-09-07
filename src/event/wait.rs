@@ -3,22 +3,22 @@ use futures::{Future, FutureExt};
 use opencl_sys::*;
 use utils_atomics::{flag::{AsyncFlag, AsyncSubscribe}, FillQueue};
 use crate::prelude::Result;
-use super::{Event, EventStatus};
+use super::{Event, EventStatus, Consumer};
 
 #[cfg_attr(docsrs, doc(cfg(feature = "futures")))]
-pub struct EventWait<'a, T> {
-    inner: Option<Event<'a, T>>,
+pub struct EventWait<T, C> {
+    inner: Option<Event<T, C>>,
     sub: AsyncSubscribe
 }
 
-impl<'a, T> EventWait<'a, T> {
+impl<'a, T, C: Consumer<'a, T>> EventWait<T, C> {
     #[inline(always)]
-    pub fn new (inner: Event<'a, T>) -> Result<Self> {
+    pub fn new (inner: Event<T, C>) -> Result<Self> {
         Self::on_status(inner, EventStatus::Complete)
     }
 
     #[inline]
-    pub fn on_status (inner: Event<'a, T>, status: EventStatus) -> Result<Self> {
+    pub fn on_status (inner: Event<T, C>, status: EventStatus) -> Result<Self> {
         let flag = AsyncFlag::new();
         let sub = flag.subscribe();
         
@@ -30,7 +30,7 @@ impl<'a, T> EventWait<'a, T> {
     }
 }
 
-impl<'a, T> Future for EventWait<'a, T> {
+impl<'a, T, C: Consumer<'a, T>> Future for EventWait<T, C> {
     type Output = Result<T>;
 
     #[inline(always)]
