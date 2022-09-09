@@ -1,5 +1,6 @@
 flat_mod!(raw, complex, range);
 
+use std::mem::MaybeUninit;
 use blaze_proc::docfg;
 use crate::{prelude::{Context, RawKernel, Result, RawEvent}};
 
@@ -139,6 +140,20 @@ unsafe impl<T: Sync, C: Context> KernelPointer<T> for SvmVec<T, C> where C: 'sta
         Ok(())
     }
 }
+
+/*
+unsafe impl<T: Sync, P: KernelPointer<T>> KernelPointer<MaybeUninit<T>> for P {
+    #[inline(always)]
+    unsafe fn set_arg (&self, kernel: &mut RawKernel, wait: &mut Vec<RawEvent>, idx: u32) -> Result<()> {
+        <Self as KernelPointer<T>>::set_arg(&self, kernel, wait, idx)
+    }
+
+    #[inline(always)]
+    fn complete (&self, event: &RawEvent) -> Result<()> {
+        <Self as KernelPointer<T>>::complete(&self, event)
+    }
+}
+*/
 
 // Whenever [this](https://github.com/rust-lang/rust/issues/48869) is fixed, this will be the generic implementation
 
