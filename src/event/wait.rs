@@ -11,7 +11,7 @@ pub struct EventWait<T, C> {
     sub: AsyncSubscribe
 }
 
-impl<'a, T, C: Consumer<'a, T>> EventWait<T, C> {
+impl<'a, T, C: Unpin + Consumer<'a, T>> EventWait<T, C> {
     #[inline(always)]
     pub fn new (inner: Event<T, C>) -> Result<Self> {
         Self::on_status(inner, EventStatus::Complete)
@@ -30,13 +30,14 @@ impl<'a, T, C: Consumer<'a, T>> EventWait<T, C> {
     }
 }
 
-impl<'a, T, C: Consumer<'a, T>> Future for EventWait<T, C> {
+impl<'a, T, C: Unpin + Consumer<'a, T>> Future for EventWait<T, C> {
     type Output = Result<T>;
 
     #[inline(always)]
     fn poll(mut self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> std::task::Poll<Self::Output> {
-        if self.sub.poll_unpin(cx).is_ready() {
-            let event = self.inner.take().unwrap();
+        let this = &mut *self;
+        if this.sub.poll_unpin(cx).is_ready() {
+            let event = this.inner.take().unwrap();
             return Poll::Ready(event.status().and_then(|_| event.consume()))
         }
 

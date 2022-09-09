@@ -99,7 +99,7 @@ impl<'a, T, C: Consumer<'a, T>> Event<T, C> {
     /// Returns a future that waits for the event to complete without blocking.
     #[inline(always)]
     #[docfg(feature = "futures")]
-    pub fn join_async (self) -> Result<crate::event::EventWait<T, C>> {
+    pub fn join_async (self) -> Result<crate::event::EventWait<T, C>> where C: Unpin {
         crate::event::EventWait::new(self)
     }
 
@@ -304,6 +304,8 @@ impl<'a, T, C: Consumer<'a, T>> Deref for Event<T, C> {
         &self.inner
     }
 }
+
+impl<T, C: Unpin> Unpin for Event<T, C> {}
 
 #[docfg(feature = "cl1_1")]
 pub type JoinAll<T, C> = Event<Vec<T>, JoinAllConsumer<C>>;

@@ -13,7 +13,7 @@ fn invalid_raw () -> Result<()> {
 
     scope(|s| {
         let left = buffer.read(s, ..2, &[])?;
-        let right = buffer.write(s, 0, &[3], &[])?;
+        let right = buffer.read(s, 0..1, &[])?;
         return Ok(())
     })?;
 
