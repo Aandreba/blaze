@@ -1,7 +1,7 @@
 use std::{mem::MaybeUninit, ffi::c_void, ptr::{addr_of_mut, NonNull}, borrow::Borrow};
 use opencl_sys::*;
 use blaze_proc::docfg;
-use crate::{core::*, context::{RawContext, Context, Global}, event::{RawEvent}, wait_list};
+use crate::{core::*, context::{RawContext, Context}, event::{RawEvent, NoopEvent}, wait_list, prelude::Scope};
 
 #[derive(Debug, PartialEq, Eq, Hash)]
 #[repr(transparent)]
@@ -19,7 +19,7 @@ impl RawKernel {
     }
 
     #[inline(always)]
-    pub const fn from_id (id: cl_kernel) -> Option<Self> {
+    pub const unsafe fn from_id (id: cl_kernel) -> Option<Self> {
         NonNull::new(id).map(Self)
     }
 
@@ -54,16 +54,7 @@ impl RawKernel {
     }
 
     #[inline(always)]
-    pub unsafe fn enqueue<const N: usize> (&mut self, global_work_dims: [usize; N], local_work_dims: impl Into<Option<[usize; N]>>, wait: &[RawEvent]) -> Result<RawEvent> {
-        self.enqueue_with_queue(Global.next_queue(), global_work_dims, local_work_dims, wait)
-    }
-
-    #[inline(always)]
-    pub unsafe fn enqueue_with_context<C: Context, const N: usize> (&mut self, ctx: &C, global_work_dims: [usize; N], local_work_dims: impl Into<Option<[usize; N]>>, wait: &[RawEvent]) -> Result<RawEvent> {
-        self.enqueue_with_queue(ctx.next_queue(), global_work_dims, local_work_dims, wait)
-    }
-
-    pub unsafe fn enqueue_with_queue<const N: usize> (&mut self, queue: &RawCommandQueue, global_work_dims: [usize; N], local_work_dims: impl Into<Option<[usize; N]>>, wait: &[RawEvent]) -> Result<RawEvent> {
+    pub unsafe fn enqueue_unchecked<const N: usize> (&mut self, queue: &RawCommandQueue, global_work_dims: [usize; N], local_work_dims: impl Into<Option<[usize; N]>>, wait: &[RawEvent]) -> Result<RawEvent> {
         let work_dim = u32::try_from(N).expect("Integer overflow");
         let local_work_dims = local_work_dims.into();
         let local_work_dims = match local_work_dims {
@@ -77,6 +68,24 @@ impl RawKernel {
         tri!(clEnqueueNDRangeKernel(queue.id(), self.id(), work_dim, core::ptr::null(), global_work_dims.as_ptr(), local_work_dims, num_events_in_wait_list, event_wait_list, addr_of_mut!(event)));
 
         Ok(RawEvent::from_id(event).unwrap())
+    }
+
+    #[inline(always)]
+    pub unsafe fn enqueue_with_scope<'scope, 'env, C: Context, const N: usize> (&mut self, scope: &'scope Scope<'scope, 'env, C>, global_work_dims: [usize; N], local_work_dims: impl Into<Option<[usize; N]>>, wait: &[RawEvent]) -> Result<NoopEvent<'scope>> {
+        let work_dim = u32::try_from(N).expect("Integer overflow");
+        let local_work_dims = local_work_dims.into();
+        let local_work_dims = match local_work_dims {
+            Some(x) => x.as_ptr(),
+            None => core::ptr::null()
+        };
+
+        let (num_events_in_wait_list, event_wait_list) = wait_list(wait);
+
+        return scope.enqueue_noop(|queue| {
+            let mut event = core::ptr::null_mut();
+            tri!(clEnqueueNDRangeKernel(queue.id(), self.id(), work_dim, core::ptr::null(), global_work_dims.as_ptr(), local_work_dims, num_events_in_wait_list, event_wait_list, addr_of_mut!(event)));
+            return Ok(RawEvent::from_id(event).unwrap())
+        })
     }
 
     /// Return the kernel function name.

@@ -35,7 +35,7 @@ impl RawProgram {
         let this = NonNull::new(id).map(Self).unwrap();
         this.build(options.into(), ctx)?;
 
-        let kernels = this.kernels()?.into_iter().map(|id| RawKernel::from_id(id).unwrap()).collect::<Box<[_]>>();
+        let kernels = this.kernels()?.into_iter().map(|id| unsafe { RawKernel::from_id(id).unwrap() }).collect::<Box<[_]>>();
         Ok((this, kernels))
     }
 

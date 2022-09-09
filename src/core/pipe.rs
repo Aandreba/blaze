@@ -22,7 +22,10 @@ impl RawPipe {
         };
 
         if err != 0 { return Err(Error::from(err)); }
-        Ok(Self(RawMemObject::from_id(id).unwrap()))
+
+        unsafe {
+            Ok(Self(RawMemObject::from_id(id).unwrap()))
+        }
     }
 
     /// Return pipe packet size specified when pipe is created.

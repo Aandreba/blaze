@@ -9,3 +9,5 @@
 - [ ] Scoped events (treat events kinda like JoinHandles) 
 
 ## Before release
+- Blocking events for `#[blaze]` programs
+- ...

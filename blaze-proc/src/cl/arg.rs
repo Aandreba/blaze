@@ -1,7 +1,7 @@
 use derive_syn_parse::Parse;
 use proc_macro2::{Ident};
 use quote::{format_ident};
-use syn::{Generics, Token, parse_quote, parse_quote_spanned, spanned::Spanned};
+use syn::{Generics, Token, parse_quote_spanned, spanned::Spanned};
 use super::{Type};
 
 /*
@@ -22,16 +22,23 @@ pub struct Argument {
 }
 
 impl Argument {
-    pub fn ty (&self, generics: &mut Generics) -> syn::Type {
+    pub fn ty (&self, generics: &mut Generics, lt: bool) -> syn::Type {
         let name = format_ident!("{}", self.name.to_string().to_uppercase());
         let (mutability, generify, ty) = self.ty.rustify(self.mutability.is_some(), &name);
 
         if let Some(imp) = generify {
             generics.params.push(imp);
             
+            if lt {
+                return match mutability {
+                    true => parse_quote_spanned! { ty.span() => &'__env__ mut #ty },
+                    false => parse_quote_spanned! { ty.span() => &'__env__ #ty }
+                }
+            }
+
             return match mutability {
-                true => parse_quote_spanned! { ty.span() => &'__env__ mut #ty },
-                false => parse_quote_spanned! { ty.span() => &'__env__ #ty }
+                true => parse_quote_spanned! { ty.span() => &mut #ty },
+                false => parse_quote_spanned! { ty.span() => &#ty }
             }
         }
 

@@ -17,7 +17,7 @@ impl RawEvent {
     }
 
     #[inline(always)]
-    pub const fn from_id (inner: cl_event) -> Option<Self> {
+    pub const unsafe fn from_id (inner: cl_event) -> Option<Self> {
         NonNull::new(inner).map(Self)
     }
 
@@ -97,7 +97,10 @@ impl RawEvent {
     /// Returns the event's underlying command queue
     #[inline(always)]
     pub fn command_queue (&self) -> Result<Option<RawCommandQueue>> {
-        self.get_info(CL_EVENT_COMMAND_QUEUE).map(RawCommandQueue::from_id)
+        match self.get_info(CL_EVENT_COMMAND_QUEUE) {
+            Ok(x) => unsafe { Ok(RawCommandQueue::from_id(x)) },
+            Err(e) => Err(e)
+        }
     }
 
     #[inline(always)]

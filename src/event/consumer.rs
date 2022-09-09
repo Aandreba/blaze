@@ -21,6 +21,7 @@ impl<'a, T, F: 'a + FnOnce() -> Result<T>> Consumer<'a, T> for F {
 }
 
 /// **No**-**op**eration trait consumer
+#[repr(transparent)]
 pub struct Noop<'a> (PhantomData<&'a ()>);
 
 impl Noop<'_> {
@@ -32,5 +33,20 @@ impl<'a> Consumer<'a, ()> for Noop<'a> {
     #[inline(always)]
     fn consume (self) -> Result<()> {
         Ok(())
+    }
+}
+
+pub struct Map<T, C, F> (pub(crate) C, pub(crate) F, PhantomData<T>);
+
+impl<'a, 'b, T, U, C: Consumer<'a, T>, F: 'b + FnOnce(T) -> U> Map<T, C, F> where 'a: 'b {
+    #[inline(always)]
+    pub const fn new (consumer: C, f: F) -> Self { Self(consumer, f, PhantomData) } 
+}
+
+impl<'a: 'b, 'b, T: 'b, U, C: Consumer<'a, T>, F: 'b + FnOnce(T) -> U> Consumer<'b, U> for Map<T, C, F> {
+    #[inline(always)]
+    fn consume (self) -> Result<U> {
+        let v = self.0.consume()?;
+        return Ok((self.1)(v))
     }
 }

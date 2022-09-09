@@ -35,7 +35,7 @@ impl RawPlatform {
     }
 
     #[inline(always)]
-    pub const fn from_id (id: cl_platform_id) -> Option<Self> {
+    pub const unsafe fn from_id (id: cl_platform_id) -> Option<Self> {
         NonNull::new(id).map(Self)
     }
 

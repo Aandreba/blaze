@@ -1,23 +1,23 @@
-use std::{sync::mpsc::{channel, Sender}, ops::Deref, ffi::c_void, time::{SystemTime, Duration}, marker::PhantomData, mem::MaybeUninit};
+use std::{ops::Deref, ffi::c_void, time::{SystemTime, Duration}, marker::PhantomData, mem::MaybeUninit};
 use opencl_sys::*;
 use blaze_proc::docfg;
 use crate::{prelude::*};
-use super::{RawEvent, EventStatus, ProfilingInfo, Consumer, Noop};
+use super::{RawEvent, EventStatus, ProfilingInfo, Consumer, Noop, Map};
 
-pub type DynEvent<'a, T> = Event<T, Box<dyn Consumer<'a, T>>>;
 pub type NoopEvent<'a> = Event<(), Noop::<'a>>;
+pub type MappedEvent<T, U, C, F> = Event<U, Map<T, C, F>>;
+pub type DynEvent<'a, T> = Event<T, Box<dyn Consumer<'a, T>>>;
 
 pub struct Event<T, C> {
     inner: RawEvent,
     consumer: C,
     #[cfg(not(feature = "cl1_1"))]
-    send: Sender<super::listener::EventCallback>,
+    send: std::sync::mpsc::Sender<super::listener::EventCallback>,
     phtm: PhantomData<T>
 }
 
 impl<'a> NoopEvent<'a> {
     #[inline(always)]
-    #[doc(hidden)]
     pub fn new_noop (inner: RawEvent) -> Self {
         Self::new(inner, Noop::new())
     }
@@ -25,9 +25,9 @@ impl<'a> NoopEvent<'a> {
 
 impl<'a, T, C: Consumer<'a, T>> Event<T, C> {
     #[inline(always)]
-    pub(crate) fn new (inner: RawEvent, consumer: C) -> Self {
+    pub fn new (inner: RawEvent, consumer: C) -> Self {
         #[cfg(not(feature = "cl1_1"))]
-        let (send, recv) = channel();
+        let (send, recv) = std::sync::mpsc::channel();
         #[cfg(not(feature = "cl1_1"))]
         let list = super::listener::get_sender();
         #[cfg(not(feature = "cl1_1"))]
@@ -43,6 +43,11 @@ impl<'a, T, C: Consumer<'a, T>> Event<T, C> {
     }
 
     #[inline(always)]
+    pub fn as_raw (&self) -> &RawEvent {
+        &&self.inner
+    }
+
+    #[inline(always)]
     pub fn into_dyn (self) -> DynEvent<'a, T> {
         DynEvent {
             inner: self.inner,
@@ -50,6 +55,17 @@ impl<'a, T, C: Consumer<'a, T>> Event<T, C> {
             #[cfg(not(feature = "cl1_1"))]
             send: self.send,
             phtm: self.phtm
+        }
+    }
+
+    #[inline(always)]
+    pub fn map<'b, F: 'b + FnOnce(T) -> U, U> (self, f: F) -> MappedEvent<T, U, C, F> where 'a: 'b {
+        Event { 
+            inner: self.inner,
+            consumer: Map::new(self.consumer, f),
+            #[cfg(not(feature = "cl1_1"))]
+            send: self.send,
+            phtm: PhantomData
         }
     }
 
@@ -221,7 +237,7 @@ impl<'a, T, C: Consumer<'a, T>> Event<T, C> {
     /// Because commands in a command-queue are not required to begin execution until the command-queue is flushed, callbacks that enqueue commands on a command-queue should either call [`RawCommandQueue::flush`] on the queue before returning, or arrange for the command-queue to be flushed later.
     #[inline(always)]
     pub fn on_status (&self, status: EventStatus, f: impl 'static + FnOnce(RawEvent, Result<EventStatus>) + Send) -> Result<()> {
-        self.on_status_boxed(status, Box::new(f) as Box<dyn FnOnce(RawEvent, Result<EventStatus>) + Send>)
+        self.on_status_boxed(status, Box::new(f))
     }
 
     #[inline(always)]

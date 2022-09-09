@@ -59,7 +59,9 @@ impl RawContext {
             return Err(Error::from(err));
         }
 
-        let this = Self::from_id(id).unwrap();
+        let this = unsafe {
+            Self::from_id(id).unwrap()
+        };
 
         #[cfg(feature = "cl3")]
         this.on_destruct(move || drop(user_data))?;
@@ -83,7 +85,9 @@ impl RawContext {
             return Err(Error::from(err));
         }
 
-        Ok(Self::from_id(id).unwrap())
+        unsafe {
+            Ok(Self::from_id(id).unwrap())
+        }
     }
 
     #[inline(always)]
@@ -92,7 +96,7 @@ impl RawContext {
     }
 
     #[inline(always)]
-    pub const fn from_id (v: cl_context) -> Option<Self> {
+    pub const unsafe fn from_id (v: cl_context) -> Option<Self> {
         NonNull::new(v).map(Self)
     }
 

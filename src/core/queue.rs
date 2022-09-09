@@ -63,12 +63,12 @@ impl RawCommandQueue {
     }
 
     #[inline(always)]
-    pub fn from_id (id: cl_command_queue) -> Option<Self> {
+    pub const unsafe fn from_id (id: cl_command_queue) -> Option<Self> {
         NonNull::new(id).map(Self)
     }
 
     #[inline(always)]
-    pub unsafe fn from_id_unchecked (id: cl_command_queue) -> Self {
+    pub const unsafe fn from_id_unchecked (id: cl_command_queue) -> Self {
         Self(NonNull::new_unchecked(id))
     }
 
@@ -190,10 +190,9 @@ impl RawCommandQueue {
 
         let mut evt = core::ptr::null_mut();
         unsafe {
-            tri!(clEnqueueBarrierWithWaitList(self.id(), num_events_in_wait_list, event_wait_list, addr_of_mut!(evt)))
+            tri!(clEnqueueBarrierWithWaitList(self.id(), num_events_in_wait_list, event_wait_list, addr_of_mut!(evt)));
+            Ok(crate::prelude::RawEvent::from_id(evt).unwrap())
         }
-
-        Ok(crate::prelude::RawEvent::from_id(evt).unwrap())
     }
 
     /// Enqueues a marker command which waits for either a list of events to complete, or all previously enqueued commands to complete.
@@ -204,10 +203,9 @@ impl RawCommandQueue {
 
         let mut evt = core::ptr::null_mut();
         unsafe {
-            tri!(clEnqueueMarkerWithWaitList(self.id(), num_events_in_wait_list, event_wait_list, addr_of_mut!(evt)))
+            tri!(clEnqueueMarkerWithWaitList(self.id(), num_events_in_wait_list, event_wait_list, addr_of_mut!(evt)));
+            Ok(crate::prelude::RawEvent::from_id(evt).unwrap())
         }
-
-        Ok(crate::prelude::RawEvent::from_id(evt).unwrap())
     }
 
     #[inline]

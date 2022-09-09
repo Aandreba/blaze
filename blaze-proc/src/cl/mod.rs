@@ -48,7 +48,7 @@ pub fn blaze_c (ident: Ident, generics: Generics, blaze: Blaze, content: Expr) -
     }).collect::<Vec<_>>();
 
     let kernel_structs = kernels.iter()
-        .map(|x| create_kernel(&vis, &ident, &generics, &program_generics, &phantom_fill, x));
+        .map(|x| create_kernel(&vis, &ident, &generics, &program_generics, x));
 
     let kernel_defs = kernels.iter().map(|x| {
         let name = &x.ident;
@@ -115,7 +115,7 @@ pub fn blaze_c (ident: Ident, generics: Generics, blaze: Blaze, content: Expr) -
     }
 }
 
-fn create_kernel (parent_vis: &Visibility, parent: &Ident, impl_generics: &Generics, parent_generics: &Generics, phantom_fill: &Option<TokenStream>, kernel: &Kernel) -> TokenStream {
+fn create_kernel (parent_vis: &Visibility, parent: &Ident, impl_generics: &Generics, parent_generics: &Generics, kernel: &Kernel) -> TokenStream {
     let Kernel { vis, ident, args, .. } = kernel;
     let mut generics = parse_quote! { <'__scope__, '__env__, const N: usize> };
     let (parent_imp, parent_ty, parent_wher) = parent_generics.split_for_impl();
@@ -125,13 +125,17 @@ fn create_kernel (parent_vis: &Visibility, parent: &Ident, impl_generics: &Gener
         other => other
     };
 
-    let big_name = format_ident!("{}", to_pascal_case(&ident.to_string()));
-    let new = args.iter().map(|x| new_arg(x, &mut generics)).collect::<Vec<_>>();
-    let names = args.iter().filter_map(|x| if x.ty.is_define() { Some(&x.name) } else { None }).collect::<Vec<_>>();
-    let pointer_names = args.iter().filter_map(|x| if x.ty.is_pointer() { Some(&x.name) } else { None });
-    let set = args.iter().enumerate().map(|(i, x)| set_arg(x, u32::try_from(i).unwrap()));
+    let new = args.iter().map(|x| new_arg(x, &mut generics, true)).collect::<Vec<_>>();();
+    let pointer_names = args.iter().filter_map(|x| if x.ty.is_pointer() { Some(&x.name) } else { None }).collect::<Vec<_>>();
+    let set = args.iter().enumerate().map(|(i, x)| set_arg(x, u32::try_from(i).unwrap())).collect::<Vec<_>>();
     generics.params.extend(impl_generics.params.iter().cloned());
     let (r#impl, _, r#where) = generics.split_for_impl();
+
+    let blocking_ident = format_ident!("{ident}_blocking");
+    let mut blocking_generics : Generics = parse_quote! { <const N: usize> };
+    let blocking_new = args.iter().map(|x| new_arg(x, &mut blocking_generics, false)).collect::<Vec<_>>();();
+    blocking_generics.params.extend(impl_generics.params.iter().cloned());
+    let (blocking_impl, _, blocking_where) = blocking_generics.split_for_impl();
 
     quote! {
         impl #parent_imp #parent #parent_ty #parent_wher {
@@ -144,22 +148,44 @@ fn create_kernel (parent_vis: &Visibility, parent: &Ident, impl_generics: &Gener
 
                 #(#set);*;
 
-                let __blaze_inner__ = __blaze_kernel__.enqueue_with_context(&self.__blaze_ctx__, global_work_dims, local_work_dims, &wait)?;
+                let __blaze_inner__ = __blaze_kernel__.enqueue_with_scope(&scope, global_work_dims, local_work_dims, &wait)?;
                 drop(__blaze_kernel__);
 
                 #(
                     ::blaze_rs::buffer::KernelPointer::complete(#pointer_names, &__blaze_inner__)?;
                 )*
 
-                return Ok(::blaze_rs::event::NoopEvent::new_noop(__blaze_inner__))
+                return Ok(__blaze_inner__)
+            }
+
+            #vis unsafe fn #blocking_ident #blocking_impl (&self, #(#blocking_new,)* global_work_dims: [usize; N], local_work_dims: impl Into<Option<[usize; N]>>, wait: &[::blaze_rs::event::RawEvent]) -> ::blaze_rs::prelude::Result<()> #blocking_where {
+                let mut wait = wait.to_vec();
+                let mut __blaze_kernel__ = match self.#ident.lock() {
+                    Ok(x) => x,
+                    Err(e) => e.into_inner()
+                };
+
+                #(#set);*;
+
+                let __blaze_inner__ = unsafe {
+                    __blaze_kernel__.enqueue_unchecked(::blaze_rs::context::Context::next_queue(&self.__blaze_ctx__), global_work_dims, local_work_dims, &wait)?
+                };
+
+                drop(__blaze_kernel__);
+
+                #(
+                    ::blaze_rs::buffer::KernelPointer::complete(#pointer_names, &__blaze_inner__)?;
+                )*
+
+                return __blaze_inner__.join_by_ref();
             }
         }
     }
 }
 
-fn new_arg (arg: &Argument, generics: &mut Generics) -> TokenStream {
+fn new_arg (arg: &Argument, generics: &mut Generics, lt: bool) -> TokenStream {
     let Argument { name, .. } = arg;
-    let ty = arg.ty(generics);
+    let ty = arg.ty(generics, lt);
 
     return quote! {
         #name: #ty

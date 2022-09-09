@@ -79,7 +79,7 @@ impl ContextProperties {
         }
 
         match bits[0] {
-            CL_CONTEXT_PLATFORM => {
+            CL_CONTEXT_PLATFORM => unsafe {
                 let platform = RawPlatform::from_id(bits[1] as cl_platform_id);
                 cfg_if::cfg_if! {
                     if #[cfg(feature = "cl1_2")] {
