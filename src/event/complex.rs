@@ -282,7 +282,7 @@ impl<'a, T, C: Consumer<'a, T>> Event<T, C> {
     #[inline(always)]
     pub fn join_all<I: IntoIterator<Item = Self>> (iter: I) -> Result<JoinAll<T, C>> {
         let mut iter = iter.into_iter().peekable();
-        let mut size = crate::context::Size::new();
+        let size = crate::context::Size::new();
         let mut consumers = Vec::with_capacity(match iter.size_hint() {
             (_, Some(len)) => len,
             (len, _) => len
@@ -293,7 +293,7 @@ impl<'a, T, C: Consumer<'a, T>> Event<T, C> {
             None => return Err(Error::new(ErrorType::InvalidEventWaitList, "no events inside the iterator"))
         };
 
-        let mut flag = super::FlagEvent::new_in(&ctx)?.into_inner();
+        let flag = super::FlagEvent::new_in(&ctx)?.into_inner();
 
         for evt in iter.into_iter() {
             let flag = flag.clone();

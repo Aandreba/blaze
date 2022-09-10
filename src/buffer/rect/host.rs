@@ -1,8 +1,6 @@
 use std::{ptr::{NonNull, addr_of}, num::NonZeroUsize, mem::{MaybeUninit, ManuallyDrop}, alloc::{Allocator, Global, Layout}, ops::{Index, IndexMut}, fmt::Debug};
 use blaze_proc::docfg;
 
-use crate::prelude::RawEvent;
-
 #[docfg(feature = "svm")]
 pub type SvmRect2D<T, C = crate::prelude::Global> = Rect2D<T, crate::svm::Svm<C>>;
 
@@ -395,11 +393,11 @@ unsafe impl<T, C: crate::prelude::Context> crate::svm::SvmPointer<T> for SvmRect
 #[docfg(feature = "svm")]
 unsafe impl<T: Sync, C: crate::prelude::Context> crate::buffer::KernelPointer<T> for SvmRect2D<T, C> where C: 'static + Send + Clone {
     #[inline]
-    unsafe fn set_arg (&self, kernel: &mut crate::prelude::RawKernel, wait: &mut Vec<RawEvent>, idx: u32) -> crate::prelude::Result<()> {
+    unsafe fn set_arg (&self, kernel: &mut crate::prelude::RawKernel, wait: &mut Vec<crate::prelude::RawEvent>, idx: u32) -> crate::prelude::Result<()> {
         kernel.set_svm_argument::<T, Self>(idx, self)?;
 
         if SvmRect2D::allocator(self).is_coarse() {
-            let evt = SvmRect2D::allocator(self).unmap(crate::svm::SvmPointer::<T>::as_ptr(self) as *mut _, &[])?;
+            let evt = SvmRect2D::allocator(self).unmap(crate::svm::SvmPointer::<T>::as_ptr(self) as *mut _, None)?;
             wait.push(evt)
         }
 
@@ -416,7 +414,7 @@ unsafe impl<T: Sync, C: crate::prelude::Context> crate::buffer::KernelPointer<T>
                 let _ = alloc.map::<{opencl_sys::CL_MAP_READ | opencl_sys::CL_MAP_WRITE}>(
                     self.as_ptr() as *mut _,
                     size,
-                    core::slice::from_ref(event)
+                    Some(core::slice::from_ref(event))
                 )?;
             }
         }

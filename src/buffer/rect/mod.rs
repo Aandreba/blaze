@@ -171,7 +171,6 @@ impl<T: Copy + Unpin + Debug, C: Context> Debug for BufferRect2D<T, C> {
                 all = unsafe {
                     Rect2D::from_raw_parts(NonNull::new_unchecked(ptr), self.width, self.height)
                 };
-                //all = self.read((.., ..), &[]).unwrap().join_unwrap();
             } else {
                 let mut all_plain = Buffer::read_blocking(&self, .., None).unwrap();
                 all_plain.shrink_to_fit();

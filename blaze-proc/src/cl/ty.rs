@@ -1,5 +1,5 @@
 use proc_macro2::{Ident};
-use syn::{parse::Parse, LitInt, TypePath, token::{Mut, Star}, bracketed, parse_quote_spanned, spanned::Spanned, Token, GenericParam, WherePredicate, custom_keyword, parse_quote};
+use syn::{parse::Parse, LitInt, TypePath, token::{Mut, Star}, bracketed, parse_quote_spanned, spanned::Spanned, Token, GenericParam, custom_keyword, parse_quote};
 
 custom_keyword!(image2d);
 
@@ -29,6 +29,7 @@ impl Type {
         }
     }
 
+    #[allow(unused)]
     #[inline(always)]
     pub fn is_define (&self) -> ::std::primitive::bool {
         match self {
@@ -40,7 +41,7 @@ impl Type {
     pub fn rustify (&self, mutability: bool, name: &Ident) -> (bool, Option<GenericParam>, syn::Type) {
         match self {
             Type::Array(ty, len) => {
-                let (mutability, gen, ty) = ty.rustify(mutability, name);
+                let (_, gen, ty) = ty.rustify(mutability, name);
                 let v = parse_quote_spanned! { ty.span() => [#ty; #len] };
                 (false, gen, v)
             },

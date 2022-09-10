@@ -3,7 +3,7 @@ pub mod atomics;
 
 use std::{alloc::{Layout, Allocator, GlobalAlloc}, ptr::{NonNull, addr_of_mut}, ffi::c_void};
 use opencl_sys::{clSVMAlloc, clSVMFree, clEnqueueSVMFree, clEnqueueSVMMap, CL_TRUE, CL_MAP_READ, CL_MAP_WRITE, cl_map_flags, CL_FALSE, clEnqueueSVMUnmap};
-use crate::{context::{Context, Global}, event::{RawEvent}, core::Result, prelude::{Error, ErrorType, device::SvmCapability}, buffer::flags::MemAccess, wait_list};
+use crate::{WaitList, context::{Context, Global}, event::{RawEvent}, core::Result, prelude::{Error, ErrorType, device::SvmCapability}, buffer::flags::MemAccess, wait_list};
 
 #[derive(Clone, Copy)]
 pub struct Svm<C: Context = Global> {
@@ -61,7 +61,7 @@ impl<C: Context> Svm<C> {
         let align = u32::try_from(layout.align()).unwrap();
         let ptr = clSVMAlloc(self.ctx.id(), flags.to_bits(), layout.size(), align);
 
-        if self.coarse { self.map_blocking::<{CL_MAP_READ | CL_MAP_WRITE}>(ptr, layout.size(), &[])?; }
+        if self.coarse { self.map_blocking::<{CL_MAP_READ | CL_MAP_WRITE}>(ptr, layout.size(), None)?; }
         Ok(ptr.cast())
     }
 

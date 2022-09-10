@@ -3,7 +3,7 @@ use futures::{Future, FutureExt};
 use opencl_sys::*;
 use utils_atomics::{flag::{AsyncFlag, AsyncSubscribe}, FillQueue};
 use crate::prelude::Result;
-use super::{Event, EventStatus, consumer::Consumer};
+use super::{Event, consumer::Consumer};
 
 #[cfg_attr(docsrs, doc(cfg(feature = "futures")))]
 pub struct EventWait<T, C> {
@@ -18,7 +18,7 @@ impl<'a, T, C: Unpin + Consumer<'a, T>> EventWait<T, C> {
         let sub = flag.subscribe();
         
         unsafe {
-            inner.on_complete_raw(status, wake_future, flag.into_raw() as *mut _)?;
+            inner.on_complete_raw(wake_future, flag.into_raw() as *mut _)?;
         }
 
         return Ok(Self { inner: Some(inner), sub })

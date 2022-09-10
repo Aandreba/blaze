@@ -1,6 +1,5 @@
 flat_mod!(raw, complex, range);
 
-use std::mem::MaybeUninit;
 use blaze_proc::docfg;
 use crate::{prelude::{Context, RawKernel, Result, RawEvent}};
 
@@ -46,7 +45,7 @@ unsafe impl<T: Sync, C: Context> KernelPointer<T> for SvmBox<[T], C> where C: 's
         kernel.set_svm_argument::<T, Self>(idx, self)?;
 
         if Box::allocator(self).is_coarse() {
-            let evt = Box::allocator(self).unmap(SvmPointer::<T>::as_ptr(self) as *mut _, &[])?;
+            let evt = Box::allocator(self).unmap(SvmPointer::<T>::as_ptr(self) as *mut _, None)?;
             wait.push(evt)
         }
 
@@ -64,7 +63,7 @@ unsafe impl<T: Sync, C: Context> KernelPointer<T> for SvmBox<[T], C> where C: 's
                 let _ = alloc.map::<{opencl_sys::CL_MAP_READ | opencl_sys::CL_MAP_WRITE}>(
                     ptr as *mut _,
                     size,
-                    core::slice::from_ref(event)
+                    Some(core::slice::from_ref(event))
                 )?;
             }
         }
@@ -80,7 +79,7 @@ unsafe impl<T: Sync, C: Context> KernelPointer<T> for SvmBox<T, C> where C: 'sta
         kernel.set_svm_argument::<T, Self>(idx, self)?;
 
         if Box::allocator(self).is_coarse() {
-            let evt = Box::allocator(self).unmap(SvmPointer::<T>::as_ptr(self) as *mut _, &[])?;
+            let evt = Box::allocator(self).unmap(SvmPointer::<T>::as_ptr(self) as *mut _, None)?;
             wait.push(evt)
         }
 
@@ -98,7 +97,7 @@ unsafe impl<T: Sync, C: Context> KernelPointer<T> for SvmBox<T, C> where C: 'sta
                 let _ = alloc.map::<{opencl_sys::CL_MAP_READ | opencl_sys::CL_MAP_WRITE}>(
                     ptr as *mut _,
                     size,
-                    core::slice::from_ref(event)
+                    Some(core::slice::from_ref(event))
                 )?;
             }
         }
@@ -114,7 +113,7 @@ unsafe impl<T: Sync, C: Context> KernelPointer<T> for SvmVec<T, C> where C: 'sta
         kernel.set_svm_argument::<T, Self>(idx, self)?;
 
         if Vec::allocator(self).is_coarse() {
-            let evt = Vec::allocator(self).unmap(SvmPointer::<T>::as_ptr(self) as *mut _, &[])?;
+            let evt = Vec::allocator(self).unmap(SvmPointer::<T>::as_ptr(self) as *mut _, None)?;
             wait.push(evt)
         }
 
@@ -132,7 +131,7 @@ unsafe impl<T: Sync, C: Context> KernelPointer<T> for SvmVec<T, C> where C: 'sta
                 let _ = alloc.map::<{opencl_sys::CL_MAP_READ | opencl_sys::CL_MAP_WRITE}>(
                     ptr as *mut _,
                     size,
-                    core::slice::from_ref(event)
+                    Some(core::slice::from_ref(event))
                 )?;
             }
         }
