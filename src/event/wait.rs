@@ -3,7 +3,7 @@ use futures::{Future, FutureExt};
 use opencl_sys::*;
 use utils_atomics::{flag::{AsyncFlag, AsyncSubscribe}, FillQueue};
 use crate::prelude::Result;
-use super::{Event, EventStatus, Consumer};
+use super::{Event, EventStatus, consumer::Consumer};
 
 #[cfg_attr(docsrs, doc(cfg(feature = "futures")))]
 pub struct EventWait<T, C> {

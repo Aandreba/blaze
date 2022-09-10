@@ -139,7 +139,7 @@ fn create_kernel (parent_vis: &Visibility, parent: &Ident, impl_generics: &Gener
 
     quote! {
         impl #parent_imp #parent #parent_ty #parent_wher {
-            #vis unsafe fn #ident #r#impl (&self, scope: &'__scope__ ::blaze_rs::context::Scope<'__scope__, '__env__, C>, #(#new,)* global_work_dims: [usize; N], local_work_dims: impl Into<Option<[usize; N]>>, wait: &[::blaze_rs::event::RawEvent]) -> ::blaze_rs::prelude::Result<::blaze_rs::event::NoopEvent<'__scope__>> #r#where {
+            #vis unsafe fn #ident #r#impl (&self, scope: &'__scope__ ::blaze_rs::context::Scope<'__scope__, '__env__, C>, #(#new,)* global_work_dims: [usize; N], local_work_dims: impl Into<Option<[usize; N]>>, wait: &[::blaze_rs::event::RawEvent]) -> ::blaze_rs::prelude::Result<::blaze_rs::event::consumer::NoopEvent<'__scope__>> #r#where {
                 let mut wait = wait.to_vec();
                 let mut __blaze_kernel__ = match self.#ident.lock() {
                     Ok(x) => x,

@@ -1,7 +1,6 @@
 use std::{sync::{Arc, atomic::{AtomicUsize, Ordering, AtomicI32}}, marker::PhantomData, panic::{catch_unwind, AssertUnwindSafe, resume_unwind}, thread::Thread};
 use opencl_sys::CL_SUCCESS;
-
-use crate::{prelude::{Result, RawCommandQueue, RawEvent, Event, Error}, event::{Consumer, NoopEvent, Noop}};
+use crate::{prelude::{Result, RawCommandQueue, RawEvent, Event, Error}, event::consumer::{Consumer, Noop, NoopEvent}};
 use super::{Global, Context};
 
 pub struct Scope<'scope, 'env: 'scope, C: 'env + Context = Global> {
@@ -53,7 +52,7 @@ pub fn scope<'env, T, F: for<'scope> FnOnce(&'scope Scope<'scope, 'env>) -> Resu
 }
 
 pub fn local_scope<'env, T, C: 'env + Context, F: for<'scope> FnOnce(&'scope Scope<'scope, 'env, C>) -> Result<T>> (ctx: &'env C, f: F) -> Result<T> {
-    let mut scope = Scope {
+    let scope = Scope {
         ctx,
         data: Arc::new((AtomicUsize::new(0), AtomicI32::new(CL_SUCCESS))),
         thread: std::thread::current(),

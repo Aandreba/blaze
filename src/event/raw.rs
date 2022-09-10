@@ -4,7 +4,8 @@ use std::time::{Duration, SystemTime};
 use std::{mem::MaybeUninit, ptr::{NonNull}};
 use opencl_sys::*;
 use blaze_proc::docfg;
-use super::{EventStatus, ProfilingInfo, CommandType, Event, NoopEvent};
+use super::ext::NoopEvent;
+use super::{EventStatus, ProfilingInfo, CommandType, Event};
 
 #[derive(Debug, PartialEq, Eq, Hash)]
 #[repr(transparent)]

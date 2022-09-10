@@ -1,4 +1,4 @@
-use std::{marker::PhantomData};
+use std::{marker::PhantomData, panic::{UnwindSafe, catch_unwind}, any::Any};
 use crate::prelude::Result;
 
 /// A trait that represents the consumer of an [`Event`]
@@ -20,7 +20,7 @@ impl<'a, T, F: 'a + FnOnce() -> Result<T>> Consumer<'a, T> for F {
     }
 }
 
-/// **No**-**op**eration trait consumer
+/// **No**-**op**eration trait consumer.
 #[repr(transparent)]
 pub struct Noop<'a> (PhantomData<&'a ()>);
 
@@ -36,6 +36,7 @@ impl<'a> Consumer<'a, ()> for Noop<'a> {
     }
 }
 
+/// Consumer for [`map`](super::Event::map) event.
 pub struct Map<T, C, F> (pub(crate) C, pub(crate) F, PhantomData<T>);
 
 impl<'a, 'b, T, U, C: Consumer<'a, T>, F: 'b + FnOnce(T) -> U> Map<T, C, F> where 'a: 'b {
@@ -48,5 +49,59 @@ impl<'a: 'b, 'b, T: 'b, U, C: Consumer<'a, T>, F: 'b + FnOnce(T) -> U> Consumer<
     fn consume (self) -> Result<U> {
         let v = self.0.consume()?;
         return Ok((self.1)(v))
+    }
+}
+
+/// Consumer for [`try_map`](super::Event::try_map) event.
+pub struct TryMap<T, C, F> (pub(crate) C, pub(crate) F, PhantomData<T>);
+
+impl<'a, 'b, T, U, C: Consumer<'a, T>, F: 'b + FnOnce(T) -> Result<U>> TryMap<T, C, F> where 'a: 'b {
+    #[inline(always)]
+    pub const fn new (consumer: C, f: F) -> Self { Self(consumer, f, PhantomData) } 
+}
+
+impl<'a: 'b, 'b, T: 'b, U, C: Consumer<'a, T>, F: 'b + FnOnce(T) -> Result<U>> Consumer<'b, U> for TryMap<T, C, F> {
+    #[inline(always)]
+    fn consume (self) -> Result<U> {
+        let v = self.0.consume()?;
+        return (self.1)(v)
+    }
+}
+
+/// Consumer for [`catch_unwind`](super::Event::catch_unwind) event.
+#[repr(transparent)]
+pub struct CatchUnwind<C: UnwindSafe> (pub(super) C);
+
+impl<'a, T, C: Consumer<'a, T> + UnwindSafe> Consumer<'a, ::core::result::Result<T, Box<dyn Any + Send>>> for CatchUnwind<C> {
+    #[inline(always)]
+    fn consume (self) -> Result<::core::result::Result<T, Box<dyn Any + Send>>> {
+        return match catch_unwind(|| self.0.consume()) {
+            Ok(Ok(x)) => Ok(Ok(x)),
+            Ok(Err(e)) => Err(e),
+            Err(e) => Ok(Err(e))
+        }
+    }
+} 
+
+/// Consumer for [`flatten`](super::Event::flatten) event.
+#[repr(transparent)]
+pub struct Flatten<C> (pub(super) C);
+
+impl<'a, T, C: Consumer<'a, Result<T>>> Consumer<'a, T> for Flatten<C> {
+    #[inline(always)]
+    fn consume (self) -> Result<T> {
+        self.0.consume().flatten()
+    }
+}
+
+/// Consumer for [`inspect`](super::Event::inspect) event.
+pub struct Inspect<C, F> (pub(super) C, pub(super) F);
+
+impl<'a, 'b, T, C: Consumer<'a, T>, F: 'b + FnOnce(&T)> Consumer<'b, T> for Inspect<C, F> where 'a: 'b {
+    #[inline(always)]
+    fn consume (self) -> Result<T> {
+        let v = self.0.consume()?;
+        (self.1)(&v);
+        return Ok(v)
     }
 }

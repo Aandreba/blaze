@@ -1,7 +1,7 @@
 use std::{mem::MaybeUninit, ffi::c_void, ptr::{addr_of_mut, NonNull}, borrow::Borrow};
 use opencl_sys::*;
 use blaze_proc::docfg;
-use crate::{core::*, context::{RawContext, Context}, event::{RawEvent, NoopEvent}, wait_list, prelude::Scope};
+use crate::{core::*, context::{RawContext, Context}, event::{RawEvent, consumer::NoopEvent}, wait_list, prelude::Scope};
 
 #[derive(Debug, PartialEq, Eq, Hash)]
 #[repr(transparent)]

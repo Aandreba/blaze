@@ -1,7 +1,7 @@
 use std::{marker::PhantomData, ptr::{NonNull}, ops::{Deref, DerefMut}, fmt::Debug, mem::MaybeUninit};
 //use blaze_proc::docfg;
 
-use crate::{context::{Context, Global, Scope, local_scope}, prelude::{Event, RawEvent}, event::{NoopEvent, Consumer}};
+use crate::{context::{Context, Global, Scope, local_scope}, prelude::{Event, RawEvent}, event::consumer::{NoopEvent, Consumer}};
 use crate::core::*;
 use crate::buffer::{flags::{MemFlags, HostPtr, MemAccess}, RawBuffer};
 use super::{IntoRange, BufferRange};

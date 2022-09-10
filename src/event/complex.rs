@@ -1,12 +1,35 @@
-use std::{ops::Deref, ffi::c_void, time::{SystemTime, Duration}, marker::PhantomData, mem::MaybeUninit};
+use std::{ops::Deref, ffi::c_void, time::{SystemTime, Duration}, marker::PhantomData, mem::MaybeUninit, panic::{UnwindSafe, AssertUnwindSafe}};
 use opencl_sys::*;
 use blaze_proc::docfg;
 use crate::{prelude::*};
-use super::{RawEvent, EventStatus, ProfilingInfo, Consumer, Noop, Map};
+use super::{RawEvent, EventStatus, ProfilingInfo};
 
-pub type NoopEvent<'a> = Event<(), Noop::<'a>>;
-pub type MappedEvent<T, U, C, F> = Event<U, Map<T, C, F>>;
-pub type DynEvent<'a, T> = Event<T, Box<dyn Consumer<'a, T>>>;
+pub(crate) mod ext {
+    use std::{any::Any, panic::AssertUnwindSafe};
+    use crate::event::*;
+    use crate::event::_consumer::*;
+
+    /// Event that completes without any extra operations.
+    pub type NoopEvent<'a> = Event<(), Noop::<'a>>;
+    /// Event for [`map`](super::Event::map).
+    pub type MapEvent<T, U, C, F> = Event<U, Map<T, C, F>>;
+    /// Event for [`try_map`](super::Event::try_map).
+    pub type TryMapEvent<T, U, C, F> = Event<U, TryMap<T, C, F>>;
+    /// Event for [`catch_unwind`](super::Event::catch_unwind).
+    pub type CatchUnwindEvent<T, C> = Event<::core::result::Result<T, Box<dyn Any + Send>>, CatchUnwind<C>>;
+    /// Event for [`assert_catch_unwind`](super::Event::assert_catch_unwind).
+    pub type AssertCatchUnwindEvent<T, C> = CatchUnwindEvent<T, AssertUnwindSafe<C>>;
+    /// Event for [`flatten`](super::Event::flatten).
+    pub type FlattenEvent<T, C> = Event<T, Flatten<C>>;
+    /// Event for [`inspect`](super::Event::flatten).
+    pub type InspectEvent<T, C, F> = Event<T, Inspect<C, F>>;
+    /// A dynamic event that **can** be shared between threads.
+    pub type DynEvent<'a, T> = Event<T, Box<dyn Consumer<'a, T> + Send>>;
+    /// A dynamic event that **cannot** be shared between threads.
+    pub type LocalEvent<'a, T> = Event<T, Box<dyn Consumer<'a, T>>>;
+}
+
+use super::consumer::*;
 
 pub struct Event<T, C> {
     inner: RawEvent,
@@ -48,7 +71,7 @@ impl<'a, T, C: Consumer<'a, T>> Event<T, C> {
     }
 
     #[inline(always)]
-    pub fn into_dyn (self) -> DynEvent<'a, T> {
+    pub fn into_dyn (self) -> DynEvent<'a, T> where C: Send {
         DynEvent {
             inner: self.inner,
             consumer: Box::new(self.consumer),
@@ -59,10 +82,76 @@ impl<'a, T, C: Consumer<'a, T>> Event<T, C> {
     }
 
     #[inline(always)]
-    pub fn map<'b, F: 'b + FnOnce(T) -> U, U> (self, f: F) -> MappedEvent<T, U, C, F> where 'a: 'b {
+    pub fn into_local (self) -> LocalEvent<'a, T> {
+        LocalEvent {
+            inner: self.inner,
+            consumer: Box::new(self.consumer),
+            #[cfg(not(feature = "cl1_1"))]
+            send: self.send,
+            phtm: self.phtm
+        }
+    }
+
+    #[inline(always)]
+    pub fn map<'b, F: 'b + FnOnce(T) -> U, U> (self, f: F) -> MapEvent<T, U, C, F> where 'a: 'b {
         Event { 
             inner: self.inner,
             consumer: Map::new(self.consumer, f),
+            #[cfg(not(feature = "cl1_1"))]
+            send: self.send,
+            phtm: PhantomData
+        }
+    }
+
+    #[inline(always)]
+    pub fn try_map<'b, F: 'b + FnOnce(T) -> Result<U>, U> (self, f: F) -> TryMapEvent<T, U, C, F> where 'a: 'b {
+        Event { 
+            inner: self.inner,
+            consumer: TryMap::new(self.consumer, f),
+            #[cfg(not(feature = "cl1_1"))]
+            send: self.send,
+            phtm: PhantomData
+        }
+    }
+
+    #[inline(always)]
+    pub fn catch_unwind (self) -> CatchUnwindEvent<T, C> where C: UnwindSafe {
+        CatchUnwindEvent {
+            inner: self.inner,
+            consumer: CatchUnwind(self.consumer),
+            #[cfg(not(feature = "cl1_1"))]
+            send: self.send,
+            phtm: PhantomData
+        }
+    }
+
+    #[inline(always)]
+    pub fn assert_catch_unwind (self) -> AssertCatchUnwindEvent<T, C> {
+        CatchUnwindEvent {
+            inner: self.inner,
+            consumer: CatchUnwind(AssertUnwindSafe(self.consumer)),
+            #[cfg(not(feature = "cl1_1"))]
+            send: self.send,
+            phtm: PhantomData
+        }
+    }
+
+    #[inline(always)]
+    pub fn flatten (self) -> FlattenEvent<T, C> {
+        FlattenEvent {
+            inner: self.inner,
+            consumer: Flatten(self.consumer),
+            #[cfg(not(feature = "cl1_1"))]
+            send: self.send,
+            phtm: PhantomData
+        }
+    }
+
+    #[inline(always)]
+    pub fn inspect<'b, F: 'b + FnOnce(&T)> (self, f: F) -> InspectEvent<T, C, F> where 'a: 'b {
+        InspectEvent {
+            inner: self.inner,
+            consumer: Inspect(self.consumer, f),
             #[cfg(not(feature = "cl1_1"))]
             send: self.send,
             phtm: PhantomData
@@ -76,6 +165,7 @@ impl<'a, T, C: Consumer<'a, T>> Event<T, C> {
 }
 
 impl<'a, T, C: Consumer<'a, T>> Event<T, C> {
+    /// Blocks the current thread until the event has completed, consuming it and returning it's value.
     #[inline(always)]
     pub fn join (self) -> Result<T> {
         self.join_by_ref()?;
@@ -106,7 +196,7 @@ impl<'a, T, C: Consumer<'a, T>> Event<T, C> {
         Ok((v, nanos))
     }
 
-    /// Blocks the current thread util the event has completed, returning `data` if it completed correctly, and panicking otherwise.
+    /// Blocks the current thread util the event has completed, consuming it and returning it's value if it completed correctly, and panicking otherwise.
     #[inline(always)]
     pub fn join_unwrap (self) -> T {
         self.join().unwrap()

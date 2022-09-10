@@ -1,5 +1,5 @@
 use std::{sync::{atomic::{AtomicUsize, Ordering}}, ops::{Deref, DerefMut}, ptr::NonNull, alloc::Layout, num::NonZeroUsize, mem::ManuallyDrop};
-use crate::{prelude::{RawCommandQueue, Result, Event, RawEvent}, event::{Consumer, NoopEvent, Noop}};
+use crate::{prelude::{RawCommandQueue, Result, Event, RawEvent}, event::consumer::*};
 
 #[derive(Debug, Clone)]
 pub struct CommandQueue {

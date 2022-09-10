@@ -1,4 +1,12 @@
-flat_mod!(raw, complex, status, profiling, consumer);
+flat_mod!(raw, complex, status, profiling);
+
+#[path = "consumer.rs"]
+mod _consumer;
+
+pub mod consumer {
+    pub use super::_consumer::*;
+    pub use super::complex::ext::*;
+}
 
 #[cfg(feature = "cl1_1")]
 flat_mod!(flag);

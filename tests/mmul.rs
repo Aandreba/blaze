@@ -36,9 +36,10 @@ fn buffer_mul () -> Result<()> {
     let rhs = BufferRect2D::<f32>::new(&[1.,2.,3.,4.,5.,6.], 3, MemAccess::READ_ONLY, false)?; // 2 x 3
     let mut result = BufferRect2D::<f32>::new_uninit(3, 3, MemAccess::WRITE_ONLY, false)?; // 3 x 3
 
-    unsafe {
-        ops.matrix_mul_blocking(2, &lhs, &rhs, &mut result, [3, 3], None, &[])?;
-    }
+    scope(|s| unsafe {
+        ops.matrix_mul(s, 2, &lhs, &rhs, &mut result, [3, 3], None, &[])?.join()?;
+        Ok(())
+    })?;
 
     let result = unsafe { result.assume_init() };
     println!("{:?}", result);
