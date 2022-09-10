@@ -9,7 +9,7 @@ pub mod consumer {
 }
 
 #[cfg(feature = "cl1_1")]
-flat_mod!(flag);
+flat_mod!(flag, abort);
 
 #[cfg(not(feature = "cl1_1"))]
 mod listener;

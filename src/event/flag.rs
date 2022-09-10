@@ -2,7 +2,7 @@ use std::{ptr::addr_of_mut, ops::Deref};
 use opencl_sys::*;
 use crate::prelude::*;
 
-#[derive(Debug, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[repr(transparent)]
 pub struct FlagEvent {
     inner: RawEvent
@@ -34,12 +34,16 @@ impl FlagEvent {
     }
 
     #[inline(always)]
-    pub fn mark (self, error: Option<ErrorType>) -> Result<()> {
+    pub fn try_mark (&self, error: Option<ErrorType>) -> Result<bool> {
         let status = error.map_or(CL_COMPLETE, Into::into);
+
         unsafe {
-            tri!(clSetUserEventStatus(self.inner.id(), status));
+            match clSetUserEventStatus(self.inner.id(), status) {
+                CL_SUCCESS => Ok(true),
+                CL_INVALID_OPERATION => Ok(false),
+                other => Err(other.into())
+            }
         }
-        return Ok(())
     }
 
     #[inline(always)]

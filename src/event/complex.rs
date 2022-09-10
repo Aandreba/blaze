@@ -1,16 +1,25 @@
-use std::{ops::Deref, ffi::c_void, time::{SystemTime, Duration}, marker::PhantomData, mem::MaybeUninit, panic::{UnwindSafe, AssertUnwindSafe}};
+use std::{ops::Deref, ffi::c_void, time::{SystemTime, Duration}, marker::PhantomData, mem::MaybeUninit, panic::{UnwindSafe, AssertUnwindSafe}, sync::{Arc, atomic::{AtomicBool, AtomicU8}}};
 use opencl_sys::*;
 use blaze_proc::docfg;
 use crate::{prelude::*};
 use super::{RawEvent, EventStatus, ProfilingInfo};
 
+/// A dynamic event that **can** be shared between threads.
+pub type DynEvent<'a, T> = Event<T, Box<dyn Consumer<'a, T> + Send>>;
+/// A dynamic event that **cannot** be shared between threads.
+pub type DynLocalEvent<'a, T> = Event<T, Box<dyn Consumer<'a, T>>>;
+
 pub(crate) mod ext {
     use std::{any::Any, panic::AssertUnwindSafe};
     use crate::event::*;
     use crate::event::_consumer::*;
+    use blaze_proc::docfg;
 
     /// Event that completes without any extra operations.
     pub type NoopEvent<'a> = Event<(), Noop::<'a>>;
+    /// Event for [`abort`](super::Event::abort).
+    #[docfg(feature = "cl1_1")]
+    pub type AbortableEvent<T, C> = Event<Option<T>, Abort<C>>;
     /// Event for [`map`](super::Event::map).
     pub type MapEvent<T, U, C, F> = Event<U, Map<T, C, F>>;
     /// Event for [`try_map`](super::Event::try_map).
@@ -23,10 +32,6 @@ pub(crate) mod ext {
     pub type FlattenEvent<T, C> = Event<T, Flatten<C>>;
     /// Event for [`inspect`](super::Event::flatten).
     pub type InspectEvent<T, C, F> = Event<T, Inspect<C, F>>;
-    /// A dynamic event that **can** be shared between threads.
-    pub type DynEvent<'a, T> = Event<T, Box<dyn Consumer<'a, T> + Send>>;
-    /// A dynamic event that **cannot** be shared between threads.
-    pub type LocalEvent<'a, T> = Event<T, Box<dyn Consumer<'a, T>>>;
 }
 
 use super::consumer::*;
@@ -46,7 +51,7 @@ impl<'a> NoopEvent<'a> {
     }
 }
 
-impl<'a, T, C: Consumer<'a, T>> Event<T, C> {
+impl<'a, T, C: Consumer<'a, T>> Event<T, C> {    
     #[inline(always)]
     pub fn new (inner: RawEvent, consumer: C) -> Self {
         #[cfg(not(feature = "cl1_1"))]
@@ -82,14 +87,55 @@ impl<'a, T, C: Consumer<'a, T>> Event<T, C> {
     }
 
     #[inline(always)]
-    pub fn into_local (self) -> LocalEvent<'a, T> {
-        LocalEvent {
+    pub fn into_local (self) -> DynLocalEvent<'a, T> {
+        DynLocalEvent {
             inner: self.inner,
             consumer: Box::new(self.consumer),
             #[cfg(not(feature = "cl1_1"))]
             send: self.send,
             phtm: self.phtm
         }
+    }
+
+    #[docfg(feature = "cl1_1")]
+    #[inline(always)]
+    pub fn abortable (self) -> Result<(AbortableEvent<T, C>, super::AbortHandle)> {
+        let ctx = self.raw_context()?;
+        let flag = super::FlagEvent::new_in(&ctx)?;
+        let aborted = Arc::new(AtomicU8::new(super::UNINIT));
+
+        let my_flag = flag.clone();
+        let my_aborted = aborted.clone();
+        self.on_complete(move |_, res| {
+            let res = match res {
+                Ok(_) => None,
+                Err(e) => Some(e.ty)
+            };
+
+            if my_flag.try_mark(res).is_ok_and(core::mem::copy) {
+                my_aborted.store(super::FALSE, std::sync::atomic::Ordering::Release);
+            }
+        })?;
+
+        let handle = super::AbortHandle {
+            inner: flag.clone(),
+            aborted: aborted.clone()
+        };
+
+        let consumer = super::Abort {
+            aborted,
+            consumer: self.consumer,
+        };
+
+        let event = AbortableEvent {
+            inner: flag.into_inner(),
+            consumer,
+            #[cfg(not(feature = "cl1_1"))]
+            send: self.send,
+            phtm: PhantomData
+        };
+        
+        return Ok((event, handle))
     }
 
     #[inline(always)]

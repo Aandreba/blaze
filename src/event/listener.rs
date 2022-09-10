@@ -17,14 +17,17 @@ pub(super) fn get_sender () -> ListenerSender {
             
             std::thread::spawn(move || {
                 let mut listeners = Vec::<Listener>::new();
+                let mut connected = true;
 
-                'out: loop {
+                while connected || !listeners.is_empty() {
                     // Check for new listeners to add to the queue
-                    '_inner: loop {
-                        match recv.try_recv() {
-                            Ok((evt, recv)) => listeners.push(Listener { evt, recv, cbs: Vec::new(), closed: false }),
-                            Err(TryRecvError::Empty) => break,
-                            Err(TryRecvError::Disconnected) => break 'out
+                    if connected {
+                        loop {
+                            match recv.try_recv() {
+                                Ok((evt, recv)) => listeners.push(Listener { evt, recv, cbs: Vec::new(), closed: false }),
+                                Err(TryRecvError::Empty) => break,
+                                Err(TryRecvError::Disconnected) => connected = false
+                            }
                         }
                     }
 

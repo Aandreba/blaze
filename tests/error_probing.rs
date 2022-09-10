@@ -1,5 +1,4 @@
 #![feature(nonzero_min_max)]
-
 use blaze_rs::{prelude::*};
 
 #[global_context]
@@ -13,9 +12,8 @@ fn invalid_raw () -> Result<()> {
 
     scope(|s| {
         let left = buffer.read(s, ..2, &[])?;
-        let right = buffer.read(s, 0..1, &[])?
-            .inspect(|x| println!("{}", x.len()))
-            .join()?;
+        #[cfg(feature = "cl1_1")]
+        let (right, abort) = buffer.read(s, 0..1, &[])?.abortable()?;
 
         return Ok(())
     })?;
