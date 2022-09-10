@@ -2,6 +2,7 @@ use std::{sync::{Arc, atomic::{AtomicUsize, Ordering, AtomicI32}}, marker::Phant
 use opencl_sys::CL_SUCCESS;
 use crate::{prelude::{Result, RawCommandQueue, RawEvent, Event, Error}, event::consumer::{Consumer, Noop, NoopEvent}};
 use super::{Global, Context};
+use blaze_proc::docfg;
 
 pub struct Scope<'scope, 'env: 'scope, C: 'env + Context = Global> {
     ctx: &'env C,
@@ -63,6 +64,46 @@ pub fn local_scope<'env, T, C: 'env + Context, F: for<'scope> FnOnce(&'scope Sco
     // Run `f`, but catch panics so we can make sure to wait for all the threads to join.
     let result = catch_unwind(AssertUnwindSafe(|| f(&scope)));
     
+    // Wait until all the events are finished.
+    while scope.data.0.load(Ordering::Acquire) != 0 {
+        std::thread::park();
+    }
+
+    // Throw any panic from `f`, or the return value of `f`.
+    return match result {
+        Err(e) => resume_unwind(e),
+        Ok(x) => {
+            let e = scope.data.1.load(Ordering::Relaxed);
+            if e != CL_SUCCESS {
+                return Err(Error::from(e));
+            }
+            x
+        }
+    }
+}
+
+#[docfg(feature = "futures")]
+#[inline(always)]
+pub async fn scope_async<'env, T, Fut: 'env + futures::Future<Output = Result<T>>, F: for<'scope> FnOnce(&'scope Scope<'scope, 'env>) -> Fut> (f: F) -> Result<T> {
+    local_scope_async(Global::get(), f).await
+}
+
+#[docfg(feature = "futures")]
+pub async fn local_scope_async<'env, T, C: 'env + Context, Fut: 'env + futures::Future<Output = Result<T>>, F: for<'scope> FnOnce(&'scope Scope<'scope, 'env, C>) -> Fut> (ctx: &'env C, f: F) -> Result<T> {
+    let scope = Scope {
+        ctx,
+        data: Arc::new((AtomicUsize::new(0), AtomicI32::new(CL_SUCCESS))),
+        thread: std::thread::current(),
+        scope: PhantomData,
+        env: PhantomData
+    };
+
+    // Run `f`, but catch panics so we can make sure to wait for all the threads to join.
+    let result = match catch_unwind(AssertUnwindSafe(|| f(&scope))) {
+        Ok(x) => Ok(x.await),
+        Err(e) => Err(e)
+    };
+
     // Wait until all the events are finished.
     while scope.data.0.load(Ordering::Acquire) != 0 {
         std::thread::park();
