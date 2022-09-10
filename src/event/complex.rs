@@ -1,4 +1,4 @@
-use std::{ops::Deref, ffi::c_void, time::{SystemTime, Duration}, marker::PhantomData, mem::MaybeUninit, panic::{UnwindSafe, AssertUnwindSafe}, sync::{Arc, atomic::{AtomicBool, AtomicU8}}};
+use std::{ops::Deref, ffi::c_void, time::{SystemTime, Duration}, marker::PhantomData, mem::MaybeUninit, panic::{UnwindSafe, AssertUnwindSafe}};
 use opencl_sys::*;
 use blaze_proc::docfg;
 use crate::{prelude::*};
@@ -32,6 +32,9 @@ pub(crate) mod ext {
     pub type FlattenEvent<T, C> = Event<T, Flatten<C>>;
     /// Event for [`inspect`](super::Event::flatten).
     pub type InspectEvent<T, C, F> = Event<T, Inspect<C, F>>;
+    /// Event for [`join_all`](super::Event::join_all).
+    #[docfg(feature = "cl1_1")]
+    pub type JoinAll<T, C> = Event<Vec<T>, JoinAllConsumer<C>>;
 }
 
 use super::consumer::*;
@@ -102,7 +105,7 @@ impl<'a, T, C: Consumer<'a, T>> Event<T, C> {
     pub fn abortable (self) -> Result<(AbortableEvent<T, C>, super::AbortHandle)> {
         let ctx = self.raw_context()?;
         let flag = super::FlagEvent::new_in(&ctx)?;
-        let aborted = Arc::new(AtomicU8::new(super::UNINIT));
+        let aborted = std::sync::Arc::new(std::sync::atomic::AtomicU8::new(super::UNINIT));
 
         let my_flag = flag.clone();
         let my_aborted = aborted.clone();
@@ -270,7 +273,7 @@ impl<'a, T, C: Consumer<'a, T>> Event<T, C> {
         let queue = raw[0].command_queue()?
             .ok_or_else(|| Error::new(ErrorType::InvalidCommandQueue, "command queue not found"))?;
 
-        let barrier = queue.barrier(&raw)?;
+        let barrier = queue.barrier(Some(&raw))?;
         return Ok(Event::new(barrier, JoinAllConsumer(consumers)));
     }
 
@@ -458,20 +461,6 @@ impl<'a, T, C: Consumer<'a, T>> Deref for Event<T, C> {
 }
 
 impl<T, C: Unpin> Unpin for Event<T, C> {}
-
-#[docfg(feature = "cl1_1")]
-pub type JoinAll<T, C> = Event<Vec<T>, JoinAllConsumer<C>>;
-
-#[docfg(feature = "cl1_1")]
-pub struct JoinAllConsumer<C> (Vec<C>);
-
-#[cfg(feature = "cl1_1")]
-impl<'a, T, C: Consumer<'a, T>> Consumer<'a, Vec<T>> for JoinAllConsumer<C> {
-    #[inline]
-    fn consume (self) -> Result<Vec<T>> {
-        self.0.into_iter().map(Consumer::consume).try_collect()
-    }
-}
 
 #[cfg(feature = "cl1_1")]
 unsafe extern "C" fn event_listener (event: cl_event, event_command_status: cl_int, user_data: *mut c_void) {

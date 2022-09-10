@@ -14,16 +14,11 @@ pub struct EventWait<T, C> {
 impl<'a, T, C: Unpin + Consumer<'a, T>> EventWait<T, C> {
     #[inline(always)]
     pub fn new (inner: Event<T, C>) -> Result<Self> {
-        Self::on_status(inner, EventStatus::Complete)
-    }
-
-    #[inline]
-    pub fn on_status (inner: Event<T, C>, status: EventStatus) -> Result<Self> {
         let flag = AsyncFlag::new();
         let sub = flag.subscribe();
         
         unsafe {
-            inner.on_status_raw(status, wake_future, flag.into_raw() as *mut _)?;
+            inner.on_complete_raw(status, wake_future, flag.into_raw() as *mut _)?;
         }
 
         return Ok(Self { inner: Some(inner), sub })

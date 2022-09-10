@@ -100,12 +100,17 @@ pub mod image;
 pub mod svm;
 
 #[inline(always)]
-pub(crate) const fn wait_list (v: &[prelude::RawEvent]) -> (u32, *const opencl_sys::cl_event) {
+pub(crate) const fn wait_list (v: WaitList) -> (u32, *const opencl_sys::cl_event) {
     const MAX_WAIT_LIST : usize = u32::MAX as usize;
 
-    return match v.len() {
-        0 => (0, ::core::ptr::null()),
-        len @ 1..=MAX_WAIT_LIST => (len as u32, v.as_ptr().cast()),
-        _ => panic!("Wait list overflow")
+    return match v {
+        Some(v) => match v.len() {
+            0 => (0, ::core::ptr::null()),
+            len @ 1..=MAX_WAIT_LIST => (len as u32, v.as_ptr().cast()),
+            _ => panic!("Wait list overflow")
+        },
+        None => (0, ::core::ptr::null())
     }
 }
+
+pub type WaitList<'a> = Option<&'a [prelude::RawEvent]>;

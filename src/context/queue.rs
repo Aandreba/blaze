@@ -81,6 +81,7 @@ impl Size {
         }
     }
 
+    #[allow(unused)]
     #[inline(always)]
     pub fn drop_last (self) -> bool {
         let this = ManuallyDrop::new(self);

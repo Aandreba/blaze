@@ -164,7 +164,7 @@ impl<T: Copy + Unpin + Debug, C: Context> Debug for BufferRect2D<T, C> {
 
         cfg_if::cfg_if! {
             if #[cfg(feature = "cl1_1")] {
-                let mut all_plain = Buffer::read_blocking(&self, .., &[]).unwrap();
+                let mut all_plain = Buffer::read_blocking(&self, .., None).unwrap();
                 all_plain.shrink_to_fit();
                 let (ptr, _, _) = Vec::into_raw_parts(all_plain);
 
@@ -173,7 +173,7 @@ impl<T: Copy + Unpin + Debug, C: Context> Debug for BufferRect2D<T, C> {
                 };
                 //all = self.read((.., ..), &[]).unwrap().join_unwrap();
             } else {
-                let mut all_plain = Buffer::read_blocking(&self, .., &[]).unwrap();
+                let mut all_plain = Buffer::read_blocking(&self, .., None).unwrap();
                 all_plain.shrink_to_fit();
                 let (ptr, _, _) = Vec::into_raw_parts(all_plain);
 

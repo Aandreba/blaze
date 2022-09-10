@@ -1,7 +1,7 @@
 use std::{mem::MaybeUninit, ffi::c_void, ptr::{addr_of_mut, NonNull}, borrow::Borrow};
 use opencl_sys::*;
 use blaze_proc::docfg;
-use crate::{core::*, context::{RawContext, Context}, event::{RawEvent, consumer::NoopEvent}, wait_list, prelude::Scope};
+use crate::{core::*, context::{RawContext, Context}, event::{RawEvent, consumer::NoopEvent}, wait_list, prelude::Scope, WaitList};
 
 #[derive(Debug, PartialEq, Eq, Hash)]
 #[repr(transparent)]
@@ -54,7 +54,7 @@ impl RawKernel {
     }
 
     #[inline(always)]
-    pub unsafe fn enqueue_unchecked<const N: usize> (&mut self, queue: &RawCommandQueue, global_work_dims: [usize; N], local_work_dims: impl Into<Option<[usize; N]>>, wait: &[RawEvent]) -> Result<RawEvent> {
+    pub unsafe fn enqueue_unchecked<const N: usize> (&mut self, queue: &RawCommandQueue, global_work_dims: [usize; N], local_work_dims: impl Into<Option<[usize; N]>>, wait: WaitList) -> Result<RawEvent> {
         let work_dim = u32::try_from(N).expect("Integer overflow");
         let local_work_dims = local_work_dims.into();
         let local_work_dims = match local_work_dims {
@@ -71,7 +71,7 @@ impl RawKernel {
     }
 
     #[inline(always)]
-    pub unsafe fn enqueue_with_scope<'scope, 'env, C: Context, const N: usize> (&mut self, scope: &'scope Scope<'scope, 'env, C>, global_work_dims: [usize; N], local_work_dims: impl Into<Option<[usize; N]>>, wait: &[RawEvent]) -> Result<NoopEvent<'scope>> {
+    pub unsafe fn enqueue_with_scope<'scope, 'env, C: Context, const N: usize> (&mut self, scope: &'scope Scope<'scope, 'env, C>, global_work_dims: [usize; N], local_work_dims: impl Into<Option<[usize; N]>>, wait: WaitList) -> Result<NoopEvent<'scope>> {
         let work_dim = u32::try_from(N).expect("Integer overflow");
         let local_work_dims = local_work_dims.into();
         let local_work_dims = match local_work_dims {

@@ -37,7 +37,7 @@ fn buffer_mul () -> Result<()> {
     let mut result = BufferRect2D::<f32>::new_uninit(3, 3, MemAccess::WRITE_ONLY, false)?; // 3 x 3
 
     scope(|s| unsafe {
-        ops.matrix_mul(s, 2, &lhs, &rhs, &mut result, [3, 3], None, &[])?.join()?;
+        ops.matrix_mul(s, 2, &lhs, &rhs, &mut result, [3, 3], None, None)?.join()?;
         Ok(())
     })?;
 

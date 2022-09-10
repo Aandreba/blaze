@@ -66,7 +66,7 @@ impl<C: Context> Svm<C> {
     }
 
     #[inline(always)]
-    pub(crate) unsafe fn map<const MASK: cl_map_flags> (&self, ptr: *mut c_void, size: usize, wait: &[RawEvent]) -> Result<RawEvent> {
+    pub(crate) unsafe fn map<const MASK: cl_map_flags> (&self, ptr: *mut c_void, size: usize, wait: WaitList) -> Result<RawEvent> {
         let (num_events_in_wait_list, event_wait_list) = wait_list(wait);
         let mut evt = core::ptr::null_mut();
         tri!(clEnqueueSVMMap(self.ctx.next_queue().id(), CL_FALSE, MASK, ptr, size, num_events_in_wait_list, event_wait_list, addr_of_mut!(evt)));
@@ -75,13 +75,13 @@ impl<C: Context> Svm<C> {
     }
 
     #[inline(always)]
-    pub(crate) unsafe fn map_blocking<const MASK: cl_map_flags> (&self, ptr: *mut c_void, size: usize, wait: &[RawEvent]) -> Result<()> {
+    pub(crate) unsafe fn map_blocking<const MASK: cl_map_flags> (&self, ptr: *mut c_void, size: usize, wait: WaitList) -> Result<()> {
         let (num_events_in_wait_list, event_wait_list) = wait_list(wait);
         tri!(clEnqueueSVMMap(self.ctx.next_queue().id(), CL_TRUE, MASK, ptr, size, num_events_in_wait_list, event_wait_list, core::ptr::null_mut()));
         Ok(())
     }
 
-    pub(crate) unsafe fn unmap (&self, ptr: *mut c_void, wait: &[RawEvent]) -> Result<RawEvent> {
+    pub(crate) unsafe fn unmap (&self, ptr: *mut c_void, wait: WaitList) -> Result<RawEvent> {
         let (num_events_in_wait_list, event_wait_list) = wait_list(wait);
         let mut evt = core::ptr::null_mut();
         tri!(clEnqueueSVMUnmap(self.ctx.next_queue().id(), ptr, num_events_in_wait_list, event_wait_list, addr_of_mut!(evt)));
@@ -95,7 +95,7 @@ impl<C: Context> Svm<C> {
     }
 
     #[inline(always)]
-    pub unsafe fn enqueue_free (&self, ptrs: &[*const c_void], wait: &[RawEvent]) -> Result<RawEvent> {
+    pub unsafe fn enqueue_free (&self, ptrs: &[*const c_void], wait: WaitList) -> Result<RawEvent> {
         let len = u32::try_from(ptrs.len()).expect("Too many pointers");
         let (num_events_in_wait_list, event_wait_list) = wait_list(wait);
 

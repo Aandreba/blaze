@@ -1,8 +1,7 @@
 use derive_syn_parse::Parse;
 use proc_macro2::{TokenStream, Ident};
 use quote::{quote, format_ident, ToTokens};
-use syn::{Visibility, Token, Generics, parse_quote, Abi, punctuated::Punctuated, Attribute, Expr, GenericParam};
-use crate::utils::to_pascal_case;
+use syn::{Visibility, Token, Generics, parse_quote, Abi, punctuated::Punctuated, Attribute, Expr};
 
 macro_rules! peek_and_parse {
     ($i:ident in $input:expr) => {{
@@ -139,8 +138,12 @@ fn create_kernel (parent_vis: &Visibility, parent: &Ident, impl_generics: &Gener
 
     quote! {
         impl #parent_imp #parent #parent_ty #parent_wher {
-            #vis unsafe fn #ident #r#impl (&self, scope: &'__scope__ ::blaze_rs::context::Scope<'__scope__, '__env__, C>, #(#new,)* global_work_dims: [usize; N], local_work_dims: impl Into<Option<[usize; N]>>, wait: &[::blaze_rs::event::RawEvent]) -> ::blaze_rs::prelude::Result<::blaze_rs::event::consumer::NoopEvent<'__scope__>> #r#where {
-                let mut wait = wait.to_vec();
+            #vis unsafe fn #ident #r#impl (&self, scope: &'__scope__ ::blaze_rs::context::Scope<'__scope__, '__env__, C>, #(#new,)* global_work_dims: [usize; N], local_work_dims: impl Into<Option<[usize; N]>>, wait: ::blaze_rs::WaitList) -> ::blaze_rs::prelude::Result<::blaze_rs::event::consumer::NoopEvent<'__scope__>> #r#where {
+                let mut wait = match wait {
+                    ::blaze_rs::WaitList::Some(x) => x.to_vec(),
+                    ::blaze_rs::WaitList::None => ::std::vec::Vec::new()
+                };
+
                 let mut __blaze_kernel__ = match self.#ident.lock() {
                     Ok(x) => x,
                     Err(e) => e.into_inner()
@@ -148,7 +151,7 @@ fn create_kernel (parent_vis: &Visibility, parent: &Ident, impl_generics: &Gener
 
                 #(#set);*;
 
-                let __blaze_inner__ = __blaze_kernel__.enqueue_with_scope(&scope, global_work_dims, local_work_dims, &wait)?;
+                let __blaze_inner__ = __blaze_kernel__.enqueue_with_scope(&scope, global_work_dims, local_work_dims, Some(&wait))?;
                 drop(__blaze_kernel__);
 
                 #(
@@ -158,8 +161,12 @@ fn create_kernel (parent_vis: &Visibility, parent: &Ident, impl_generics: &Gener
                 return Ok(__blaze_inner__)
             }
 
-            #vis unsafe fn #blocking_ident #blocking_impl (&self, #(#blocking_new,)* global_work_dims: [usize; N], local_work_dims: impl Into<Option<[usize; N]>>, wait: &[::blaze_rs::event::RawEvent]) -> ::blaze_rs::prelude::Result<()> #blocking_where {
-                let mut wait = wait.to_vec();
+            #vis unsafe fn #blocking_ident #blocking_impl (&self, #(#blocking_new,)* global_work_dims: [usize; N], local_work_dims: impl Into<Option<[usize; N]>>, wait: ::blaze_rs::WaitList) -> ::blaze_rs::prelude::Result<()> #blocking_where {
+                let mut wait = match wait {
+                    ::blaze_rs::WaitList::Some(x) => x.to_vec(),
+                    ::blaze_rs::WaitList::None => ::std::vec::Vec::new()
+                };
+
                 let mut __blaze_kernel__ = match self.#ident.lock() {
                     Ok(x) => x,
                     Err(e) => e.into_inner()
@@ -168,7 +175,7 @@ fn create_kernel (parent_vis: &Visibility, parent: &Ident, impl_generics: &Gener
                 #(#set);*;
 
                 let __blaze_inner__ = unsafe {
-                    __blaze_kernel__.enqueue_unchecked(::blaze_rs::context::Context::next_queue(&self.__blaze_ctx__), global_work_dims, local_work_dims, &wait)?
+                    __blaze_kernel__.enqueue_unchecked(::blaze_rs::context::Context::next_queue(&self.__blaze_ctx__), global_work_dims, local_work_dims, Some(&wait))?
                 };
 
                 drop(__blaze_kernel__);

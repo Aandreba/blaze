@@ -7,14 +7,11 @@ static CONTEXT : SimpleContext = SimpleContext::default();
 #[test]
 fn invalid_raw () -> Result<()> {
     let mut buffer = Buffer::new(&[1, 2, 3, 4, 5], MemAccess::default(), false)?;
-    buffer.write_blocking(1, &[9, 8], &[])?;
+    buffer.write_blocking(1, &[9, 8], None)?;
     println!("{buffer:?}");
 
     scope(|s| {
-        let left = buffer.read(s, ..2, &[])?;
-        #[cfg(feature = "cl1_1")]
-        let (right, abort) = buffer.read(s, 0..1, &[])?.abortable()?;
-
+        let left = buffer.read(s, ..2, None)?;
         return Ok(())
     })?;
 
