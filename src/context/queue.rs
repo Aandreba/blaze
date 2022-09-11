@@ -1,6 +1,7 @@
 use std::{sync::{atomic::{AtomicUsize, Ordering}}, ops::{Deref, DerefMut}, ptr::NonNull, alloc::Layout, num::NonZeroUsize, mem::ManuallyDrop};
 use crate::{prelude::{RawCommandQueue, Result, Event, RawEvent}, event::consumer::*};
 
+/// A command queue with extra capabilities to a raw OpenCL one.
 #[derive(Debug, Clone)]
 pub struct CommandQueue {
     inner: RawCommandQueue,
@@ -8,6 +9,7 @@ pub struct CommandQueue {
 }
 
 impl CommandQueue {
+    /// Creates a new command queue from a raw one.
     #[inline(always)]
     pub fn new (inner: RawCommandQueue) -> Self {
         Self {
@@ -16,6 +18,9 @@ impl CommandQueue {
         }
     }
 
+    /// Returns the current size of the queue.
+    /// The size of the queue is defined as the number of enqueued events on it that haven't completed yet.
+    /// Whilst this method is safe, it's result should be considered [ephemeral](https://en.wikipedia.org/wiki/Ephemerality).
     #[inline(always)]
     pub fn size (&self) -> NonZeroUsize {
         unsafe {
@@ -23,6 +28,7 @@ impl CommandQueue {
         }
     }
 
+    /// Enqueues a new event without checking if the event's consumer has a safe lifetime.
     #[inline]
     pub unsafe fn enqueue_unchecked<'a, 'b, 'r: 'b, T, E: 'b + FnOnce(&'r RawCommandQueue) -> Result<RawEvent>, C: Consumer<'a, T>> (&'r self, supplier: E, consumer: C) -> Result<Event<T, C>> {
         let inner = supplier(&self.inner)?;
@@ -34,11 +40,14 @@ impl CommandQueue {
         return Ok(evt)
     }
 
+    /// Enqueues a new noop event without checking if the event's consumer has a safe lifetime.
     #[inline(always)]
     pub unsafe fn enqueue_noop_unchecked<'a, 'b, 'r: 'b, E: 'b + FnOnce(&'r RawCommandQueue) -> Result<RawEvent>> (&'r self, supplier: E) -> Result<NoopEvent<'a>> {
         self.enqueue_unchecked(supplier, Noop::new())
     }
 
+    /// Enqueues a new event with aconsumer with `'static` lifetime. 
+    /// The `'static` lifetime ensures the compiler that the consumer is safe to be called at any time in the lifetime of the program.
     #[inline(always)]
     pub fn enqueue<'b, 'r: 'b, T, E: 'b + FnOnce(&'r RawCommandQueue) -> Result<RawEvent>, C: Consumer<'static, T>> (&'r self, supplier: E, consumer: C) -> Result<Event<T, C>> {
         unsafe {
@@ -46,6 +55,8 @@ impl CommandQueue {
         }
     }
 
+     /// Enqueues a new noop event with aconsumer with `'static` lifetime. 
+    /// The `'static` lifetime ensures the compiler that the consumer is safe to be called at any time in the lifetime of the program.
     #[inline(always)]
     pub fn enqueue_noop<'b, 'r: 'b, E: 'b + FnOnce(&'r RawCommandQueue) -> Result<RawEvent>> (&'r self, supplier: E) -> Result<NoopEvent<'static>> {
         self.enqueue(supplier, Noop::new())
