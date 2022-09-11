@@ -1,5 +1,8 @@
 flat_mod!(raw, complex, range);
 
+#[cfg(feature = "cl1_1")]
+flat_mod!(slice);
+
 use blaze_proc::docfg;
 use crate::{prelude::{Context, RawKernel, Result, RawEvent}};
 

@@ -1,3 +1,4 @@
+#![allow(macro_expanded_macro_exports_accessed_by_absolute_paths)]
 #![feature(mem_copy_fn, box_into_inner, nonzero_min_max, new_uninit, iterator_try_collect, result_flattening, array_try_map, extend_one, const_nonnull_new, int_roundings, const_maybe_uninit_zeroed, const_ptr_as_ref, const_maybe_uninit_array_assume_init, maybe_uninit_array_assume_init, const_option_ext, maybe_uninit_uninit_array, const_option, nonzero_ops, associated_type_bounds, ptr_metadata, is_some_with, fn_traits, vec_into_raw_parts, const_trait_impl, drain_filter, allocator_api)]
 #![cfg_attr(any(feature = "svm", feature = "map"), feature(strict_provenance, layout_for_ptr))]
 #![cfg_attr(docsrs, feature(doc_cfg, proc_macro_hygiene))]
@@ -72,7 +73,16 @@ pub mod prelude {
 #[doc(hidden)]
 pub extern crate once_cell;
 
+#[cfg(feature = "futures")]
+#[doc(hidden)]
+pub extern crate futures;
+
+#[cfg(feature = "futures")]
+#[doc(hidden)]
+pub extern crate utils_atomics;
+
 extern crate blaze_proc;
+
 pub mod macros {
     #[doc = include_str!("../docs/src/program/README.md")]
     pub use blaze_proc::blaze;

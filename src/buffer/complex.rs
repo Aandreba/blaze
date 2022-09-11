@@ -6,14 +6,13 @@ use crate::buffer::{flags::{MemFlags, HostPtr, MemAccess}, RawBuffer};
 use super::{IntoRange, BufferRange};
 
 pub type ReadEvent<'a, T> = Event<Vec<T>, BufferRead<'a, T>>;
-pub type WriteEvent<'a> = NoopEvent<'a>; 
 
 #[derive(Hash)]
 #[doc = include_str!("../../docs/src/buffer/README.md")]
 pub struct Buffer<T: Copy, C: Context = Global> {
     pub(super) inner: RawBuffer,
     pub(super) ctx: C,
-    phtm: PhantomData<T>
+    pub(super) phtm: PhantomData<T>
 }
 
 impl<T: Copy> Buffer<T> {
@@ -83,6 +82,20 @@ impl<T: Copy, C: Context> Buffer<T, C> {
         })
     }
 
+    /// Creates a shared slice of this buffer.
+    #[docfg(feature = "cl1_1")]
+    #[inline(always)]
+    pub fn slice<R: IntoRange> (&self, range: R) -> Result<super::Buf<'_, T, C>> where C: Clone {
+        super::Buf::new(self, range)
+    }
+
+    /// Creates a mutable slice of this buffer.
+    #[docfg(feature = "cl1_1")]
+    #[inline(always)]
+    pub fn slice_mut<R: IntoRange> (&mut self, range: R) -> Result<super::BufMut<'_, T, C>> where C: Clone {
+        super::BufMut::new(self, range)
+    }
+
     /// Reinterprets the bits of the buffer to another type.
     /// # Safety
     /// This function has the same safety as [`transmute`](std::mem::transmute)
@@ -147,7 +160,7 @@ impl<T: Copy + Unpin, C: Context> Buffer<T, C> {
 
     /// Writes the contents of `src` into the buffer
     #[inline]
-    pub fn write<'scope, 'env> (&'scope mut self, scope: &'scope Scope<'scope, 'env, C>, offset: usize, src: &'env [T], wait: WaitList) -> Result<WriteEvent<'scope>> {
+    pub fn write<'scope, 'env> (&'scope mut self, scope: &'scope Scope<'scope, 'env, C>, offset: usize, src: &'env [T], wait: WaitList) -> Result<NoopEvent<'scope>> {
         let range = BufferRange::from_parts::<T>(offset, src.len()).unwrap();
         let supplier = |queue| unsafe {
             self.inner.write_from_ptr_in(range, src.as_ptr(), queue, wait)

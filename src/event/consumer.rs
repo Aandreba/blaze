@@ -2,7 +2,7 @@ use std::{marker::PhantomData, panic::{UnwindSafe, catch_unwind}, any::Any};
 use blaze_proc::docfg;
 use crate::prelude::Result;
 
-/// A trait that represents the consumer of an [`Event`]
+/// A trait that represents the consumer of an [`Event`](super::Event)
 pub trait Consumer<'a, T>: 'a {
     fn consume (self) -> Result<T>;
 }
@@ -107,7 +107,7 @@ impl<'a, 'b, T, C: Consumer<'a, T>, F: 'b + FnOnce(&T)> Consumer<'b, T> for Insp
     }
 }
 
-/// Consumer for [`join_all`] (super::Event::join_all) event.
+/// Consumer for [`join_all`](super::Event::join_all) event.
 #[docfg(feature = "cl1_1")]
 pub struct JoinAllConsumer<C> (pub(super) Vec<C>);
 

@@ -17,7 +17,7 @@ pub(crate) mod ext {
 
     /// Event that completes without any extra operations.
     pub type NoopEvent<'a> = Event<(), Noop::<'a>>;
-    /// Event for [`abort`](super::Event::abort).
+    /// Event for [`abortable`](super::Event::abortable).
     #[docfg(feature = "cl1_1")]
     pub type AbortableEvent<T, C> = Event<Option<T>, Abort<C>>;
     /// Event for [`map`](super::Event::map).
@@ -370,7 +370,7 @@ impl<'a, T, C: Consumer<'a, T>> Event<T, C> {
 
     /// Registers a user callback function for a specific command execution status.\
     /// The registered callback function will be called when the execution status of command associated with event changes to an execution status equal to or past the status specified by `status`.\
-    /// Each call to [`RawEvent::on_status`] registers the specified user callback function on a callback stack associated with event. The order in which the registered user callback functions are called is undefined.\
+    /// Each call to [`Event::on_status`] registers the specified user callback function on a callback stack associated with event. The order in which the registered user callback functions are called is undefined.\
     /// All callbacks registered for an event object must be called before the event object is destroyed. Callbacks should return promptly.\
     /// Behavior is undefined when calling expensive system routines, OpenCL APIs to create contexts or command-queues, or blocking OpenCL APIs in an event callback. Rather than calling a blocking OpenCL API in an event callback, applications may call a non-blocking OpenCL API, then register a completion callback for the non-blocking OpenCL API with the remainder of the work.\
     /// Because commands in a command-queue are not required to begin execution until the command-queue is flushed, callbacks that enqueue commands on a command-queue should either call [`RawCommandQueue::flush`] on the queue before returning, or arrange for the command-queue to be flushed later.

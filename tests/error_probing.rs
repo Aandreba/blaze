@@ -1,5 +1,5 @@
 #![feature(nonzero_min_max)]
-use blaze_rs::{prelude::*, context::scope_async};
+use blaze_rs::{prelude::*};
 
 #[global_context]
 static CONTEXT : SimpleContext = SimpleContext::default();
@@ -20,19 +20,12 @@ fn invalid_raw () -> Result<()> {
     Ok(())
 }
 
-#[cfg(feature = "futures")]
-#[tokio::test]
-async fn test_async () {
+#[cfg(feature = "cl1_2")]
+#[test]
+fn test () -> Result<()> {
     let mut buffer = Buffer::new(&[1, 2, 3, 4, 5], MemAccess::default(), false)?;
+    let slice = buffer.slice(1..)?;
 
-    let a = scope_async(|s| async {
-        let left = buffer.read(s, ..2, None)?.join_async()?.await;
-        println!("{left:?}");
-        return Ok(())
-    });
-
-    buffer.write_blocking(1, &[9, 8], None)?;
-    println!("{buffer:?}");
-
+    println!("{slice:?}");
     Ok(())
 }

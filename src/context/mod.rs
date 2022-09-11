@@ -1,5 +1,4 @@
 use std::ops::Deref;
-
 use crate::prelude::Result;
 
 flat_mod!(scope, raw, flags, global, single, queue);

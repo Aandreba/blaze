@@ -46,12 +46,12 @@ impl RawBuffer {
 
     /// Creates a new buffer object (referred to as a sub-buffer object) from an existing buffer object.
     #[docfg(feature = "cl1_1")]
-    pub fn create_sub_buffer (&self, flags: super::flags::MemAccess, region: impl RangeBounds<usize>) -> Result<RawBuffer> {
-        let (origin, size) = offset_cb_plain(self, region)?;
-        let region = opencl_sys::cl_buffer_region { origin, size };
+    pub unsafe fn create_sub_buffer<R: IntoRange> (&self, flags: super::flags::MemAccess, region: R) -> Result<RawBuffer> {
+        let BufferRange { offset, cb } = region.into_range::<u8>(self)?;
+        let region = opencl_sys::cl_buffer_region { origin: offset, size: cb };
 
         let mut err = 0;
-        let id = unsafe {
+        let id = {
             opencl_sys::clCreateSubBuffer(self.id(), flags.to_bits(), opencl_sys::CL_BUFFER_CREATE_TYPE_REGION, std::ptr::addr_of!(region).cast(), addr_of_mut!(err))
         };
 
@@ -59,7 +59,7 @@ impl RawBuffer {
             return Err(Error::from(err))
         }
 
-        unsafe { Ok(RawBuffer::from_id(id).unwrap()) }
+        Ok(RawBuffer::from_id(id).unwrap())
     }
 }
 

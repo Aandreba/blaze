@@ -1,8 +1,6 @@
 use std::ops::Deref;
 use super::{Context, RawContext, CommandQueue};
 
-static STATIC_GLOBAL : Global = Global;
-
 extern "Rust" {
     fn __blaze__global__as_raw () -> &'static RawContext;
     fn __blaze__global__queues () -> &'static [CommandQueue];
@@ -16,6 +14,7 @@ pub struct Global;
 impl Global {
     #[inline(always)]
     pub fn get () -> &'static Global {
+        static STATIC_GLOBAL : Global = Global;
         &STATIC_GLOBAL
     }
 }
