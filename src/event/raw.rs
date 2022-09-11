@@ -7,6 +7,7 @@ use blaze_proc::docfg;
 use super::ext::NoopEvent;
 use super::{EventStatus, ProfilingInfo, CommandType, Event};
 
+/// Raw OpenCL event
 #[derive(Debug, PartialEq, Eq, Hash)]
 #[repr(transparent)]
 pub struct RawEvent (NonNull<c_void>);

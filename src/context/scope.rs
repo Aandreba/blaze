@@ -22,6 +22,8 @@ impl ScopeWaker {
     }
 }
 
+/// A scope to enqueue events in.\
+/// See [`scope`] and [`local_scope`]
 pub struct Scope<'scope, 'env: 'scope, C: 'env + Context = Global> {
     ctx: &'env C,
     data: Arc<(AtomicUsize, AtomicI32)>,
@@ -63,6 +65,7 @@ impl<'scope, 'env: 'scope, C: 'env + Context> Scope<'scope, 'env, C> {
         std::hint::unreachable_unchecked()
     }
  
+    /// Enqueues a new event within the scope.
     pub fn enqueue<T, E: FnOnce(&'env RawCommandQueue) -> Result<RawEvent>, F: Consumer<'scope, T>> (&'scope self, supplier: E, consumer: F) -> Result<Event<T, F>> {
         let queue = self.ctx.next_queue();
         let inner = supplier(&queue)?;
@@ -91,17 +94,22 @@ impl<'scope, 'env: 'scope, C: 'env + Context> Scope<'scope, 'env, C> {
         return Ok(evt)
     }
 
+    /// Enqueues a new [`NoopEvent`] within the scope.
     #[inline(always)]
     pub fn enqueue_noop<E: FnOnce(&'env RawCommandQueue) -> Result<RawEvent>> (&'scope self, supplier: E) -> Result<NoopEvent<'scope>> {
         self.enqueue(supplier, Noop::new())
     }
 }
 
+/// Creates a new scope with the global context to enqueue events in.
+/// All events that haven't completed by the end of the function will be automatically awaitad before the function returns.
 #[inline(always)]
 pub fn scope<'env, T, F: for<'scope> FnOnce(&'scope Scope<'scope, 'env>) -> Result<T>> (f: F) -> Result<T> {
     local_scope(Global::get(), f)
 }
 
+/// Creates a new scope with the specified context to enqueue events in.
+/// All events that haven't completed by the end of the function will be automatically joined before the function returns.
 pub fn local_scope<'env, T, C: 'env + Context, F: for<'scope> FnOnce(&'scope Scope<'scope, 'env, C>) -> Result<T>> (ctx: &'env C, f: F) -> Result<T> {
     let scope = Scope {
         ctx,
@@ -132,6 +140,26 @@ pub fn local_scope<'env, T, C: 'env + Context, F: for<'scope> FnOnce(&'scope Sco
     }
 }
 
+/// Creates a new scope with the specified context to enqueue events in.
+/// All events that haven't completed by the end of the future will be automatically awaited before the future returns.
+///
+/// # Example
+/// ```rust
+/// let ctx = SimpleContext::default()?;
+/// let mut buffer = Buffer::new_in(ctx.clone(), &[1, 2, 3, 4, 5], MemAccess::default(), false)?;
+
+/// let v = local_scope_async!(
+///     &ctx,
+///     |s| async {
+///         let v = buffer.read(s, .., None)?.join_async()?.await?;
+///         println!("{v:?}");
+///         let _ = buffer.read(s, .., None)?;
+///         Ok(())
+///     }
+/// ).await;
+/// 
+/// buffer.write_blocking(1, &[8, 9], None)?;
+/// ```
 #[docfg(feature = "futures")]
 #[macro_export]
 macro_rules! local_scope_async {
@@ -172,6 +200,24 @@ macro_rules! local_scope_async {
     };
 }
 
+/// Creates a new scope with the global context to enqueue events in.
+/// All events that haven't completed by the end of the future will be automatically awaited before the future returns.
+///
+/// # Example
+/// ```rust
+/// let mut buffer = Buffer::new_in(ctx.clone(), &[1, 2, 3, 4, 5], MemAccess::default(), false)?;
+
+/// let v = scope_async!(
+///     |s| async {
+///         let v = buffer.read(s, .., None)?.join_async()?.await?;
+///         println!("{v:?}");
+///         let _ = buffer.read(s, .., None)?;
+///         Ok(())
+///     }
+/// ).await;
+/// 
+/// buffer.write_blocking(1, &[8, 9], None)?;
+/// ```
 #[docfg(feature = "futures")]
 #[macro_export]
 macro_rules! scope_async {

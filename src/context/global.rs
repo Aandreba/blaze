@@ -12,6 +12,8 @@ extern "Rust" {
 pub struct Global;
 
 impl Global {
+    /// Returns a reference to a static global allocator.
+    /// This is a convenience function for when needing to pass a reference to a [`Context`].
     #[inline(always)]
     pub fn get () -> &'static Global {
         static STATIC_GLOBAL : Global = Global;

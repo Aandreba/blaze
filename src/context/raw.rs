@@ -6,6 +6,7 @@ use blaze_proc::docfg;
 use crate::{core::{*, device::DeviceType}, prelude::device::Version};
 use super::ContextProperties;
 
+/// A raw OpenCL context
 #[derive(Debug, PartialEq, Eq, Hash)]
 #[repr(transparent)]
 pub struct RawContext (NonNull<c_void>);

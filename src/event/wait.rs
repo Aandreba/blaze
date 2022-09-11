@@ -5,6 +5,7 @@ use utils_atomics::{flag::{AsyncFlag, AsyncSubscribe}, FillQueue};
 use crate::prelude::Result;
 use super::{Event, consumer::Consumer};
 
+/// Future for [`join_async`](super::Event::join_async).
 #[cfg_attr(docsrs, doc(cfg(feature = "futures")))]
 pub struct EventWait<T, C> {
     inner: Option<Event<T, C>>,

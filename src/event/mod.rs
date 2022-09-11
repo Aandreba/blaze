@@ -6,10 +6,17 @@ mod _consumer;
 pub mod consumer {
     pub use super::_consumer::*;
     pub use super::complex::ext::*;
+    #[cfg(feature = "cl1_1")]
+    pub use super::abort::Abort;
 }
 
 #[cfg(feature = "cl1_1")]
-flat_mod!(flag, abort);
+flat_mod!(flag);
+
+#[cfg(feature = "cl1_1")]
+mod abort;
+#[cfg(feature = "cl1_1")]
+pub use abort::AbortHandle;
 
 #[cfg(not(feature = "cl1_1"))]
 mod listener;

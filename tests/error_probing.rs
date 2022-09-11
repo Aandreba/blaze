@@ -11,12 +11,12 @@ fn invalid_raw () -> Result<()> {
     scope(|s| {
         let left = buffer.read(s, ..2, None)?.join()?;
         println!("{left:?}");
+        let _ = buffer.read(s, ..2, None)?;
         return Ok(())
     })?;
 
     buffer.write_blocking(1, &[9, 8], None)?;
-    println!("{buffer:?}");
-
+    
     Ok(())
 }
 

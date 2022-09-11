@@ -1,4 +1,4 @@
-use std::{ops::Deref, ffi::c_void, time::{SystemTime, Duration}, marker::PhantomData, mem::MaybeUninit, panic::{UnwindSafe}};
+use std::{ops::Deref, ffi::c_void, time::{SystemTime, Duration}, marker::PhantomData, mem::MaybeUninit, panic::{UnwindSafe, AssertUnwindSafe}};
 use opencl_sys::*;
 use blaze_proc::docfg;
 use crate::{prelude::*};
@@ -10,6 +10,7 @@ pub type DynEvent<'a, T> = Event<T, Box<dyn Consumer<'a, T> + Send>>;
 pub type DynLocalEvent<'a, T> = Event<T, Box<dyn Consumer<'a, T>>>;
 
 pub(crate) mod ext {
+    use std::panic::AssertUnwindSafe;
     use std::{any::Any};
     use crate::event::*;
     use crate::event::_consumer::*;
@@ -19,13 +20,15 @@ pub(crate) mod ext {
     pub type NoopEvent<'a> = Event<(), Noop::<'a>>;
     /// Event for [`abortable`](super::Event::abortable).
     #[docfg(feature = "cl1_1")]
-    pub type AbortableEvent<T, C> = Event<Option<T>, Abort<C>>;
+    pub type AbortableEvent<T, C> = Event<Option<T>, abort::Abort<C>>;
     /// Event for [`map`](super::Event::map).
     pub type MapEvent<T, U, C, F> = Event<U, Map<T, C, F>>;
     /// Event for [`try_map`](super::Event::try_map).
     pub type TryMapEvent<T, U, C, F> = Event<U, TryMap<T, C, F>>;
     /// Event for [`catch_unwind`](super::Event::catch_unwind).
     pub type CatchUnwindEvent<T, C> = Event<::core::result::Result<T, Box<dyn Any + Send>>, CatchUnwind<C>>;
+    /// Event for [`assert_catch_unwind`](super::Event::assert_catch_unwind).
+    pub type AssertCatchUnwindEvent<T, C> = CatchUnwindEvent<T, AssertUnwindSafe<C>>;
     /// Event for [`flatten`](super::Event::flatten).
     pub type FlattenEvent<T, C> = Event<T, Flatten<C>>;
     /// Event for [`inspect`](super::Event::flatten).
@@ -45,10 +48,15 @@ pub struct Event<T, C> {
     consumer: C,
     #[cfg(not(feature = "cl1_1"))]
     send: std::sync::mpsc::Sender<super::listener::EventCallback>,
+    #[cfg(feature = "cl1_1")]
+    /// `Sender` is `!Sync`, but `Event` only contains a `Send` in OpenCL 1.0.\
+    /// For the sake of consistency, `!Sync` should be implemented in all features.
+    send: PhantomData<std::sync::mpsc::Sender<()>>,
     phtm: PhantomData<T>
 }
 
 impl<'a> NoopEvent<'a> {
+    /// Creates a new [`NoopEvent`].
     #[inline(always)]
     pub fn new_noop (inner: RawEvent) -> Self {
         Self::new(inner, Noop::new())
@@ -71,6 +79,8 @@ impl<'a, T, C: Consumer<'a, T>> Event<T, C> {
             consumer,
             #[cfg(not(feature = "cl1_1"))]
             send,
+            #[cfg(feature = "cl1_1")]
+            send: PhantomData,
             phtm: PhantomData
         }
     }
@@ -82,26 +92,24 @@ impl<'a, T, C: Consumer<'a, T>> Event<T, C> {
     }
 
     /// Turn's the event into a [`DynEvent`].
-    /// [`DynEvent`]s contain a boxed [dynamic](https://doc.rust-lang.org/stable/book/ch19-04-advanced-types.html#dynamically-sized-types-and-the-sized-trait) consumer that can be shared between threads.
+    /// A [`DynEvent`] contains a boxed [dynamic](https://doc.rust-lang.org/stable/book/ch19-04-advanced-types.html#dynamically-sized-types-and-the-sized-trait) consumer that **can** be shared between threads.
     #[inline(always)]
     pub fn into_dyn (self) -> DynEvent<'a, T> where C: Send {
         DynEvent {
             inner: self.inner,
             consumer: Box::new(self.consumer),
-            #[cfg(not(feature = "cl1_1"))]
             send: self.send,
             phtm: self.phtm
         }
     }
 
     /// Turn's the event into a [`DynLocalEvent`].
-    /// [`DynLocalEvent`]s contain a boxed [dynamic](https://doc.rust-lang.org/stable/book/ch19-04-advanced-types.html#dynamically-sized-types-and-the-sized-trait) consumer that **cannot** be shared between threads.
+    /// A [`DynLocalEvent`] contains a boxed [dynamic](https://doc.rust-lang.org/stable/book/ch19-04-advanced-types.html#dynamically-sized-types-and-the-sized-trait) consumer that **cannot** be shared between threads.
     #[inline(always)]
     pub fn into_local (self) -> DynLocalEvent<'a, T> {
         DynLocalEvent {
             inner: self.inner,
             consumer: Box::new(self.consumer),
-            #[cfg(not(feature = "cl1_1"))]
             send: self.send,
             phtm: self.phtm
         }
@@ -115,7 +123,7 @@ impl<'a, T, C: Consumer<'a, T>> Event<T, C> {
     pub fn abortable (self) -> Result<(AbortableEvent<T, C>, super::AbortHandle)> {
         let ctx = self.raw_context()?;
         let flag = super::FlagEvent::new_in(&ctx)?;
-        let aborted = std::sync::Arc::new(std::sync::atomic::AtomicU8::new(super::UNINIT));
+        let aborted = std::sync::Arc::new(std::sync::atomic::AtomicU8::new(super::abort::UNINIT));
 
         let my_flag = flag.clone();
         let my_aborted = aborted.clone();
@@ -126,7 +134,7 @@ impl<'a, T, C: Consumer<'a, T>> Event<T, C> {
             };
 
             if my_flag.try_mark(res).is_ok_and(core::mem::copy) {
-                my_aborted.store(super::FALSE, std::sync::atomic::Ordering::Release);
+                my_aborted.store(super::abort::FALSE, std::sync::atomic::Ordering::Release);
             }
         })?;
 
@@ -135,7 +143,7 @@ impl<'a, T, C: Consumer<'a, T>> Event<T, C> {
             aborted: aborted.clone()
         };
 
-        let consumer = super::Abort {
+        let consumer = Abort {
             aborted,
             consumer: self.consumer,
         };
@@ -143,7 +151,6 @@ impl<'a, T, C: Consumer<'a, T>> Event<T, C> {
         let event = AbortableEvent {
             inner: flag.into_inner(),
             consumer,
-            #[cfg(not(feature = "cl1_1"))]
             send: self.send,
             phtm: PhantomData
         };
@@ -157,7 +164,6 @@ impl<'a, T, C: Consumer<'a, T>> Event<T, C> {
         Event { 
             inner: self.inner,
             consumer: Map::new(self.consumer, f),
-            #[cfg(not(feature = "cl1_1"))]
             send: self.send,
             phtm: PhantomData
         }
@@ -169,7 +175,6 @@ impl<'a, T, C: Consumer<'a, T>> Event<T, C> {
         Event { 
             inner: self.inner,
             consumer: TryMap::new(self.consumer, f),
-            #[cfg(not(feature = "cl1_1"))]
             send: self.send,
             phtm: PhantomData
         }
@@ -177,13 +182,25 @@ impl<'a, T, C: Consumer<'a, T>> Event<T, C> {
 
     /// Returns an event that will catch the consumer's panic.
     /// Note that this method requires the current consumer to be [`UnwindSafe`]. 
-    /// If this requirement proves bothersome, you can use [`AssertUnwindSafe`](std::panic::AssertUnwindSafe) to assert it is [`UnwindSafe`].
+    /// If this requirement proves bothersome, you can use [`assert_unwind_safe`](Event::assert_catch_unwind).
     #[inline(always)]
     pub fn catch_unwind (self) -> CatchUnwindEvent<T, C> where C: UnwindSafe {
         CatchUnwindEvent {
             inner: self.inner,
             consumer: CatchUnwind(self.consumer),
-            #[cfg(not(feature = "cl1_1"))]
+            send: self.send,
+            phtm: PhantomData
+        }
+    }
+
+    /// Returns an event that will catch the consumer's panic.
+    /// Note that this method does **not** requires the current consumer to be [`UnwindSafe`], as it's wrapped with [`AssertUnwindSafe`].
+    /// If the consumer is known to be [`UnwindSafe`], the [`catch_unwind`](Event::catch_unwind) method is preferable. 
+    #[inline(always)]
+    pub fn assert_catch_unwind (self) -> AssertCatchUnwindEvent<T, C> {
+        AssertCatchUnwindEvent {
+            inner: self.inner,
+            consumer: CatchUnwind(AssertUnwindSafe(self.consumer)),
             send: self.send,
             phtm: PhantomData
         }
@@ -195,7 +212,6 @@ impl<'a, T, C: Consumer<'a, T>> Event<T, C> {
         FlattenEvent {
             inner: self.inner,
             consumer: Flatten(self.consumer),
-            #[cfg(not(feature = "cl1_1"))]
             send: self.send,
             phtm: PhantomData
         }
@@ -207,7 +223,6 @@ impl<'a, T, C: Consumer<'a, T>> Event<T, C> {
         InspectEvent {
             inner: self.inner,
             consumer: Inspect(self.consumer, f),
-            #[cfg(not(feature = "cl1_1"))]
             send: self.send,
             phtm: PhantomData
         }
@@ -396,16 +411,19 @@ impl<'a, T, C: Consumer<'a, T>> Event<T, C> {
         self.on_status_boxed(status, Box::new(f))
     }
 
+    /// Adds a callback function that will be executed when the event is submitted.
     #[inline(always)]
     pub fn on_submit_boxed (&self, f: Box<dyn FnOnce(RawEvent, Result<EventStatus>) + Send>) -> Result<()> {
         self.on_status_boxed(EventStatus::Submitted, f)
     }
 
+    /// Adds a callback function that will be executed when the event starts running.
     #[inline(always)]
     pub fn on_run_boxed (&self, f: Box<dyn FnOnce(RawEvent, Result<EventStatus>) + Send>) -> Result<()> {
         self.on_status_boxed(EventStatus::Running, f)
     }
 
+    /// Adds a callback function that will be executed when the event completes.
     #[inline(always)]
     pub fn on_complete_boxed (&self, f: Box<dyn FnOnce(RawEvent, Result<EventStatus>) + Send>) -> Result<()> {
         self.on_status_boxed(EventStatus::Complete, f)

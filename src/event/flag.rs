@@ -2,6 +2,7 @@ use std::{ptr::addr_of_mut, ops::Deref};
 use opencl_sys::*;
 use crate::prelude::*;
 
+/// User event that's completed manually.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[repr(transparent)]
 pub struct FlagEvent {
@@ -9,11 +10,13 @@ pub struct FlagEvent {
 }
 
 impl FlagEvent {
+    /// Creates a new [`FlagEvent`] with the [`Global`] context
     #[inline(always)]
     pub fn new () -> Result<Self> {
         Self::new_in(&Global)
     }
 
+    /// Creates a new [`FlagEvent`] with the specified context.
     #[inline]
     pub fn new_in (ctx: &RawContext) -> Result<Self> {
         let mut err = 0;
@@ -28,11 +31,13 @@ impl FlagEvent {
         }
     }
 
+    /// Converts the [`FlagEvent`] into it's inner [`RawEvent`]
     #[inline(always)]
     pub fn into_inner (self) -> RawEvent {
         self.inner
     }
 
+    /// Attempts to mark the event as completed, returning `true` if successful and `false` if the event was already completed.
     #[inline(always)]
     pub fn try_mark (&self, error: Option<ErrorType>) -> Result<bool> {
         let status = error.map_or(CL_COMPLETE, Into::into);
@@ -46,6 +51,7 @@ impl FlagEvent {
         }
     }
 
+    /// Subscribes to the event.
     #[inline(always)]
     pub fn subscribe (&self) -> RawEvent {
         self.inner.clone()
