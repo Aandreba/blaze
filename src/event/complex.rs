@@ -1,4 +1,4 @@
-use std::{ops::Deref, ffi::c_void, time::{SystemTime, Duration}, marker::PhantomData, mem::MaybeUninit, panic::{UnwindSafe, AssertUnwindSafe}};
+use std::{ops::Deref, ffi::c_void, time::{SystemTime, Duration}, marker::PhantomData, mem::MaybeUninit, panic::{UnwindSafe}};
 use opencl_sys::*;
 use blaze_proc::docfg;
 use crate::{prelude::*};
@@ -10,7 +10,7 @@ pub type DynEvent<'a, T> = Event<T, Box<dyn Consumer<'a, T> + Send>>;
 pub type DynLocalEvent<'a, T> = Event<T, Box<dyn Consumer<'a, T>>>;
 
 pub(crate) mod ext {
-    use std::{any::Any, panic::AssertUnwindSafe};
+    use std::{any::Any};
     use crate::event::*;
     use crate::event::_consumer::*;
     use blaze_proc::docfg;
@@ -26,19 +26,20 @@ pub(crate) mod ext {
     pub type TryMapEvent<T, U, C, F> = Event<U, TryMap<T, C, F>>;
     /// Event for [`catch_unwind`](super::Event::catch_unwind).
     pub type CatchUnwindEvent<T, C> = Event<::core::result::Result<T, Box<dyn Any + Send>>, CatchUnwind<C>>;
-    /// Event for [`assert_catch_unwind`](super::Event::assert_catch_unwind).
-    pub type AssertCatchUnwindEvent<T, C> = CatchUnwindEvent<T, AssertUnwindSafe<C>>;
     /// Event for [`flatten`](super::Event::flatten).
     pub type FlattenEvent<T, C> = Event<T, Flatten<C>>;
     /// Event for [`inspect`](super::Event::flatten).
     pub type InspectEvent<T, C, F> = Event<T, Inspect<C, F>>;
     /// Event for [`join_all`](super::Event::join_all).
     #[docfg(feature = "cl1_1")]
-    pub type JoinAll<T, C> = Event<Vec<T>, JoinAllConsumer<C>>;
+    pub type JoinAllEvent<T, C> = Event<Vec<T>, JoinAll<C>>;
 }
 
 use super::consumer::*;
 
+/// An event with a consumer that will be executed on the completion of the former.\
+/// When using OpenCL 1.0, the event will also contain a [`Sender`](std::sync::mpsc::Sender) that will send the event's callbacks,
+/// (like [`on_complete`](Event::on_complete)) to a different thread to be executed acordingly. 
 pub struct Event<T, C> {
     inner: RawEvent,
     consumer: C,
@@ -54,7 +55,8 @@ impl<'a> NoopEvent<'a> {
     }
 }
 
-impl<'a, T, C: Consumer<'a, T>> Event<T, C> {    
+impl<'a, T, C: Consumer<'a, T>> Event<T, C> { 
+    /// Creates a new event with the specified consumer.   
     #[inline(always)]
     pub fn new (inner: RawEvent, consumer: C) -> Self {
         #[cfg(not(feature = "cl1_1"))]
@@ -73,11 +75,14 @@ impl<'a, T, C: Consumer<'a, T>> Event<T, C> {
         }
     }
 
+    /// Returns a reference to the underlying [`RawEvent`].
     #[inline(always)]
     pub fn as_raw (&self) -> &RawEvent {
-        &&self.inner
+        &self.inner
     }
 
+    /// Turn's the event into a [`DynEvent`].
+    /// [`DynEvent`]s contain a boxed [dynamic](https://doc.rust-lang.org/stable/book/ch19-04-advanced-types.html#dynamically-sized-types-and-the-sized-trait) consumer that can be shared between threads.
     #[inline(always)]
     pub fn into_dyn (self) -> DynEvent<'a, T> where C: Send {
         DynEvent {
@@ -89,6 +94,8 @@ impl<'a, T, C: Consumer<'a, T>> Event<T, C> {
         }
     }
 
+    /// Turn's the event into a [`DynLocalEvent`].
+    /// [`DynLocalEvent`]s contain a boxed [dynamic](https://doc.rust-lang.org/stable/book/ch19-04-advanced-types.html#dynamically-sized-types-and-the-sized-trait) consumer that **cannot** be shared between threads.
     #[inline(always)]
     pub fn into_local (self) -> DynLocalEvent<'a, T> {
         DynLocalEvent {
@@ -100,6 +107,9 @@ impl<'a, T, C: Consumer<'a, T>> Event<T, C> {
         }
     }
 
+    /// Makes the current event abortable.
+    /// When aborted, the event will not be unqueued from the OpenCL queue, rather the Blaze event will return early with a result of `Ok(None)`.
+    /// If the event isn't aborted before it's completion, it will return `Ok(Some(value))` in case of success, and `Err(error)` if it fails. 
     #[docfg(feature = "cl1_1")]
     #[inline(always)]
     pub fn abortable (self) -> Result<(AbortableEvent<T, C>, super::AbortHandle)> {
@@ -141,6 +151,7 @@ impl<'a, T, C: Consumer<'a, T>> Event<T, C> {
         return Ok((event, handle))
     }
 
+    /// Returns an event that maps the result of the previous event.
     #[inline(always)]
     pub fn map<'b, F: 'b + FnOnce(T) -> U, U> (self, f: F) -> MapEvent<T, U, C, F> where 'a: 'b {
         Event { 
@@ -152,6 +163,7 @@ impl<'a, T, C: Consumer<'a, T>> Event<T, C> {
         }
     }
 
+    /// Returns an event that maps the result of the previous event, flattening the result.
     #[inline(always)]
     pub fn try_map<'b, F: 'b + FnOnce(T) -> Result<U>, U> (self, f: F) -> TryMapEvent<T, U, C, F> where 'a: 'b {
         Event { 
@@ -163,6 +175,9 @@ impl<'a, T, C: Consumer<'a, T>> Event<T, C> {
         }
     }
 
+    /// Returns an event that will catch the consumer's panic.
+    /// Note that this method requires the current consumer to be [`UnwindSafe`]. 
+    /// If this requirement proves bothersome, you can use [`AssertUnwindSafe`](std::panic::AssertUnwindSafe) to assert it is [`UnwindSafe`].
     #[inline(always)]
     pub fn catch_unwind (self) -> CatchUnwindEvent<T, C> where C: UnwindSafe {
         CatchUnwindEvent {
@@ -174,17 +189,7 @@ impl<'a, T, C: Consumer<'a, T>> Event<T, C> {
         }
     }
 
-    #[inline(always)]
-    pub fn assert_catch_unwind (self) -> AssertCatchUnwindEvent<T, C> {
-        CatchUnwindEvent {
-            inner: self.inner,
-            consumer: CatchUnwind(AssertUnwindSafe(self.consumer)),
-            #[cfg(not(feature = "cl1_1"))]
-            send: self.send,
-            phtm: PhantomData
-        }
-    }
-
+    /// Returns an event that flattens the result of it's parent.
     #[inline(always)]
     pub fn flatten (self) -> FlattenEvent<T, C> {
         FlattenEvent {
@@ -196,6 +201,7 @@ impl<'a, T, C: Consumer<'a, T>> Event<T, C> {
         }
     }
 
+    /// Returns an event that will inspect it's parent's return value before completing.
     #[inline(always)]
     pub fn inspect<'b, F: 'b + FnOnce(&T)> (self, f: F) -> InspectEvent<T, C, F> where 'a: 'b {
         InspectEvent {
@@ -221,6 +227,7 @@ impl<'a, T, C: Consumer<'a, T>> Event<T, C> {
         self.consume()
     }
 
+    /// Blocks the current thread until the event has completes, consuming it and returning it's value, alongside it's profiling info in nanoseconds.
     #[inline]
     pub fn join_with_nanos (self) -> Result<(T, ProfilingInfo<u64>)> {
         self.join_by_ref()?;
@@ -229,6 +236,7 @@ impl<'a, T, C: Consumer<'a, T>> Event<T, C> {
         Ok((v, nanos))
     }
 
+    /// Blocks the current thread until the event has completes, consuming it and returning it's value, alongside it's profiling info in [`SystemTime`].
     #[inline]
     pub fn join_with_time (self) -> Result<(T, ProfilingInfo<SystemTime>)> {
         self.join_by_ref()?;
@@ -237,6 +245,7 @@ impl<'a, T, C: Consumer<'a, T>> Event<T, C> {
         Ok((v, nanos))
     }
 
+    /// Blocks the current thread until the event has completes, consuming it and returning it's value, alongside it's duration.
     #[inline]
     pub fn join_with_duration (self) -> Result<(T, Duration)> {
         self.join_by_ref()?;
@@ -258,10 +267,13 @@ impl<'a, T, C: Consumer<'a, T>> Event<T, C> {
         crate::event::EventWait::new(self)
     }
 
+    /// Returns an event that completes when all the events inside `iter` complete (or one of them fails).
+    /// The new event will return it's parents results inside a [`Vec`], in the same order they were in the iterator.\
+    /// Note that if the iterator is empty, this funtion will return an error.
     #[cfg_attr(docsrs, doc(cfg(feature = "cl1_1")))]
     #[cfg(feature = "cl1_2")]
     #[inline(always)]
-    pub fn join_all<I: IntoIterator<Item = Self>> (iter: I) -> Result<JoinAll<T, C>> {
+    pub fn join_all<I: IntoIterator<Item = Self>> (iter: I) -> Result<JoinAllEvent<T, C>> {
         let (raw, consumers) = iter.into_iter()
             .map(|x| (x.inner, x.consumer))
             .unzip::<_, _, Vec<_>, Vec<_>>();
@@ -274,13 +286,16 @@ impl<'a, T, C: Consumer<'a, T>> Event<T, C> {
             .ok_or_else(|| Error::new(ErrorType::InvalidCommandQueue, "command queue not found"))?;
 
         let barrier = queue.barrier(Some(&raw))?;
-        return Ok(Event::new(barrier, JoinAllConsumer(consumers)));
+        return Ok(Event::new(barrier, JoinAll(consumers)));
     }
 
+    /// Returns an event that completes when all the events inside `iter` complete (or one of them fails).
+    /// The new event will return it's parents results inside a [`Vec`], in the same order they were in the iterator.\
+    /// Note that if the iterator is empty, this funtion will return an error.
     #[cfg_attr(docsrs, doc(cfg(feature = "cl1_1")))]
     #[cfg(all(feature = "cl1_1", not(feature = "cl1_2")))]
     #[inline(always)]
-    pub fn join_all<I: IntoIterator<Item = Self>> (iter: I) -> Result<JoinAll<T, C>> {
+    pub fn join_all<I: IntoIterator<Item = Self>> (iter: I) -> Result<JoinAllEvent<T, C>> {
         let mut iter = iter.into_iter().peekable();
         let size = crate::context::Size::new();
         let mut consumers = Vec::with_capacity(match iter.size_hint() {
@@ -314,10 +329,11 @@ impl<'a, T, C: Consumer<'a, T>> Event<T, C> {
             consumers.push(evt.consumer);
         }
 
-        return Ok(Event::new(flag, JoinAllConsumer(consumers)));
+        return Ok(Event::new(flag, JoinAll(consumers)));
     }
 
-    /// Blocks the current thread until all the events in the iterator have completed, returning their values.
+    /// Blocks the current thread until all the events in the iterator have completed, returning their values inside a [`Vec`].
+    /// The order of the values in the result is the same as their parents inside the iterator.
     #[inline(always)]
     pub fn join_all_blocking<I: IntoIterator<Item = Self>> (iter: I) -> Result<Vec<T>> {
         let (raw, consumers) = iter.into_iter()
@@ -328,7 +344,8 @@ impl<'a, T, C: Consumer<'a, T>> Event<T, C> {
         return consumers.into_iter().map(Consumer::consume).try_collect()
     }
 
-    /// Blocks the current thread until all the events in the iterator have completed, returning their values.
+    /// Blocks the current thread until all the events in the array have completed, returning their values in a new array.
+    /// The order of the values in the result is the same as their parents inside the iterator.
     #[inline(always)]
     pub fn join_all_sized_blocking<const N: usize> (iter: [Self; N]) -> Result<[T; N]> {
         let mut raw = MaybeUninit::uninit_array::<N>();

@@ -109,10 +109,10 @@ impl<'a, 'b, T, C: Consumer<'a, T>, F: 'b + FnOnce(&T)> Consumer<'b, T> for Insp
 
 /// Consumer for [`join_all`](super::Event::join_all) event.
 #[docfg(feature = "cl1_1")]
-pub struct JoinAllConsumer<C> (pub(super) Vec<C>);
+pub struct JoinAll<C> (pub(super) Vec<C>);
 
 #[cfg(feature = "cl1_1")]
-impl<'a, T, C: Consumer<'a, T>> Consumer<'a, Vec<T>> for JoinAllConsumer<C> {
+impl<'a, T, C: Consumer<'a, T>> Consumer<'a, Vec<T>> for JoinAll<C> {
     #[inline]
     fn consume (self) -> Result<Vec<T>> {
         self.0.into_iter().map(Consumer::consume).try_collect()
