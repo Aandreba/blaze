@@ -34,8 +34,7 @@ fn test () -> Result<()> {
 #[tokio::test]
 async fn async_test () -> Result<()> {
     let mut buffer = Buffer::new(&[1, 2, 3, 4, 5], MemAccess::default(), false)?;
-    let read = drop(buffer.read_async(1.., None));
-    let write = buffer.write_async(0, &[1, 2], None);
+    
 
     todo!()
 }

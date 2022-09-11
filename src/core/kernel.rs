@@ -62,7 +62,7 @@ impl RawKernel {
             None => core::ptr::null()
         };
 
-        let (num_events_in_wait_list, event_wait_list) = wait_list(wait);
+        let (num_events_in_wait_list, event_wait_list) = wait_list(wait)?;
 
         let mut event = core::ptr::null_mut();
         tri!(clEnqueueNDRangeKernel(queue.id(), self.id(), work_dim, core::ptr::null(), global_work_dims.as_ptr(), local_work_dims, num_events_in_wait_list, event_wait_list, addr_of_mut!(event)));
@@ -79,7 +79,7 @@ impl RawKernel {
             None => core::ptr::null()
         };
 
-        let (num_events_in_wait_list, event_wait_list) = wait_list(wait);
+        let (num_events_in_wait_list, event_wait_list) = wait_list(wait)?;
 
         return scope.enqueue_noop(|queue| {
             let mut event = core::ptr::null_mut();

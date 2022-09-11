@@ -110,16 +110,18 @@ pub mod image;
 pub mod svm;
 
 #[inline(always)]
-pub(crate) const fn wait_list (v: WaitList) -> (u32, *const opencl_sys::cl_event) {
-    const MAX_WAIT_LIST : usize = u32::MAX as usize;
-
+pub fn wait_list (v: WaitList) -> core::Result<(u32, *const opencl_sys::cl_event)> {
     return match v {
         Some(v) => match v.len() {
-            0 => (0, ::core::ptr::null()),
-            len @ 1..=MAX_WAIT_LIST => (len as u32, v.as_ptr().cast()),
-            _ => panic!("Wait list overflow")
+            0 => Ok((0, ::core::ptr::null())),
+            len => {
+                let len = <u32 as std::convert::TryFrom<usize>>::try_from(len)
+                    .map_err(|e| core::Error::new(core::ErrorType::InvalidEventWaitList, e))?;
+
+                return Ok((len, v.as_ptr().cast()))
+            },
         },
-        None => (0, ::core::ptr::null())
+        None => Ok((0, ::core::ptr::null()))
     }
 }
 

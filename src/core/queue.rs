@@ -186,7 +186,7 @@ impl RawCommandQueue {
     #[docfg(feature = "cl1_2")]
     #[inline(always)]
     pub fn barrier (&self, wait: crate::WaitList) -> Result<crate::prelude::RawEvent> {
-        let (num_events_in_wait_list, event_wait_list) = crate::wait_list(wait);
+        let (num_events_in_wait_list, event_wait_list) = crate::wait_list(wait)?;
 
         let mut evt = core::ptr::null_mut();
         unsafe {
@@ -199,7 +199,7 @@ impl RawCommandQueue {
     #[docfg(feature = "cl1_2")]
     #[inline(always)]
     pub fn marker (&self, wait: crate::WaitList) -> Result<crate::prelude::RawEvent> {
-        let (num_events_in_wait_list, event_wait_list) = crate::wait_list(wait);
+        let (num_events_in_wait_list, event_wait_list) = crate::wait_list(wait)?;
 
         let mut evt = core::ptr::null_mut();
         unsafe {

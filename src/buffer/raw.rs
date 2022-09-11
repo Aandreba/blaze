@@ -125,7 +125,7 @@ impl RawBuffer {
     /// Reads the contents of this 
     pub unsafe fn read_to_ptr_in (&self, range: BufferRange, dst: *mut c_void, queue: &RawCommandQueue, wait: WaitList) -> Result<RawEvent> {
         let BufferRange { offset, cb } = range;
-        let (num_events_in_wait_list, event_wait_list) = wait_list(wait);
+        let (num_events_in_wait_list, event_wait_list) = wait_list(wait)?;
     
         let mut event = core::ptr::null_mut();
         tri!(clEnqueueReadBuffer(queue.id(), self.id(), CL_FALSE, offset, cb, dst.cast(), num_events_in_wait_list, event_wait_list, addr_of_mut!(event)));
@@ -138,7 +138,7 @@ impl RawBuffer {
         buffer_row_pitch: Option<usize>, buffer_slice_pitch: Option<usize>, host_row_pitch: Option<usize>,
         host_slice_pitch: Option<usize>, dst: *mut c_void, queue: &RawCommandQueue, wait: WaitList
     ) -> Result<RawEvent> {
-        let (num_events_in_wait_list, event_wait_list) = wait_list(wait);
+        let (num_events_in_wait_list, event_wait_list) = wait_list(wait)?;
 
         let mut evt = core::ptr::null_mut();
         tri!(clEnqueueReadBufferRect(queue.id(), self.id(), CL_FALSE, buffer_origin.as_ptr(), host_origin.as_ptr(), region.as_ptr(), buffer_row_pitch.unwrap_or_default(), buffer_slice_pitch.unwrap_or_default(), host_row_pitch.unwrap_or_default(), host_slice_pitch.unwrap_or_default(), dst.cast(), num_events_in_wait_list, event_wait_list, addr_of_mut!(evt)));
@@ -147,7 +147,7 @@ impl RawBuffer {
     
     pub unsafe fn write_from_ptr_in (&mut self, range: BufferRange, src: *const c_void, queue: &RawCommandQueue, wait: WaitList) -> Result<RawEvent> {
         let BufferRange { offset, cb } = range;
-        let (num_events_in_wait_list, event_wait_list) = wait_list(wait);
+        let (num_events_in_wait_list, event_wait_list) = wait_list(wait)?;
     
         let mut event = core::ptr::null_mut();
         tri!(clEnqueueWriteBuffer(queue.id(), self.id(), CL_FALSE, offset, cb, src.cast(), num_events_in_wait_list, event_wait_list, addr_of_mut!(event)));
@@ -161,7 +161,7 @@ impl RawBuffer {
         buffer_row_pitch: Option<usize>, buffer_slice_pitch: Option<usize>, host_row_pitch: Option<usize>,
         host_slice_pitch: Option<usize>, src: *const c_void, queue: &RawCommandQueue, wait: WaitList
     ) -> Result<RawEvent> {
-        let (num_events_in_wait_list, event_wait_list) = wait_list(wait);
+        let (num_events_in_wait_list, event_wait_list) = wait_list(wait)?;
         let mut evt = core::ptr::null_mut();
         tri!(clEnqueueWriteBufferRect(queue.id(), self.id(), CL_FALSE, buffer_origin.as_ptr(), host_origin.as_ptr(), region.as_ptr(), buffer_row_pitch.unwrap_or_default(), buffer_slice_pitch.unwrap_or_default(), host_row_pitch.unwrap_or_default(), host_slice_pitch.unwrap_or_default(), src.cast(), num_events_in_wait_list, event_wait_list, addr_of_mut!(evt)));
         Ok(RawEvent::from_id(evt).unwrap())
@@ -169,7 +169,7 @@ impl RawBuffer {
 
     #[inline]
     pub unsafe fn copy_from_in (&mut self, dst_offset: usize, src: &RawBuffer, src_offset: usize, size: usize, queue: &RawCommandQueue, wait: WaitList) -> Result<RawEvent> {
-        let (num_events_in_wait_list, event_wait_list) = wait_list(wait);
+        let (num_events_in_wait_list, event_wait_list) = wait_list(wait)?;
         let mut event = core::ptr::null_mut();
         tri!(clEnqueueCopyBuffer(queue.id(), src.id(), self.id(), src_offset, dst_offset, size, num_events_in_wait_list, event_wait_list, addr_of_mut!(event)));
     
@@ -180,7 +180,7 @@ impl RawBuffer {
     #[inline]
     pub unsafe fn fill_raw_in<T: Copy> (&mut self, v: T, range: BufferRange, queue: &RawCommandQueue, wait: WaitList) -> Result<RawEvent> {
         let BufferRange { offset, cb } = range;
-        let (num_events_in_wait_list, event_wait_list) = wait_list(wait);
+        let (num_events_in_wait_list, event_wait_list) = wait_list(wait)?;
 
         let mut event = core::ptr::null_mut();
         tri!(clEnqueueFillBuffer(queue.id(), self.id(), std::ptr::addr_of!(v).cast(), core::mem::size_of::<T>(), offset, cb, num_events_in_wait_list, event_wait_list, addr_of_mut!(event)));
@@ -206,7 +206,7 @@ impl RawBuffer {
 
     unsafe fn __map_inner<T, R: IntoRange, const FLAGS : cl_mem_flags> (&self, range: R, queue: &RawCommandQueue, wait: WaitList) -> Result<(*mut T, RawEvent)> {
         let BufferRange { offset, cb } = range.into_range::<T>(self)?;
-        let (num_events_in_wait_list, event_wait_list) = wait_list(wait);
+        let (num_events_in_wait_list, event_wait_list) = wait_list(wait)?;
         
         let mut evt = core::ptr::null_mut();
         let mut err = 0;

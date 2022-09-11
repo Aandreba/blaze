@@ -185,11 +185,11 @@ macro_rules! scope_async {
 
 #[cfg(test)]
 mod tests {
-    use crate::prelude::*;
-
     #[cfg(feature = "futures")]
     #[tokio::test]
     async fn test () -> crate::prelude::Result<()> {
+        use crate::prelude::*;
+
         let ctx = SimpleContext::default()?;
         let mut buffer = Buffer::new_in(ctx.clone(), &[1, 2, 3, 4, 5], MemAccess::default(), false)?;
 

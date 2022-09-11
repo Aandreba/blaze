@@ -1,4 +1,4 @@
-use std::ops::Deref;
+use std::{ops::Deref};
 use crate::prelude::Result;
 
 flat_mod!(scope, raw, flags, global, single, queue);
@@ -21,7 +21,6 @@ pub trait Context: Deref<Target = RawContext> {
         for queue in self.queues() {
             queue.flush()?
         }
-
         Ok(())
     }
 
@@ -30,7 +29,6 @@ pub trait Context: Deref<Target = RawContext> {
         for queue in self.queues() {
             queue.finish()?
         }
-
         Ok(())
     }
 }

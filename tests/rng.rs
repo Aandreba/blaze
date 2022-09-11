@@ -24,7 +24,7 @@ fn main () -> Result<()> {
     let mut random = Buffer::<u8>::new_uninit(SIZE, MemAccess::WRITE_ONLY, false)?;
     
     let random = unsafe {
-        let _ = rng.next_bytes(SIZE as u32, &mut random, [SIZE], None, EMPTY)?.wait()?;
+        let _ = rng.next_bytes_blocking(SIZE as u32, &mut random, [SIZE], None, None)?;
         random.assume_init()  
     };
 
