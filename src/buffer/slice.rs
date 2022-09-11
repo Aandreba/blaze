@@ -3,7 +3,6 @@ use crate::prelude::*;
 use super::IntoRange;
 
 /// An immutable slice of a [`Buffer`]
-#[derive(Hash)]
 #[cfg_attr(docsrs, doc(cfg(feature = "cl1_1")))]
 #[repr(transparent)]
 pub struct Buf<'a, T: Copy, C: Context = Global> {

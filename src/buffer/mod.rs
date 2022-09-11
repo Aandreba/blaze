@@ -1,4 +1,4 @@
-flat_mod!(raw, complex, range);
+flat_mod!(raw, complex, range, map);
 
 #[cfg(feature = "cl1_1")]
 flat_mod!(slice);

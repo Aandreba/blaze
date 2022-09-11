@@ -1,13 +1,12 @@
 use std::{marker::PhantomData, ptr::{NonNull}, ops::{Deref, DerefMut}, fmt::Debug, mem::MaybeUninit};
 use blaze_proc::docfg;
-use crate::{context::{Context, Global, Scope, local_scope}, prelude::{Event}, event::consumer::{NoopEvent, Consumer}, WaitList};
+use crate::{context::{Context, Global, Scope, local_scope}, prelude::{Event}, event::consumer::{NoopEvent, Consumer}, WaitList, memobj::MapPtr};
 use crate::core::*;
 use crate::buffer::{flags::{MemFlags, HostPtr, MemAccess}, RawBuffer};
-use super::{IntoRange, BufferRange};
+use super::{IntoRange, BufferRange, MapGuard};
 
 pub type ReadEvent<'a, T> = Event<Vec<T>, BufferRead<'a, T>>;
 
-#[derive(Hash)]
 #[doc = include_str!("../../docs/src/buffer/README.md")]
 pub struct Buffer<T: Copy, C: Context = Global> {
     pub(super) inner: RawBuffer,
@@ -269,6 +268,42 @@ impl<T: Copy + Unpin, C: Context> Buffer<T, C> {
         
         unsafe {
             self.ctx.next_queue().enqueue_noop_unchecked(supplier)?.join()
+        }
+    }
+
+    pub fn map<'scope, 'env, 'a, R: IntoRange> (&'a self, range: R, wait: WaitList) -> Result<MapGuard<'a, T, C>> where C: Clone {
+        let range = range.into_range::<T>(&self.inner)?;
+        let len = range.cb / core::mem::size_of::<T>();
+        let mut ptr = MaybeUninit::uninit();
+        let supplier = |queue| unsafe {
+            let (_ptr, evt) = self.inner.map_read_in(range, queue, wait)?;
+            ptr.write(_ptr);
+            return Ok(evt)
+        };
+
+        unsafe {
+            self.ctx.next_queue().enqueue_noop_unchecked(supplier)?.join()?;
+            let ptr = core::slice::from_raw_parts_mut(ptr.assume_init() as *mut T, len);
+            let ptr = MapPtr::new(ptr, self.inner.clone().into(), self.ctx.clone());
+            return Ok(MapGuard::new(ptr)) 
+        }
+    }
+
+    pub fn map_blocking<'a, R: IntoRange> (&'a self, range: R, wait: WaitList) -> Result<MapGuard<'a, T, C>> where C: Clone {
+        let range = range.into_range::<T>(&self.inner)?;
+        let len = range.cb / core::mem::size_of::<T>();
+        let mut ptr = MaybeUninit::uninit();
+        let supplier = |queue| unsafe {
+            let (_ptr, evt) = self.inner.map_read_in(range, queue, wait)?;
+            ptr.write(_ptr);
+            return Ok(evt)
+        };
+
+        unsafe {
+            self.ctx.next_queue().enqueue_noop_unchecked(supplier)?.join()?;
+            let ptr = core::slice::from_raw_parts_mut(ptr.assume_init() as *mut T, len);
+            let ptr = MapPtr::new(ptr, self.inner.clone().into(), self.ctx.clone());
+            return Ok(MapGuard::new(ptr)) 
         }
     }
 }

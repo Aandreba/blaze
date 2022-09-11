@@ -6,7 +6,6 @@ use crate::{prelude::*};
 use super::{Buffer, flags::{MemFlags, MemAccess, HostPtr}};
 
 /// Buffer that conatins a 2D rectangle.
-#[derive(Hash)]
 pub struct BufferRect2D<T: Copy, C: Context = Global> {
     inner: Buffer<T, C>,
     width: NonZeroUsize,

@@ -2,7 +2,7 @@ use std::{ptr::{NonNull, addr_of_mut}, ops::{RangeBounds, Bound, Deref, DerefMut
 use opencl_sys::*;
 use blaze_proc::docfg;
 use crate::{core::*, context::RawContext, event::{RawEvent}, buffer::BufferRange, memobj::{RawMemObject}, prelude::{Global, Context}, wait_list, WaitList};
-use super::{flags::{MemFlags}, IntoRange};
+use super::{flags::{MemFlags}};
 
 /// A raw OpenCL buffer
 #[repr(transparent)]
@@ -46,8 +46,8 @@ impl RawBuffer {
 
     /// Creates a new buffer object (referred to as a sub-buffer object) from an existing buffer object.
     #[docfg(feature = "cl1_1")]
-    pub unsafe fn create_sub_buffer<R: IntoRange> (&self, flags: super::flags::MemAccess, region: R) -> Result<RawBuffer> {
-        let BufferRange { offset, cb } = region.into_range::<u8>(self)?;
+    pub unsafe fn create_sub_buffer (&self, flags: super::flags::MemAccess, region: BufferRange) -> Result<RawBuffer> {
+        let BufferRange { offset, cb } = region;
         let region = opencl_sys::cl_buffer_region { origin: offset, size: cb };
 
         let mut err = 0;
@@ -106,17 +106,17 @@ impl RawBuffer {
     }
 
     #[inline(always)]
-    pub unsafe fn map_read<T, R: IntoRange> (&self, range: R, wait: WaitList) -> Result<(*const T, RawEvent)> {
+    pub unsafe fn map_read (&self, range: BufferRange, wait: WaitList) -> Result<(*const c_void, RawEvent)> {
         self.map_read_in(range, Global.next_queue(), wait)
     }
 
     #[inline(always)]
-    pub unsafe fn map_write<T, R: IntoRange> (&self, range: R, wait: WaitList) -> Result<(*mut T, RawEvent)> {
+    pub unsafe fn map_write (&self, range: BufferRange, wait: WaitList) -> Result<(*mut c_void, RawEvent)> {
         self.map_write_in(range, Global.next_queue(), wait)
     }
 
     #[inline(always)]
-    pub unsafe fn map_read_write<T, R: IntoRange> (&self, range: R, wait: WaitList) -> Result<(*mut T, RawEvent)> {
+    pub unsafe fn map_read_write (&self, range: BufferRange, wait: WaitList) -> Result<(*mut c_void, RawEvent)> {
         self.map_read_write_in(range, Global.next_queue(), wait)
     }
 }
@@ -189,23 +189,23 @@ impl RawBuffer {
     }
 
     #[inline(always)]
-    pub unsafe fn map_read_in<T, R: IntoRange> (&self, range: R, queue: &RawCommandQueue, wait: WaitList) -> Result<(*const T, RawEvent)> {
-        let (ptr, evt) = self.__map_inner::<T, R, CL_MAP_READ>(range, queue, wait)?;
+    pub unsafe fn map_read_in (&self, range: BufferRange, queue: &RawCommandQueue, wait: WaitList) -> Result<(*const c_void, RawEvent)> {
+        let (ptr, evt) = self.__map_inner::<CL_MAP_READ>(range, queue, wait)?;
         Ok((ptr as *const _, evt))
     }
 
     #[inline(always)]
-    pub unsafe fn map_write_in<T, R: IntoRange> (&self, range: R, queue: &RawCommandQueue, wait: WaitList) -> Result<(*mut T, RawEvent)> {
-        self.__map_inner::<T, R, CL_MAP_WRITE>(range, queue, wait)
+    pub unsafe fn map_write_in (&self, range: BufferRange, queue: &RawCommandQueue, wait: WaitList) -> Result<(*mut c_void, RawEvent)> {
+        self.__map_inner::<CL_MAP_WRITE>(range, queue, wait)
     }
 
     #[inline(always)]
-    pub unsafe fn map_read_write_in<T, R: IntoRange> (&self, range: R, queue: &RawCommandQueue, wait: WaitList) -> Result<(*mut T, RawEvent)> {
-        self.__map_inner::<T, R, {CL_MAP_READ | CL_MAP_WRITE}>(range, queue, wait)
+    pub unsafe fn map_read_write_in (&self, range: BufferRange, queue: &RawCommandQueue, wait: WaitList) -> Result<(*mut c_void, RawEvent)> {
+        self.__map_inner::<{CL_MAP_READ | CL_MAP_WRITE}>(range, queue, wait)
     }
 
-    unsafe fn __map_inner<T, R: IntoRange, const FLAGS : cl_mem_flags> (&self, range: R, queue: &RawCommandQueue, wait: WaitList) -> Result<(*mut T, RawEvent)> {
-        let BufferRange { offset, cb } = range.into_range::<T>(self)?;
+    unsafe fn __map_inner<const FLAGS : cl_mem_flags> (&self, range: BufferRange, queue: &RawCommandQueue, wait: WaitList) -> Result<(*mut c_void, RawEvent)> {
+        let BufferRange { offset, cb } = range;
         let (num_events_in_wait_list, event_wait_list) = wait_list(wait)?;
         
         let mut evt = core::ptr::null_mut();

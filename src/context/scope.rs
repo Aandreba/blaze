@@ -239,7 +239,7 @@ mod tests {
         let ctx = SimpleContext::default()?;
         let mut buffer = Buffer::new_in(ctx.clone(), &[1, 2, 3, 4, 5], MemAccess::default(), false)?;
 
-        let v = local_scope_async!(
+        let _ = local_scope_async!(
             &ctx,
             |s| async {
                 let v = buffer.read(s, .., None)?.join_async()?.await?;
