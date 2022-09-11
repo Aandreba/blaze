@@ -9,7 +9,7 @@ fn invalid_raw () -> Result<()> {
     let mut buffer = Buffer::new(&[1, 2, 3, 4, 5], MemAccess::default(), false)?;
 
     scope(|s| {
-        let left = buffer.read(s, ..2, None)?.join();
+        let left = buffer.read(s, ..2, None)?.join()?;
         println!("{left:?}");
         return Ok(())
     })?;
@@ -28,4 +28,14 @@ fn test () -> Result<()> {
 
     println!("{slice:?}");
     Ok(())
+}
+
+#[cfg(feature = "futures")]
+#[tokio::test]
+async fn async_test () -> Result<()> {
+    let mut buffer = Buffer::new(&[1, 2, 3, 4, 5], MemAccess::default(), false)?;
+    let read = drop(buffer.read_async(1.., None));
+    let write = buffer.write_async(0, &[1, 2], None);
+
+    todo!()
 }

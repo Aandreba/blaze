@@ -123,6 +123,20 @@ impl<T: Copy, C: Context> Buffer<MaybeUninit<T>, C> {
 }
 
 impl<T: Copy + Unpin, C: Context> Buffer<T, C> {
+    /// Reads the contents of the buffer.
+    pub fn read<'scope, 'env, R: IntoRange> (&'env self, scope: &'scope Scope<'scope, 'env, C>, range: R, wait: WaitList) -> Result<ReadEvent<'scope, T>> {
+        let range = range.into_range::<T>(&self.inner)?;
+        let len = range.cb / core::mem::size_of::<T>();
+        let mut result = Vec::<T>::with_capacity(len);
+
+        let dst = Vec::as_mut_ptr(&mut result);
+        let supplier = |queue| unsafe {
+            self.inner.read_to_ptr_in(range, dst.cast(), queue, wait)
+        };
+
+        return scope.enqueue(supplier, BufferRead(result, len, PhantomData))
+    }
+
     /// Reads the contents of the buffer, blocking the current thread until the operation has completed.
     pub fn read_blocking<R: IntoRange> (&self, range: R, wait: WaitList) -> Result<Vec<T>> {
         let range = range.into_range::<T>(&self.inner)?;
@@ -131,7 +145,7 @@ impl<T: Copy + Unpin, C: Context> Buffer<T, C> {
 
         let dst = Vec::as_mut_ptr(&mut result);
         let supplier = |queue| unsafe {
-            self.inner.read_to_ptr_in(range, dst, queue, wait)
+            self.inner.read_to_ptr_in(range, dst.cast(), queue, wait)
         };
 
         let f = move || unsafe {
@@ -144,18 +158,28 @@ impl<T: Copy + Unpin, C: Context> Buffer<T, C> {
         }
     }
 
-    /// Reads the contents of the buffer
-    pub fn read<'scope, 'env, R: IntoRange> (&'env self, scope: &'scope Scope<'scope, 'env, C>, range: R, wait: WaitList) -> Result<ReadEvent<'scope, T>> {
-        let range = range.into_range::<T>(&self.inner)?;
-        let len = range.cb / core::mem::size_of::<T>();
-        let mut result = Vec::<T>::with_capacity(len);
-
-        let dst = Vec::as_mut_ptr(&mut result);
+    /// Reads the contents of the buffer into `dst`.
+    #[inline]
+    pub fn read_into<'scope, 'env, R: IntoRange> (&'env self, s: &'scope Scope<'scope, 'env, C>, offset: usize, dst: &'env mut [T], wait: WaitList) -> Result<NoopEvent<'scope>> {
+        let range = BufferRange::from_parts::<T>(offset, dst.len())?;
         let supplier = |queue| unsafe {
-            self.inner.read_to_ptr_in(range, dst, queue, wait)
+            self.inner.read_to_ptr_in(range, dst.as_mut_ptr().cast(), queue, wait)
         };
 
-        return scope.enqueue(supplier, BufferRead(result, len, PhantomData))
+        return s.enqueue_noop(supplier)
+    }
+
+    /// Reads the contents of the buffer into `dst`, blocking the current thread until the operation has completed.
+    #[inline]
+    pub fn read_into_blocking<R: IntoRange> (&self, offset: usize, dst: &mut [T], wait: WaitList) -> Result<()> {
+        let range = BufferRange::from_parts::<T>(offset, dst.len())?;
+        let supplier = |queue| unsafe {
+            self.inner.read_to_ptr_in(range, dst.as_mut_ptr().cast(), queue, wait)
+        };
+
+        unsafe {
+            self.ctx.next_queue().enqueue_noop_unchecked(supplier)?.join()
+        }
     }
 
     /// Writes the contents of `src` into the buffer
@@ -163,7 +187,7 @@ impl<T: Copy + Unpin, C: Context> Buffer<T, C> {
     pub fn write<'scope, 'env> (&'scope mut self, scope: &'scope Scope<'scope, 'env, C>, offset: usize, src: &'env [T], wait: WaitList) -> Result<NoopEvent<'scope>> {
         let range = BufferRange::from_parts::<T>(offset, src.len()).unwrap();
         let supplier = |queue| unsafe {
-            self.inner.write_from_ptr_in(range, src.as_ptr(), queue, wait)
+            self.inner.write_from_ptr_in(range, src.as_ptr().cast(), queue, wait)
         };
 
         scope.enqueue_noop(supplier)
@@ -174,7 +198,7 @@ impl<T: Copy + Unpin, C: Context> Buffer<T, C> {
     pub fn write_blocking (&mut self, offset: usize, src: &[T], wait: WaitList) -> Result<()> {
         let range = BufferRange::from_parts::<T>(offset, src.len()).unwrap();
         let supplier = |queue| unsafe {
-            self.inner.write_from_ptr_in(range, src.as_ptr(), queue, wait)
+            self.inner.write_from_ptr_in(range, src.as_ptr().cast(), queue, wait)
         };
 
         unsafe {
@@ -182,6 +206,7 @@ impl<T: Copy + Unpin, C: Context> Buffer<T, C> {
         }
     }
 
+    /// Copies the contents from `self` to `dst`
     #[inline]
     pub fn copy_to<'scope, 'env> (&'env self, s: &'scope Scope<'scope, 'env, C>, src_offset: usize, dst: &'env mut Self, dst_offset: usize, size: usize, wait: WaitList) -> Result<NoopEvent<'scope>> {
         let src_offset = src_offset.checked_mul(core::mem::size_of::<T>()).unwrap();
@@ -194,6 +219,7 @@ impl<T: Copy + Unpin, C: Context> Buffer<T, C> {
         s.enqueue_noop(supplier)
     }
 
+    /// Copies the contents from `self` to `dst`, blocking the current thread until the operation has completed.
     #[inline]
     pub fn copy_to_blocking (&self, src_offset: usize, dst: &mut Self, dst_offset: usize, size: usize, wait: WaitList) -> Result<()> {
         let src_offset = src_offset.checked_mul(core::mem::size_of::<T>()).unwrap();
@@ -208,16 +234,19 @@ impl<T: Copy + Unpin, C: Context> Buffer<T, C> {
         }
     }
 
+    /// Copies the contents from `src` to `self`
     #[inline(always)]
     pub fn copy_from<'scope, 'env> (&'env mut self, s: &'scope Scope<'scope, 'env, C>, dst_offset: usize, src: &'env Self, src_offset: usize, size: usize, wait: WaitList) -> Result<NoopEvent<'scope>> {
         src.copy_to(s, src_offset, self, dst_offset, size, wait)
     }
 
+    /// Copies the contents from `src` to `self`, blocking the current thread until the operation has completed.
     #[inline(always)]
     pub fn copy_from_blocking (&mut self, dst_offset: usize, src: &Self, src_offset: usize, size: usize, wait: WaitList) -> Result<()> {
         src.copy_to_blocking(src_offset, self, dst_offset, size, wait)
     }
 
+    /// Fills a region of the buffer with `v`
     #[docfg(feature = "cl1_2")]
     #[inline(always)]
     pub fn fill<'scope, 'env, R: IntoRange> (&'env mut self, s: &'scope Scope<'scope, 'env, C>, v: T, range: R, wait: WaitList) -> Result<NoopEvent<'scope>> {
@@ -229,6 +258,7 @@ impl<T: Copy + Unpin, C: Context> Buffer<T, C> {
         s.enqueue_noop(supplier)
     }
 
+    /// Fills a region of the buffer with `v`, blocking the current thread until the operation has completed.
     #[docfg(feature = "cl1_2")]
     #[inline(always)]
     pub fn fill_blocking<R: IntoRange> (&mut self, v: T, range: R, wait: WaitList) -> Result<()> {

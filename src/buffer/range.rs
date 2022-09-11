@@ -15,52 +15,46 @@ impl BufferRange {
     }
 
     #[inline]
-    pub const fn from_parts<T> (offset: usize, size: usize) -> Option<Self> {
+    pub fn from_parts<T> (offset: usize, size: usize) -> Result<Self> {
         let offset = match offset.checked_mul(core::mem::size_of::<T>()) {
             Some(x) => x,
-            None => return None
+            None => return Err(Error::new(ErrorType::InvalidBufferSize, "overflow calculating range offset"))
         };
 
         let size = match size.checked_mul(core::mem::size_of::<T>()) {
             Some(x) => x,
-            None => return None
+            None => return Err(Error::new(ErrorType::InvalidBufferSize, "overflow calculating range size"))
         };
 
-        Some(Self::new(offset, size))
+        Ok(Self::new(offset, size))
     }
 
     #[inline(always)]
-    pub fn from_byte_range (range: impl RangeBounds<usize>, max_size: usize) -> Option<Self> {
+    pub fn from_byte_range<R: RangeBounds<usize>> (range: R, max_size: usize) -> Result<Self> {
+        Self::from_range::<u8, R>(range, max_size)
+    }
+
+    #[inline]
+    pub fn from_range<T, R: RangeBounds<usize>> (range: R, max_size: usize) -> Result<Self> {
+        macro_rules! _tri_ {
+            ($e:expr, $desc:expr) => {
+                $e.ok_or_else(|| Error::new(ErrorType::InvalidBufferSize, $desc))?
+            };
+        }
+
         let offset = match range.start_bound() {
-            Bound::Excluded(x) => x.checked_add(1)?,
-            Bound::Included(x) => *x,
+            Bound::Excluded(x) => _tri_!(_tri_!(x.checked_add(1), "overflow calculating range offset").checked_mul(core::mem::size_of::<T>()), "overflow calculating range offset"),
+            Bound::Included(x) => _tri_!(x.checked_mul(core::mem::size_of::<T>()), "overflow calculating range offset"),
             Bound::Unbounded => 0
         };
 
         let size = match range.end_bound() {
-            Bound::Excluded(x) => *x,
-            Bound::Included(x) => x.checked_add(1)?,
+            Bound::Excluded(x) => _tri_!(x.checked_mul(core::mem::size_of::<T>()), "overflow calculating range size"),
+            Bound::Included(x) => _tri_!(_tri_!(x.checked_add(1), "overflow calculating range size").checked_mul(core::mem::size_of::<T>()), "overflow calculating range offset"),
             Bound::Unbounded => max_size
         } - offset;
 
-        Some(Self::new(offset, size))
-    }
-
-    #[inline(always)]
-    pub fn from_range<T, R: RangeBounds<usize>> (range: R, max_size: usize) -> Option<Self> {
-        let offset = match range.start_bound() {
-            Bound::Excluded(x) => x.checked_add(1)?.checked_mul(core::mem::size_of::<T>())?,
-            Bound::Included(x) => x.checked_mul(core::mem::size_of::<T>())?,
-            Bound::Unbounded => 0
-        };
-
-        let size = match range.end_bound() {
-            Bound::Excluded(x) => x.checked_mul(core::mem::size_of::<T>())?,
-            Bound::Included(x) => x.checked_add(1)?.checked_mul(core::mem::size_of::<T>())?,
-            Bound::Unbounded => max_size
-        } - offset;
-
-        Some(Self::new(offset, size))
+        return Ok(Self::new(offset, size))
     }
 }
 
@@ -78,55 +72,55 @@ impl IntoRange for BufferRange {
 impl IntoRange for Range<usize> {
     #[inline(always)]
     fn into_range<T> (self, buf: &RawBuffer) -> Result<BufferRange> {
-        Ok(BufferRange::from_range::<T, Self>(self, buf.size()?).unwrap())
+        BufferRange::from_range::<T, Self>(self, buf.size()?)
     }
 }
 
 impl IntoRange for RangeFrom<usize> {
     #[inline(always)]
     fn into_range<T> (self, buf: &RawBuffer) -> Result<BufferRange> {
-        Ok(BufferRange::from_range::<T, Self>(self, buf.size()?).unwrap())
+        BufferRange::from_range::<T, Self>(self, buf.size()?)
     }
 }
 
 impl IntoRange for RangeFull {
     #[inline(always)]
     fn into_range<T> (self, buf: &RawBuffer) -> Result<BufferRange> {
-        Ok(BufferRange::from_range::<T, Self>(self, buf.size()?).unwrap())
+        BufferRange::from_range::<T, Self>(self, buf.size()?)
     }
 }
 
 impl IntoRange for RangeInclusive<usize> {
     #[inline(always)]
     fn into_range<T> (self, buf: &RawBuffer) -> Result<BufferRange> {
-        Ok(BufferRange::from_range::<T, Self>(self, buf.size()?).unwrap())
+        BufferRange::from_range::<T, Self>(self, buf.size()?)
     }
 }
 
 impl IntoRange for RangeTo<usize> {
     #[inline(always)]
     fn into_range<T> (self, buf: &RawBuffer) -> Result<BufferRange> {
-        Ok(BufferRange::from_range::<T, Self>(self, buf.size()?).unwrap())
+        BufferRange::from_range::<T, Self>(self, buf.size()?)
     }
 }
 
 impl IntoRange for RangeToInclusive<usize> {
     #[inline(always)]
     fn into_range<T> (self, buf: &RawBuffer) -> Result<BufferRange> {
-        Ok(BufferRange::from_range::<T, Self>(self, buf.size()?).unwrap())
+        BufferRange::from_range::<T, Self>(self, buf.size()?)
     }
 }
 
 impl IntoRange for [usize; 2] {
     #[inline(always)]
     fn into_range<T> (self, _buf: &RawBuffer) -> Result<BufferRange> {
-        Ok(BufferRange::from_parts::<T>(self[0], self[1]).unwrap())
+        BufferRange::from_parts::<T>(self[0], self[1])
     }
 }
 
 impl IntoRange for (usize, usize) {
     #[inline(always)]
     fn into_range<T> (self, _buf: &RawBuffer) -> Result<BufferRange> {
-        Ok(BufferRange::from_parts::<T>(self.0, self.1).unwrap())
+        BufferRange::from_parts::<T>(self.0, self.1)
     }
 }

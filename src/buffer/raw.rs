@@ -65,31 +65,31 @@ impl RawBuffer {
 
 impl RawBuffer {
     #[inline(always)]
-    pub unsafe fn read_to_ptr<T: Copy> (&self, range: impl IntoRange, dst: *mut T, wait: WaitList) -> Result<RawEvent> {
+    pub unsafe fn read_to_ptr (&self, range: BufferRange, dst: *mut c_void, wait: WaitList) -> Result<RawEvent> {
         self.read_to_ptr_in(range, dst, Global.next_queue(), wait)
     }
 
     #[docfg(feature = "cl1_1")]
     #[inline(always)]
-    pub unsafe fn read_rect_to_ptr<T: Copy> (
+    pub unsafe fn read_rect_to_ptr (
         &self, buffer_origin: [usize; 3], host_origin: [usize;3], region: [usize;3], 
         buffer_row_pitch: Option<usize>, buffer_slice_pitch: Option<usize>, host_row_pitch: Option<usize>,
-        host_slice_pitch: Option<usize>, dst: *mut T, wait: WaitList
+        host_slice_pitch: Option<usize>, dst: *mut c_void, wait: WaitList
     ) -> Result<RawEvent> {
         self.read_rect_to_ptr_in(buffer_origin, host_origin, region, buffer_row_pitch, buffer_slice_pitch, host_row_pitch, host_slice_pitch, dst, Global.next_queue(), wait)
     }
     
     #[inline(always)]
-    pub unsafe fn write_from_ptr<T: Copy> (&mut self, range: impl IntoRange, src: *const T, wait: WaitList) -> Result<RawEvent> {
+    pub unsafe fn write_from_ptr (&mut self, range: BufferRange, src: *const c_void, wait: WaitList) -> Result<RawEvent> {
         self.write_from_ptr_in(range, src, Global.next_queue(), wait)
     }
 
     #[docfg(feature = "cl1_1")]
     #[inline(always)]
-    pub unsafe fn write_rect_from_ptr<T: Copy> (
+    pub unsafe fn write_rect_from_ptr (
         &mut self, buffer_origin: [usize; 3], host_origin: [usize;3], region: [usize;3], 
         buffer_row_pitch: Option<usize>, buffer_slice_pitch: Option<usize>, host_row_pitch: Option<usize>,
-        host_slice_pitch: Option<usize>, src: *const T, wait: WaitList
+        host_slice_pitch: Option<usize>, src: *const c_void, wait: WaitList
     ) -> Result<RawEvent> {
         self.write_rect_from_ptr_in(buffer_origin, host_origin, region, buffer_row_pitch, buffer_slice_pitch, host_row_pitch, host_slice_pitch, src, Global.next_queue(), wait)
     }
@@ -101,7 +101,7 @@ impl RawBuffer {
 
     #[docfg(feature = "cl1_2")]
     #[inline(always)]
-    pub unsafe fn fill_raw<T: Copy> (&mut self, v: T, range: impl IntoRange, wait: WaitList) -> Result<RawEvent> {
+    pub unsafe fn fill_raw<T: Copy> (&mut self, v: T, range: BufferRange, wait: WaitList) -> Result<RawEvent> {
         self.fill_raw_in(v, range, Global.next_queue(), wait)
     }
 
@@ -123,8 +123,8 @@ impl RawBuffer {
 
 impl RawBuffer {
     /// Reads the contents of this 
-    pub unsafe fn read_to_ptr_in<T: Copy> (&self, range: impl IntoRange, dst: *mut T, queue: &RawCommandQueue, wait: WaitList) -> Result<RawEvent> {
-        let BufferRange { offset, cb } = range.into_range::<T>(self)?; 
+    pub unsafe fn read_to_ptr_in (&self, range: BufferRange, dst: *mut c_void, queue: &RawCommandQueue, wait: WaitList) -> Result<RawEvent> {
+        let BufferRange { offset, cb } = range;
         let (num_events_in_wait_list, event_wait_list) = wait_list(wait);
     
         let mut event = core::ptr::null_mut();
@@ -133,10 +133,10 @@ impl RawBuffer {
     }
 
     #[docfg(feature = "cl1_1")]
-    pub unsafe fn read_rect_to_ptr_in<T: Copy> (
+    pub unsafe fn read_rect_to_ptr_in (
         &self, buffer_origin: [usize; 3], host_origin: [usize;3], region: [usize;3], 
         buffer_row_pitch: Option<usize>, buffer_slice_pitch: Option<usize>, host_row_pitch: Option<usize>,
-        host_slice_pitch: Option<usize>, dst: *mut T, queue: &RawCommandQueue, wait: WaitList
+        host_slice_pitch: Option<usize>, dst: *mut c_void, queue: &RawCommandQueue, wait: WaitList
     ) -> Result<RawEvent> {
         let (num_events_in_wait_list, event_wait_list) = wait_list(wait);
 
@@ -145,8 +145,8 @@ impl RawBuffer {
         Ok(RawEvent::from_id(evt).unwrap())
     }
     
-    pub unsafe fn write_from_ptr_in<T: Copy> (&mut self, range: impl IntoRange, src: *const T, queue: &RawCommandQueue, wait: WaitList) -> Result<RawEvent> {
-        let BufferRange { offset, cb } = range.into_range::<T>(self)?; 
+    pub unsafe fn write_from_ptr_in (&mut self, range: BufferRange, src: *const c_void, queue: &RawCommandQueue, wait: WaitList) -> Result<RawEvent> {
+        let BufferRange { offset, cb } = range;
         let (num_events_in_wait_list, event_wait_list) = wait_list(wait);
     
         let mut event = core::ptr::null_mut();
@@ -156,10 +156,10 @@ impl RawBuffer {
     }
 
     #[docfg(feature = "cl1_1")]
-    pub unsafe fn write_rect_from_ptr_in<T: Copy> (
+    pub unsafe fn write_rect_from_ptr_in (
         &mut self, buffer_origin: [usize; 3], host_origin: [usize;3], region: [usize;3], 
         buffer_row_pitch: Option<usize>, buffer_slice_pitch: Option<usize>, host_row_pitch: Option<usize>,
-        host_slice_pitch: Option<usize>, src: *const T, queue: &RawCommandQueue, wait: WaitList
+        host_slice_pitch: Option<usize>, src: *const c_void, queue: &RawCommandQueue, wait: WaitList
     ) -> Result<RawEvent> {
         let (num_events_in_wait_list, event_wait_list) = wait_list(wait);
         let mut evt = core::ptr::null_mut();
@@ -167,9 +167,9 @@ impl RawBuffer {
         Ok(RawEvent::from_id(evt).unwrap())
     }
 
+    #[inline]
     pub unsafe fn copy_from_in (&mut self, dst_offset: usize, src: &RawBuffer, src_offset: usize, size: usize, queue: &RawCommandQueue, wait: WaitList) -> Result<RawEvent> {
         let (num_events_in_wait_list, event_wait_list) = wait_list(wait);
-    
         let mut event = core::ptr::null_mut();
         tri!(clEnqueueCopyBuffer(queue.id(), src.id(), self.id(), src_offset, dst_offset, size, num_events_in_wait_list, event_wait_list, addr_of_mut!(event)));
     
@@ -177,8 +177,9 @@ impl RawBuffer {
     }
 
     #[docfg(feature = "cl1_2")]
-    pub unsafe fn fill_raw_in<T: Copy> (&mut self, v: T, range: impl IntoRange, queue: &RawCommandQueue, wait: WaitList) -> Result<RawEvent> {
-        let BufferRange { offset, cb } = range.into_range::<T>(self)?;
+    #[inline]
+    pub unsafe fn fill_raw_in<T: Copy> (&mut self, v: T, range: BufferRange, queue: &RawCommandQueue, wait: WaitList) -> Result<RawEvent> {
+        let BufferRange { offset, cb } = range;
         let (num_events_in_wait_list, event_wait_list) = wait_list(wait);
 
         let mut event = core::ptr::null_mut();

@@ -185,22 +185,24 @@ macro_rules! scope_async {
 
 #[cfg(test)]
 mod tests {
+    use crate::prelude::*;
+
     #[cfg(feature = "futures")]
     #[tokio::test]
     async fn test () -> crate::prelude::Result<()> {
-        use crate::prelude::*;
+        let ctx = SimpleContext::default()?;
+        let mut buffer = Buffer::new_in(ctx.clone(), &[1, 2, 3, 4, 5], MemAccess::default(), false)?;
 
-        let mut buffer = Buffer::new(&[1, 2, 3, 4, 5], MemAccess::default(), false)?;
-
-        let v = scope_async!(
+        let v = local_scope_async!(
+            &ctx,
             |s| async {
-                return buffer.read(s, 1.., None)?.join_async()?.await
+                let v = buffer.read(s, .., None)?.join_async()?.await?;
+                println!("{v:?}");
+                Ok(())
             }
-        ).await?;
+        ).await;
 
-        let v2 = scope_async!(
-            |s| buffer.write(s, 0, &[1, 2], None).unwrap().join_async().unwrap()
-        ).await?;
+        buffer.write_blocking(1, &[8, 9], None)?;
 
         return Ok(())
     }
