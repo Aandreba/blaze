@@ -161,10 +161,10 @@ macro_rules! local_scope_async {
                 Err(e) => ::std::panic::resume_unwind(e),
                 Ok(x) => {
                     let e = __scope__.data.1.load(::std::sync::atomic::Ordering::Relaxed);
-                    if e != 0 {
-                        Err($crate::prelude::Error::from(e))
-                    } else {
+                    if e == 0 {
                         x
+                    } else {
+                        Err($crate::prelude::Error::from(e))
                     }
                 }
             }
@@ -183,7 +183,7 @@ macro_rules! scope_async {
     }
 }
 
-//#[cfg(test)]
+#[cfg(test)]
 mod tests {
     #[cfg(feature = "futures")]
     #[tokio::test]
