@@ -34,6 +34,9 @@ impl<T, C: Context> Drop for MapPtr<T, C> {
     }
 }
 
+unsafe impl<T: Send, C: Send + Context> Send for MapPtr<T, C> {}
+unsafe impl<T: Sync, C: Sync + Context> Sync for MapPtr<T, C> {}
+
 /// Mapping flags
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum MapFlags {

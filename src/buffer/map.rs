@@ -3,6 +3,7 @@ use crate::{prelude::{Context, Global, Event}, memobj::MapPtr, event::consumer::
 use super::Buffer;
 
 pub type BufferMapEvent<'scope, 'env, T, C> = Event<BufferMap<'scope, 'env, T, C>>;
+pub type BufferMapMutEvent<'scope, 'env, T, C> = Event<BufferMapMut<'scope, 'env, T, C>>;
 
 pub struct BufferMap<'scope, 'env: 'scope, T: Copy, C: Context> {
     ptr: *const c_void,
@@ -125,5 +126,12 @@ impl<'a, T: Copy, C: Context> DerefMut for MapMutGuard<'a, T, C> {
         unsafe {
             &mut *self.ptr.ptr
         }
+    }
+}
+
+impl<'a, T: Debug + Copy, C: Context> Debug for MapMutGuard<'_, T, C> {
+    #[inline(always)]
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.deref().fmt(f)
     }
 }

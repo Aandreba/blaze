@@ -7,8 +7,9 @@ static CONTEXT : SimpleContext = SimpleContext::default();
 #[test]
 fn invalid_raw () -> Result<()> {
     let mut buffer = Buffer::new(&[1, 2, 3, 4, 5], MemAccess::default(), false)?;
-    let map = buffer.map_blocking(..3, None)?;
-    println!("{map:?}");
+    //let map = buffer.map_blocking(..3, None)?;
+    let map_mut = buffer.map_mut_blocking(..=3, None)?;
+    println!("{map_mut:?}");
 
     Ok(())
 }
