@@ -34,9 +34,11 @@ pub struct Abort<C> {
     pub(super) consumer: C
 }
 
-impl<'a, T, C: Consumer<'a, T>> Consumer<'a, Option<T>> for Abort<C> {
+impl<'a, C: Consumer<'a>> Consumer<'a> for Abort<C> {
+    type Output = Option<C::Output>;
+
     #[inline]
-    fn consume (self) -> Result<Option<T>> {
+    fn consume (self) -> Result<Self::Output> {
         loop {
             match self.aborted.load(Ordering::Acquire) {
                 TRUE => return Ok(None),

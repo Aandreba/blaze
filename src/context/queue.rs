@@ -30,7 +30,7 @@ impl CommandQueue {
 
     /// Enqueues a new event without checking if the event's consumer has a safe lifetime.
     #[inline]
-    pub unsafe fn enqueue_unchecked<'a, 'b, 'r: 'b, T, E: 'b + FnOnce(&'r RawCommandQueue) -> Result<RawEvent>, C: Consumer<'a, T>> (&'r self, supplier: E, consumer: C) -> Result<Event<T, C>> {
+    pub unsafe fn enqueue_unchecked<'a, 'b, 'r: 'b, E: 'b + FnOnce(&'r RawCommandQueue) -> Result<RawEvent>, C: Consumer<'a>> (&'r self, supplier: E, consumer: C) -> Result<Event<C>> {
         let inner = supplier(&self.inner)?;
         let evt = Event::new(inner, consumer);
 
@@ -49,7 +49,7 @@ impl CommandQueue {
     /// Enqueues a new event with a consumer with `'static` lifetime. 
     /// The `'static` lifetime ensures the compiler that the consumer is safe to be called at any time in the lifetime of the program.
     #[inline(always)]
-    pub fn enqueue<'b, 'r: 'b, T, E: 'b + FnOnce(&'r RawCommandQueue) -> Result<RawEvent>, C: Consumer<'static, T>> (&'r self, supplier: E, consumer: C) -> Result<Event<T, C>> {
+    pub fn enqueue<'b, 'r: 'b, E: 'b + FnOnce(&'r RawCommandQueue) -> Result<RawEvent>, C: Consumer<'static>> (&'r self, supplier: E, consumer: C) -> Result<Event<C>> {
         unsafe {
             self.enqueue_unchecked(supplier, consumer)
         }

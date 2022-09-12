@@ -3,9 +3,9 @@ use blaze_proc::docfg;
 use crate::{context::{Context, Global, Scope, local_scope}, prelude::{Event}, event::consumer::{NoopEvent, Consumer}, WaitList, memobj::MapPtr};
 use crate::core::*;
 use crate::buffer::{flags::{MemFlags, HostPtr, MemAccess}, RawBuffer};
-use super::{IntoRange, BufferRange, MapGuard};
+use super::{IntoRange, BufferRange, MapGuard, BufferMapEvent, BufferMap};
 
-pub type ReadEvent<'a, T> = Event<Vec<T>, BufferRead<'a, T>>;
+pub type ReadEvent<'a, T> = Event<BufferRead<'a, T>>;
 
 #[doc = include_str!("../../docs/src/buffer/README.md")]
 pub struct Buffer<T: Copy, C: Context = Global> {
@@ -271,10 +271,11 @@ impl<T: Copy + Unpin, C: Context> Buffer<T, C> {
         }
     }
 
-    pub fn map<'scope, 'env, 'a, R: IntoRange> (&'a self, range: R, wait: WaitList) -> Result<MapGuard<'a, T, C>> where C: Clone {
+    pub fn map<'scope, 'env, R: IntoRange> (&'env self, s: &'scope Scope<'scope, 'env, C>, range: R, wait: WaitList) -> Result<BufferMapEvent<'scope, 'env, T, C>> where C: Clone {
         let range = range.into_range::<T>(&self.inner)?;
         let len = range.cb / core::mem::size_of::<T>();
         let mut ptr = MaybeUninit::uninit();
+
         let supplier = |queue| unsafe {
             let (_ptr, evt) = self.inner.map_read_in(range, queue, wait)?;
             ptr.write(_ptr);
@@ -282,10 +283,9 @@ impl<T: Copy + Unpin, C: Context> Buffer<T, C> {
         };
 
         unsafe {
-            self.ctx.next_queue().enqueue_noop_unchecked(supplier)?.join()?;
-            let ptr = core::slice::from_raw_parts_mut(ptr.assume_init() as *mut T, len);
-            let ptr = MapPtr::new(ptr, self.inner.clone().into(), self.ctx.clone());
-            return Ok(MapGuard::new(ptr)) 
+            let noop = s.enqueue_noop(supplier)?;
+            let consumer = BufferMap::new(ptr.assume_init(), self, len);
+            return Ok(noop.set_consumer(consumer));
         }
     }
 
@@ -352,7 +352,9 @@ impl<T: Copy + Unpin + Eq, C: Context> Eq for Buffer<T, C> {}
 
 pub struct BufferRead<'a, T> (Vec<T>, usize, PhantomData<&'a RawBuffer>);
 
-impl<'a, T: 'a> Consumer<'a, Vec<T>> for BufferRead<'a, T> {
+impl<'a, T: 'a> Consumer<'a> for BufferRead<'a, T> {
+    type Output = Vec<T>;
+    
     #[inline(always)]
     fn consume (mut self) -> Result<Vec<T>> {
         unsafe { self.0.set_len(self.1); }

@@ -1,41 +1,40 @@
-use std::{ops::Deref, ffi::c_void, time::{SystemTime, Duration}, marker::PhantomData, mem::MaybeUninit, panic::{UnwindSafe, AssertUnwindSafe}};
+use std::{ops::Deref, ffi::c_void, time::{SystemTime, Duration}, mem::MaybeUninit, panic::{UnwindSafe, AssertUnwindSafe}};
 use opencl_sys::*;
 use blaze_proc::docfg;
 use crate::{prelude::*};
 use super::{RawEvent, EventStatus, ProfilingInfo};
 
 /// A dynamic event that **can** be shared between threads.
-pub type DynEvent<'a, T> = Event<T, Box<dyn Consumer<'a, T> + Send>>;
+pub type DynEvent<'a, T> = Event<Box<dyn Consumer<'a, Output = T> + Send>>;
 /// A dynamic event that **cannot** be shared between threads.
-pub type DynLocalEvent<'a, T> = Event<T, Box<dyn Consumer<'a, T>>>;
+pub type DynLocalEvent<'a, T> = Event<Box<dyn Consumer<'a, Output = T>>>;
 
 pub(crate) mod ext {
     use std::panic::AssertUnwindSafe;
-    use std::{any::Any};
     use crate::event::*;
     use crate::event::_consumer::*;
     use blaze_proc::docfg;
 
     /// Event that completes without any extra operations.
-    pub type NoopEvent<'a> = Event<(), Noop::<'a>>;
+    pub type NoopEvent<'a> = Event<Noop::<'a>>;
     /// Event for [`abortable`](super::Event::abortable).
     #[docfg(feature = "cl1_1")]
-    pub type AbortableEvent<T, C> = Event<Option<T>, abort::Abort<C>>;
+    pub type AbortableEvent<C> = Event<abort::Abort<C>>;
     /// Event for [`map`](super::Event::map).
-    pub type MapEvent<T, U, C, F> = Event<U, Map<T, C, F>>;
+    pub type MapEvent<T, C, F> = Event<Map<T, C, F>>;
     /// Event for [`try_map`](super::Event::try_map).
-    pub type TryMapEvent<T, U, C, F> = Event<U, TryMap<T, C, F>>;
+    pub type TryMapEvent<T, C, F> = Event<TryMap<T, C, F>>;
     /// Event for [`catch_unwind`](super::Event::catch_unwind).
-    pub type CatchUnwindEvent<T, C> = Event<::core::result::Result<T, Box<dyn Any + Send>>, CatchUnwind<C>>;
+    pub type CatchUnwindEvent<C> = Event<CatchUnwind<C>>;
     /// Event for [`assert_catch_unwind`](super::Event::assert_catch_unwind).
-    pub type AssertCatchUnwindEvent<T, C> = CatchUnwindEvent<T, AssertUnwindSafe<C>>;
+    pub type AssertCatchUnwindEvent<C> = CatchUnwindEvent<AssertUnwindSafe<C>>;
     /// Event for [`flatten`](super::Event::flatten).
-    pub type FlattenEvent<T, C> = Event<T, Flatten<C>>;
+    pub type FlattenEvent<C> = Event<Flatten<C>>;
     /// Event for [`inspect`](super::Event::flatten).
-    pub type InspectEvent<T, C, F> = Event<T, Inspect<C, F>>;
+    pub type InspectEvent<C, F> = Event<Inspect<C, F>>;
     /// Event for [`join_all`](super::Event::join_all).
     #[docfg(feature = "cl1_1")]
-    pub type JoinAllEvent<T, C> = Event<Vec<T>, JoinAll<C>>;
+    pub type JoinAllEvent<C> = Event<JoinAll<C>>;
 }
 
 use super::consumer::*;
@@ -43,7 +42,7 @@ use super::consumer::*;
 /// An event with a consumer that will be executed on the completion of the former.\
 /// When using OpenCL 1.0, the event will also contain a [`Sender`](std::sync::mpsc::Sender) that will send the event's callbacks,
 /// (like [`on_complete`](Event::on_complete)) to a different thread to be executed acordingly. 
-pub struct Event<T, C> {
+pub struct Event<C> {
     inner: RawEvent,
     consumer: C,
     #[cfg(not(feature = "cl1_1"))]
@@ -51,8 +50,7 @@ pub struct Event<T, C> {
     #[cfg(feature = "cl1_1")]
     /// `Sender` is `!Sync`, but `Event` only contains a `Send` in OpenCL 1.0.\
     /// For the sake of consistency, `!Sync` should be implemented in all features.
-    send: PhantomData<std::sync::mpsc::Sender<()>>,
-    phtm: PhantomData<T>
+    send: std::marker::PhantomData<std::sync::mpsc::Sender<()>>,
 }
 
 impl<'a> NoopEvent<'a> {
@@ -61,9 +59,18 @@ impl<'a> NoopEvent<'a> {
     pub fn new_noop (inner: RawEvent) -> Self {
         Self::new(inner, Noop::new())
     }
+
+    #[inline(always)]
+    pub fn set_consumer<C: Consumer<'a>> (self, consumer: C) -> Event<C> {
+        Event {
+            inner: self.inner,
+            consumer,
+            send: self.send
+        }
+    }
 }
 
-impl<'a, T, C: Consumer<'a, T>> Event<T, C> { 
+impl<'a, C: Consumer<'a>> Event<C> { 
     /// Creates a new event with the specified consumer.   
     #[inline(always)]
     pub fn new (inner: RawEvent, consumer: C) -> Self {
@@ -80,8 +87,7 @@ impl<'a, T, C: Consumer<'a, T>> Event<T, C> {
             #[cfg(not(feature = "cl1_1"))]
             send,
             #[cfg(feature = "cl1_1")]
-            send: PhantomData,
-            phtm: PhantomData
+            send: std::marker::PhantomData
         }
     }
 
@@ -94,24 +100,22 @@ impl<'a, T, C: Consumer<'a, T>> Event<T, C> {
     /// Turn's the event into a [`DynEvent`].
     /// A [`DynEvent`] contains a boxed [dynamic](https://doc.rust-lang.org/stable/book/ch19-04-advanced-types.html#dynamically-sized-types-and-the-sized-trait) consumer that **can** be shared between threads.
     #[inline(always)]
-    pub fn into_dyn (self) -> DynEvent<'a, T> where C: Send {
+    pub fn into_dyn (self) -> DynEvent<'a, C::Output> where C: Send {
         DynEvent {
             inner: self.inner,
             consumer: Box::new(self.consumer),
-            send: self.send,
-            phtm: self.phtm
+            send: self.send
         }
     }
 
     /// Turn's the event into a [`DynLocalEvent`].
     /// A [`DynLocalEvent`] contains a boxed [dynamic](https://doc.rust-lang.org/stable/book/ch19-04-advanced-types.html#dynamically-sized-types-and-the-sized-trait) consumer that **cannot** be shared between threads.
     #[inline(always)]
-    pub fn into_local (self) -> DynLocalEvent<'a, T> {
+    pub fn into_local (self) -> DynLocalEvent<'a, C::Output> {
         DynLocalEvent {
             inner: self.inner,
             consumer: Box::new(self.consumer),
-            send: self.send,
-            phtm: self.phtm
+            send: self.send
         }
     }
 
@@ -120,7 +124,7 @@ impl<'a, T, C: Consumer<'a, T>> Event<T, C> {
     /// If the event isn't aborted before it's completion, it will return `Ok(Some(value))` in case of success, and `Err(error)` if it fails. 
     #[docfg(feature = "cl1_1")]
     #[inline(always)]
-    pub fn abortable (self) -> Result<(AbortableEvent<T, C>, super::AbortHandle)> {
+    pub fn abortable (self) -> Result<(AbortableEvent<C>, super::AbortHandle)> {
         let ctx = self.raw_context()?;
         let flag = super::FlagEvent::new_in(&ctx)?;
         let aborted = std::sync::Arc::new(std::sync::atomic::AtomicU8::new(super::abort::UNINIT));
@@ -152,7 +156,6 @@ impl<'a, T, C: Consumer<'a, T>> Event<T, C> {
             inner: flag.into_inner(),
             consumer,
             send: self.send,
-            phtm: PhantomData
         };
         
         return Ok((event, handle))
@@ -160,23 +163,21 @@ impl<'a, T, C: Consumer<'a, T>> Event<T, C> {
 
     /// Returns an event that maps the result of the previous event.
     #[inline(always)]
-    pub fn map<'b, F: 'b + FnOnce(T) -> U, U> (self, f: F) -> MapEvent<T, U, C, F> where 'a: 'b {
+    pub fn map<'b, F: 'b + FnOnce(C::Output) -> U, U> (self, f: F) -> MapEvent<C::Output, C, F> where 'a: 'b {
         Event { 
             inner: self.inner,
             consumer: Map::new(self.consumer, f),
             send: self.send,
-            phtm: PhantomData
         }
     }
 
     /// Returns an event that maps the result of the previous event, flattening the result.
     #[inline(always)]
-    pub fn try_map<'b, F: 'b + FnOnce(T) -> Result<U>, U> (self, f: F) -> TryMapEvent<T, U, C, F> where 'a: 'b {
+    pub fn try_map<'b, F: 'b + FnOnce(C::Output) -> Result<U>, U> (self, f: F) -> TryMapEvent<C::Output, C, F> where 'a: 'b {
         Event { 
             inner: self.inner,
             consumer: TryMap::new(self.consumer, f),
             send: self.send,
-            phtm: PhantomData
         }
     }
 
@@ -184,12 +185,11 @@ impl<'a, T, C: Consumer<'a, T>> Event<T, C> {
     /// Note that this method requires the current consumer to be [`UnwindSafe`]. 
     /// If this requirement proves bothersome, you can use [`assert_unwind_safe`](Event::assert_catch_unwind).
     #[inline(always)]
-    pub fn catch_unwind (self) -> CatchUnwindEvent<T, C> where C: UnwindSafe {
+    pub fn catch_unwind (self) -> CatchUnwindEvent<C> where C: UnwindSafe {
         CatchUnwindEvent {
             inner: self.inner,
             consumer: CatchUnwind(self.consumer),
-            send: self.send,
-            phtm: PhantomData
+            send: self.send
         }
     }
 
@@ -197,54 +197,51 @@ impl<'a, T, C: Consumer<'a, T>> Event<T, C> {
     /// Note that this method does **not** requires the current consumer to be [`UnwindSafe`], as it's wrapped with [`AssertUnwindSafe`].
     /// If the consumer is known to be [`UnwindSafe`], the [`catch_unwind`](Event::catch_unwind) method is preferable. 
     #[inline(always)]
-    pub fn assert_catch_unwind (self) -> AssertCatchUnwindEvent<T, C> {
+    pub fn assert_catch_unwind (self) -> AssertCatchUnwindEvent<C> {
         AssertCatchUnwindEvent {
             inner: self.inner,
             consumer: CatchUnwind(AssertUnwindSafe(self.consumer)),
-            send: self.send,
-            phtm: PhantomData
+            send: self.send
         }
     }
 
     /// Returns an event that flattens the result of it's parent.
     #[inline(always)]
-    pub fn flatten (self) -> FlattenEvent<T, C> {
+    pub fn flatten (self) -> FlattenEvent<C> {
         FlattenEvent {
             inner: self.inner,
             consumer: Flatten(self.consumer),
-            send: self.send,
-            phtm: PhantomData
+            send: self.send
         }
     }
 
     /// Returns an event that will inspect it's parent's return value before completing.
     #[inline(always)]
-    pub fn inspect<'b, F: 'b + FnOnce(&T)> (self, f: F) -> InspectEvent<T, C, F> where 'a: 'b {
+    pub fn inspect<'b, F: 'b + FnOnce(&C::Output)> (self, f: F) -> InspectEvent<C, F> where 'a: 'b {
         InspectEvent {
             inner: self.inner,
             consumer: Inspect(self.consumer, f),
-            send: self.send,
-            phtm: PhantomData
+            send: self.send
         }
     }
 
     #[inline(always)]
-    pub(super) fn consume (self) -> Result<T> {
+    pub(super) fn consume (self) -> Result<C::Output> {
         self.consumer.consume()
     }
 }
 
-impl<'a, T, C: Consumer<'a, T>> Event<T, C> {
+impl<'a, C: Consumer<'a>> Event<C> {
     /// Blocks the current thread until the event has completed, consuming it and returning it's value.
     #[inline(always)]
-    pub fn join (self) -> Result<T> {
+    pub fn join (self) -> Result<C::Output> {
         self.join_by_ref()?;
         self.consume()
     }
 
     /// Blocks the current thread until the event has completes, consuming it and returning it's value, alongside it's profiling info in nanoseconds.
     #[inline]
-    pub fn join_with_nanos (self) -> Result<(T, ProfilingInfo<u64>)> {
+    pub fn join_with_nanos (self) -> Result<(C::Output, ProfilingInfo<u64>)> {
         self.join_by_ref()?;
         let nanos = self.profiling_nanos()?;
         let v = self.consume()?;
@@ -253,7 +250,7 @@ impl<'a, T, C: Consumer<'a, T>> Event<T, C> {
 
     /// Blocks the current thread until the event has completes, consuming it and returning it's value, alongside it's profiling info in [`SystemTime`].
     #[inline]
-    pub fn join_with_time (self) -> Result<(T, ProfilingInfo<SystemTime>)> {
+    pub fn join_with_time (self) -> Result<(C::Output, ProfilingInfo<SystemTime>)> {
         self.join_by_ref()?;
         let nanos = self.profiling_time()?;
         let v = self.consume()?;
@@ -262,7 +259,7 @@ impl<'a, T, C: Consumer<'a, T>> Event<T, C> {
 
     /// Blocks the current thread until the event has completes, consuming it and returning it's value, alongside it's duration.
     #[inline]
-    pub fn join_with_duration (self) -> Result<(T, Duration)> {
+    pub fn join_with_duration (self) -> Result<(C::Output, Duration)> {
         self.join_by_ref()?;
         let nanos = self.duration()?;
         let v = self.consume()?;
@@ -271,14 +268,14 @@ impl<'a, T, C: Consumer<'a, T>> Event<T, C> {
 
     /// Blocks the current thread util the event has completed, consuming it and returning it's value if it completed correctly, and panicking otherwise.
     #[inline(always)]
-    pub fn join_unwrap (self) -> T {
+    pub fn join_unwrap (self) -> C::Output {
         self.join().unwrap()
     }
 
     /// Returns a future that waits for the event to complete without blocking.
     #[inline(always)]
     #[docfg(feature = "futures")]
-    pub fn join_async (self) -> Result<crate::event::EventWait<T, C>> where C: Unpin {
+    pub fn join_async (self) -> Result<crate::event::EventWait<'a, C>> where C: Unpin {
         crate::event::EventWait::new(self)
     }
 
@@ -288,7 +285,7 @@ impl<'a, T, C: Consumer<'a, T>> Event<T, C> {
     #[cfg_attr(docsrs, doc(cfg(feature = "cl1_1")))]
     #[cfg(feature = "cl1_2")]
     #[inline(always)]
-    pub fn join_all<I: IntoIterator<Item = Self>> (iter: I) -> Result<JoinAllEvent<T, C>> {
+    pub fn join_all<I: IntoIterator<Item = Self>> (iter: I) -> Result<JoinAllEvent<C>> {
         let (raw, consumers) = iter.into_iter()
             .map(|x| (x.inner, x.consumer))
             .unzip::<_, _, Vec<_>, Vec<_>>();
@@ -310,7 +307,7 @@ impl<'a, T, C: Consumer<'a, T>> Event<T, C> {
     #[cfg_attr(docsrs, doc(cfg(feature = "cl1_1")))]
     #[cfg(all(feature = "cl1_1", not(feature = "cl1_2")))]
     #[inline(always)]
-    pub fn join_all<I: IntoIterator<Item = Self>> (iter: I) -> Result<JoinAllEvent<T, C>> {
+    pub fn join_all<I: IntoIterator<Item = Self>> (iter: I) -> Result<JoinAllEvent<C>> {
         let mut iter = iter.into_iter().peekable();
         let size = crate::context::Size::new();
         let mut consumers = Vec::with_capacity(match iter.size_hint() {
@@ -350,7 +347,7 @@ impl<'a, T, C: Consumer<'a, T>> Event<T, C> {
     /// Blocks the current thread until all the events in the iterator have completed, returning their values inside a [`Vec`].
     /// The order of the values in the result is the same as their parents inside the iterator.
     #[inline(always)]
-    pub fn join_all_blocking<I: IntoIterator<Item = Self>> (iter: I) -> Result<Vec<T>> {
+    pub fn join_all_blocking<I: IntoIterator<Item = Self>> (iter: I) -> Result<Vec<C::Output>> {
         let (raw, consumers) = iter.into_iter()
             .map(|x| (x.inner, x.consumer))
             .unzip::<_, _, Vec<_>, Vec<_>>();
@@ -362,7 +359,7 @@ impl<'a, T, C: Consumer<'a, T>> Event<T, C> {
     /// Blocks the current thread until all the events in the array have completed, returning their values in a new array.
     /// The order of the values in the result is the same as their parents inside the iterator.
     #[inline(always)]
-    pub fn join_all_sized_blocking<const N: usize> (iter: [Self; N]) -> Result<[T; N]> {
+    pub fn join_all_sized_blocking<const N: usize> (iter: [Self; N]) -> Result<[C::Output; N]> {
         let mut raw = MaybeUninit::uninit_array::<N>();
         let mut consumers = MaybeUninit::uninit_array::<N>();
 
@@ -381,7 +378,7 @@ impl<'a, T, C: Consumer<'a, T>> Event<T, C> {
     }
 }
 
-impl<'a, T, C: Consumer<'a, T>> Event<T, C> {
+impl<'a, C: Consumer<'a>> Event<C> {
     /// Adds a callback function that will be executed when the event is submitted.
     #[inline(always)]
     pub fn on_submit (&self, f: impl 'static + FnOnce(RawEvent, Result<EventStatus>) + Send) -> Result<()> {
@@ -486,7 +483,7 @@ impl<'a, T, C: Consumer<'a, T>> Event<T, C> {
     }
 }
 
-impl<'a, T, C: Consumer<'a, T>> Deref for Event<T, C> {
+impl<'a, C: Consumer<'a>> Deref for Event<C> {
     type Target = RawEvent;
 
     #[inline(always)]
@@ -495,7 +492,7 @@ impl<'a, T, C: Consumer<'a, T>> Deref for Event<T, C> {
     }
 }
 
-impl<T, C: Unpin> Unpin for Event<T, C> {}
+impl<C: Unpin> Unpin for Event<C> {}
 
 #[cfg(feature = "cl1_1")]
 unsafe extern "C" fn event_listener (event: cl_event, event_command_status: cl_int, user_data: *mut c_void) {

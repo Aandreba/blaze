@@ -66,7 +66,7 @@ impl<'scope, 'env: 'scope, C: 'env + Context> Scope<'scope, 'env, C> {
     }
  
     /// Enqueues a new event within the scope.
-    pub fn enqueue<T, E: FnOnce(&'env RawCommandQueue) -> Result<RawEvent>, F: Consumer<'scope, T>> (&'scope self, supplier: E, consumer: F) -> Result<Event<T, F>> {
+    pub fn enqueue<E: FnOnce(&'env RawCommandQueue) -> Result<RawEvent>, F: Consumer<'scope>> (&'scope self, supplier: E, consumer: F) -> Result<Event<F>> {
         let queue = self.ctx.next_queue();
         let inner = supplier(&queue)?;
         let evt = Event::new(inner, consumer);

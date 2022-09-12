@@ -1,4 +1,4 @@
-use std::{ffi::c_void, task::{Poll, Waker}};
+use std::{ffi::c_void, task::{Poll, Waker}, marker::PhantomData};
 use futures::{Future, FutureExt};
 use opencl_sys::*;
 use utils_atomics::{flag::{AsyncFlag, AsyncSubscribe}, FillQueue};
@@ -7,14 +7,15 @@ use super::{Event, consumer::Consumer};
 
 /// Future for [`join_async`](super::Event::join_async).
 #[cfg_attr(docsrs, doc(cfg(feature = "futures")))]
-pub struct EventWait<T, C> {
-    inner: Option<Event<T, C>>,
-    sub: AsyncSubscribe
+pub struct EventWait<'a, C: 'a> {
+    inner: Option<Event<C>>,
+    sub: AsyncSubscribe,
+    phtm: PhantomData<&'a ()>
 }
 
-impl<'a, T, C: Unpin + Consumer<'a, T>> EventWait<T, C> {
+impl<'a, C: Unpin + Consumer<'a>> EventWait<'a, C> {
     #[inline(always)]
-    pub fn new (inner: Event<T, C>) -> Result<Self> {
+    pub fn new (inner: Event<C>) -> Result<Self> {
         let flag = AsyncFlag::new();
         let sub = flag.subscribe();
         
@@ -22,12 +23,12 @@ impl<'a, T, C: Unpin + Consumer<'a, T>> EventWait<T, C> {
             inner.on_complete_raw(wake_future, flag.into_raw() as *mut _)?;
         }
 
-        return Ok(Self { inner: Some(inner), sub })
+        return Ok(Self { inner: Some(inner), sub, phtm: PhantomData })
     }
 }
 
-impl<'a, T, C: Unpin + Consumer<'a, T>> Future for EventWait<T, C> {
-    type Output = Result<T>;
+impl<'a, C: Unpin + Consumer<'a>> Future for EventWait<'a, C> {
+    type Output = Result<C::Output>;
 
     #[inline(always)]
     fn poll(mut self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> std::task::Poll<Self::Output> {
