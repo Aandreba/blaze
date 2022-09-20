@@ -13,20 +13,37 @@ fn invalid_raw () -> Result<()> {
 #[cfg(feature = "cl1_2")]
 #[test]
 fn test () -> Result<()> {
-    let mut buffer = Buffer::new(&[1, 2, 3, 4, 5], MemAccess::default(), false)?;
-    let slice = buffer.slice(1..)?;
-    let map = slice.map_blocking(1.., None)?;
+    let buffer = Buffer::new(&[1, 2, 3, 4, 5], MemAccess::default(), false)?;
     
-    println!("{slice:?}");
-    println!("{map:?}");
+    let [left, right] = scope(|s| {
+        let left = buffer.read(s, ..2, None)?;
+        let right = buffer.read(s, 2.., None)?;
+        Event::join_all_sized_blocking([left, right])
+    })?;
+    
+    println!("{left:?}, {right:?}");
     Ok(())
 }
 
 #[cfg(feature = "futures")]
 #[tokio::test]
 async fn async_test () -> Result<()> {
-    let mut buffer = Buffer::new(&[1, 2, 3, 4, 5], MemAccess::default(), false)?;
-    
+    use blaze_rs::futures::FutureExt;
 
-    todo!()
+    let buffer = Buffer::new(&[1, 2, 3, 4, 5], MemAccess::default(), false)?;
+    let mut event = Box::pin(blaze_rs::scope_async!(|s| async {
+        let left = buffer.read(s, ..2, None)?.join_async()?;
+        let right = buffer.read(s, 2.., None)?.join_async()?;
+        futures::try_join!(left, right)
+    }));
+
+    let mut ctx = core::task::Context::from_waker(futures::task::noop_waker_ref());
+
+    loop {
+        let poll = event.poll_unpin(&mut ctx);
+        println!("{poll:?}");
+        if poll.is_ready() { break }
+    }
+    
+    Ok(())
 }

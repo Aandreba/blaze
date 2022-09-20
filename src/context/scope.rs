@@ -64,6 +64,13 @@ impl<'scope, 'env: 'scope, C: 'env + Context> Scope<'scope, 'env, C> {
 
         std::hint::unreachable_unchecked()
     }
+
+    #[cfg(feature = "futures")]
+    #[doc(hidden)]
+    #[inline(always)]
+    pub unsafe fn get_data (&self) -> &(AtomicUsize, AtomicI32) {
+        &self.data
+    }
  
     /// Enqueues a new event within the scope.
     pub fn enqueue<E: FnOnce(&'env RawCommandQueue) -> Result<RawEvent>, F: Consumer<'scope>> (&'scope self, supplier: E, consumer: F) -> Result<Event<F>> {
@@ -187,8 +194,8 @@ macro_rules! local_scope_async {
             // Throw any panic from `f`, or the return value of `f`.
             match __result__ {
                 Err(e) => ::std::panic::resume_unwind(e),
-                Ok(x) => {
-                    let e = __scope__.data.1.load(::std::sync::atomic::Ordering::Relaxed);
+                Ok(x) => unsafe {
+                    let e = __scope__.get_data().1.load(::std::sync::atomic::Ordering::Relaxed);
                     if e == 0 {
                         x
                     } else {

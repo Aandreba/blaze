@@ -5,6 +5,8 @@ static CONTEXT : SimpleContext = SimpleContext::default();
 
 #[test]
 fn test () {
-    let (program, kernels) = RawProgram::from_binary(include_bytes!("llvmir.spv"), None).unwrap();
+    let (program, kernels) = RawProgram::from_source("kernel void test () {
+        printf(\"Hello\");
+    }", None).unwrap();
     println!("{program:?}, {kernels:?}");
 }

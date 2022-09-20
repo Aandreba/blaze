@@ -22,9 +22,9 @@ impl CommandQueue {
     /// The size of the queue is defined as the number of enqueued events on it that haven't completed yet.
     /// Whilst this method is safe, it's result should be considered [ephemeral](https://en.wikipedia.org/wiki/Ephemerality).
     #[inline(always)]
-    pub fn size (&self) -> NonZeroUsize {
+    pub fn size (&self) -> usize {
         unsafe {
-            NonZeroUsize::new_unchecked(self.size.0.as_ref().load(Ordering::Relaxed))
+            self.size.0.as_ref().load(Ordering::Relaxed)
         }
     }
 

@@ -42,6 +42,7 @@ use super::consumer::*;
 /// An event with a consumer that will be executed on the completion of the former.\
 /// When using OpenCL 1.0, the event will also contain a [`Sender`](std::sync::mpsc::Sender) that will send the event's callbacks,
 /// (like [`on_complete`](Event::on_complete)) to a different thread to be executed acordingly. 
+#[derive(Debug)]
 pub struct Event<C> {
     inner: RawEvent,
     consumer: C,
@@ -60,6 +61,7 @@ impl<'a> NoopEvent<'a> {
         Self::new(inner, Noop::new())
     }
 
+    /// Adds a consumer to a [`NoopEvent`]
     #[inline(always)]
     pub fn set_consumer<C: Consumer<'a>> (self, consumer: C) -> Event<C> {
         Event {
@@ -291,11 +293,11 @@ impl<'a, C: Consumer<'a>> Event<C> {
             .unzip::<_, _, Vec<_>, Vec<_>>();
         
         if raw.is_empty() {
-            return Err(Error::new(ErrorType::InvalidEventWaitList, "no events inside the iterator"));
+            return Err(Error::new(ErrorKind::InvalidEventWaitList, "no events inside the iterator"));
         }
 
         let queue = raw[0].command_queue()?
-            .ok_or_else(|| Error::new(ErrorType::InvalidCommandQueue, "command queue not found"))?;
+            .ok_or_else(|| Error::new(ErrorKind::InvalidCommandQueue, "command queue not found"))?;
 
         let barrier = queue.barrier(Some(&raw))?;
         return Ok(Event::new(barrier, JoinAll(consumers)));
@@ -445,7 +447,7 @@ impl<'a, C: Consumer<'a>> Event<C> {
                 let cb = super::listener::EventCallback { status, cb: super::listener::Callback::Boxed(f) };
                 match self.send.send(cb) {
                     Ok(_) => Ok(()),
-                    Err(_) => Err(ErrorType::InvalidValue.into())
+                    Err(_) => Err(ErrorKind::InvalidValue.into())
                 }
             }
         }
@@ -476,9 +478,20 @@ impl<'a, C: Consumer<'a>> Event<C> {
                 let cb = super::listener::EventCallback { status, cb: super::listener::Callback::Raw(f, user_data) };
                 match self.send.send(cb) {
                     Ok(_) => Ok(()),
-                    Err(_) => Err(ErrorType::InvalidValue.into())
+                    Err(_) => Err(ErrorKind::InvalidValue.into())
                 }
             }
+        }
+    }
+}
+
+impl<'a, C: Clone + Consumer<'a>> Clone for Event<C> {
+    #[inline]
+    fn clone(&self) -> Self {
+        Self { 
+            inner: self.inner.clone(), 
+            consumer: self.consumer.clone(),
+            send: self.send.clone()
         }
     }
 }

@@ -7,6 +7,7 @@ use super::{Event, consumer::Consumer};
 
 /// Future for [`join_async`](super::Event::join_async).
 #[cfg_attr(docsrs, doc(cfg(feature = "futures")))]
+#[derive(Debug)]
 pub struct EventWait<'a, C: 'a> {
     inner: Option<Event<C>>,
     sub: AsyncSubscribe,
@@ -24,6 +25,17 @@ impl<'a, C: Unpin + Consumer<'a>> EventWait<'a, C> {
         }
 
         return Ok(Self { inner: Some(inner), sub, phtm: PhantomData })
+    }
+}
+
+impl<'a, C: Clone + Consumer<'a>> Clone for EventWait<'a, C> {
+    #[inline]
+    fn clone(&self) -> Self {
+        Self { 
+            inner: self.inner.clone(),
+            sub: self.sub.clone(),
+            phtm: self.phtm.clone()
+        }
     }
 }
 
