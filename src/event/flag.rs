@@ -39,8 +39,8 @@ impl FlagEvent {
 
     /// Attempts to mark the event as completed, returning `true` if successful and `false` if the event was already completed.
     #[inline(always)]
-    pub fn try_mark (&self, error: Option<ErrorType>) -> Result<bool> {
-        let status = error.map_or(CL_COMPLETE, Into::into);
+    pub fn try_mark (&self, error: Option<ErrorCode>) -> Result<bool> {
+        let status = error.map_or(CL_COMPLETE, ErrorCode::as_i32);
 
         unsafe {
             match clSetUserEventStatus(self.inner.id(), status) {

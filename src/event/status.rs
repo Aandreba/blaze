@@ -66,7 +66,7 @@ impl TryFrom<i32> for EventStatus {
     #[inline(always)]
     fn try_from(value: i32) -> Result<Self, Self::Error> {
         if value < 0 {
-            return Err(Error::from(value))
+            return Err(Error::try_from(value).unwrap())
         }
 
         return unsafe { Ok(transmute(value)) }

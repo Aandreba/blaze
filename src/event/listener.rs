@@ -51,7 +51,7 @@ pub(super) fn get_sender () -> ListenerSender {
                         let status = listener.evt.status();
                         let status_num = match &status {
                             Ok(status) => *status as i32,
-                            Err(e) => e.ty as i32 
+                            Err(e) => e.ty.as_i32()
                         };
 
                         // Consume appropiate listener's callbacks

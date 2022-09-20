@@ -50,22 +50,34 @@ impl RawProgram {
     }
 
     pub fn from_binary_in<'a, C: Context> (ctx: &C, source: &[u8], options: impl Into<Option<&'a str>>) -> Result<(Self, Box<[RawKernel]>)> {
-        let lengths = [source.len()];
-        let binaries = [source.as_ptr()];
-
         let devices = ctx.as_raw().devices()?;
         let (num_devices, device_list) = (u32::try_from(devices.len()).unwrap(), devices.as_ptr().cast::<cl_device_id>());
+
+        let lengths = vec![source.len(); devices.len()];
+        let binaries = vec![source.as_ptr(); devices.len()];
 
         println!("{:?}", device_list.is_null());
         println!("{:?}\n", num_devices == 0);
 
+        let mut binary_status = vec![CL_SUCCESS; devices.len()];
         let mut err = 0;
+
         let id = unsafe {
-            clCreateProgramWithBinary(ctx.as_raw().id(), num_devices, device_list, lengths.as_ptr(), binaries.as_ptr(), core::ptr::null_mut(), addr_of_mut!(err))
+            clCreateProgramWithBinary(ctx.as_raw().id(), num_devices, device_list, lengths.as_ptr(), binaries.as_ptr(), binary_status.as_mut_ptr(), addr_of_mut!(err))
         };
 
-        if err != 0 {
-            return Err(Error::from(err))
+        match ErrorCode::from(err) {
+            ErrorCode::Unknown(CL_SUCCESS) => {},
+            ErrorCode::Kind(ErrorKind::InvalidValue) => {
+                for status in binary_status.into_iter().map(ErrorCode::from) {
+                    if status != ErrorCode::Unknown(CL_SUCCESS) {
+                        return Err(Error::from(status))
+                    }
+                }
+
+                return Err(Error::from(ErrorKind::InvalidValue))
+            },
+            other => return Err(Error::from(other))
         }
 
         let this = NonNull::new(id).map(Self).unwrap();
@@ -253,7 +265,7 @@ impl RawProgram {
             return Ok(());
         }
 
-        let build_result = ErrorType::from(build_result);
+        let build_result = ErrorCode::from(build_result);
 
         for device in ctx.queues().into_iter().map(Deref::deref).map(RawCommandQueue::device) {
             let device = device?;

@@ -83,7 +83,7 @@ impl<'scope, 'env: 'scope, C: 'env + Context> Scope<'scope, 'env, C> {
             drop(queue_size);
 
             if let Err(e) = res {
-                let _ = scope_data.1.compare_exchange(CL_SUCCESS, e.ty as i32, Ordering::Relaxed, Ordering::Relaxed);
+                let _ = scope_data.1.compare_exchange(CL_SUCCESS, e.ty.as_i32(), Ordering::Relaxed, Ordering::Relaxed);
             }
 
             if scope_data.0.fetch_sub(1, Ordering::Relaxed) == 1 {
