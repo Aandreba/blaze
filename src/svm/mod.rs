@@ -59,7 +59,7 @@ impl<C: Context> Svm<C> {
         }
 
         let align = u32::try_from(layout.align()).unwrap();
-        let ptr = clSVMAlloc(self.ctx.id(), flags.to_bits(), layout.size(), align);
+        let ptr = clSVMAlloc(self.ctx.as_raw().id(), flags.to_bits(), layout.size(), align);
 
         if self.coarse { self.map_blocking::<{CL_MAP_READ | CL_MAP_WRITE}>(ptr, layout.size(), None)?; }
         Ok(ptr.cast())
@@ -67,7 +67,7 @@ impl<C: Context> Svm<C> {
 
     #[inline(always)]
     pub(crate) unsafe fn map<const MASK: cl_map_flags> (&self, ptr: *mut c_void, size: usize, wait: WaitList) -> Result<RawEvent> {
-        let (num_events_in_wait_list, event_wait_list) = wait_list(wait);
+        let (num_events_in_wait_list, event_wait_list) = wait_list(wait)?;
         let mut evt = core::ptr::null_mut();
         tri!(clEnqueueSVMMap(self.ctx.next_queue().id(), CL_FALSE, MASK, ptr, size, num_events_in_wait_list, event_wait_list, addr_of_mut!(evt)));
 
@@ -76,13 +76,13 @@ impl<C: Context> Svm<C> {
 
     #[inline(always)]
     pub(crate) unsafe fn map_blocking<const MASK: cl_map_flags> (&self, ptr: *mut c_void, size: usize, wait: WaitList) -> Result<()> {
-        let (num_events_in_wait_list, event_wait_list) = wait_list(wait);
+        let (num_events_in_wait_list, event_wait_list) = wait_list(wait)?;
         tri!(clEnqueueSVMMap(self.ctx.next_queue().id(), CL_TRUE, MASK, ptr, size, num_events_in_wait_list, event_wait_list, core::ptr::null_mut()));
         Ok(())
     }
 
     pub(crate) unsafe fn unmap (&self, ptr: *mut c_void, wait: WaitList) -> Result<RawEvent> {
-        let (num_events_in_wait_list, event_wait_list) = wait_list(wait);
+        let (num_events_in_wait_list, event_wait_list) = wait_list(wait)?;
         let mut evt = core::ptr::null_mut();
         tri!(clEnqueueSVMUnmap(self.ctx.next_queue().id(), ptr, num_events_in_wait_list, event_wait_list, addr_of_mut!(evt)));
         
@@ -91,7 +91,7 @@ impl<C: Context> Svm<C> {
 
     #[inline(always)]
     pub unsafe fn free (&self, ptr: *mut u8) {
-        clSVMFree(self.ctx.id(), ptr.cast())
+        clSVMFree(self.ctx.as_raw().id(), ptr.cast())
     }
 }
 

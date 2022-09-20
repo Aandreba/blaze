@@ -72,7 +72,7 @@ impl<T: Copy, C: Context> Buffer<T, C> {
     #[inline]
     pub unsafe fn create_in (ctx: C, len: usize, flags: MemFlags, host_ptr: Option<NonNull<T>>) -> Result<Self> {
         let size = len.checked_mul(core::mem::size_of::<T>()).unwrap();
-        let inner = RawBuffer::new_in(&ctx, size, flags, host_ptr.map(NonNull::cast))?;
+        let inner = RawBuffer::new_in(ctx.as_raw(), size, flags, host_ptr.map(NonNull::cast))?;
 
         Ok(Self {
             inner,

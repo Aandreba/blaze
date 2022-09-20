@@ -14,10 +14,20 @@ pub struct RawProgram (NonNull<c_void>);
 impl RawProgram {
     #[inline(always)]
     pub fn from_source<'a> (source: impl AsRef<str>, options: impl Into<Option<&'a str>>) -> Result<(Self, Box<[RawKernel]>)> {
-        Self::from_source_in(&Global, source, options)
+        Self::from_source_in(Global::get(), source, options)
     }
 
-    #[inline]
+    #[inline(always)]
+    pub fn from_binary<'a> (source: &[u8], options: impl Into<Option<&'a str>>) -> Result<(Self, Box<[RawKernel]>)> {
+        Self::from_binary_in(Global::get(), source, options)
+    }
+
+    #[docfg(feature = "cl2_1")]
+    #[inline(always)]
+    pub fn from_il<'a> (source: impl AsRef<[u8]>, options: impl Into<Option<&'a str>>) -> Result<(Self, Box<[RawKernel]>)> {
+        Self::from_il_in(Global::get(), source, options)
+    }
+
     pub fn from_source_in<'a, C: Context> (ctx: &C, source: impl AsRef<str>, options: impl Into<Option<&'a str>>) -> Result<(Self, Box<[RawKernel]>)> {
         let source = source.as_ref();
         let len = [source.len()].as_ptr();
@@ -26,6 +36,49 @@ impl RawProgram {
         let mut err = 0;
         let id = unsafe {
             clCreateProgramWithSource(ctx.as_raw().id(), 1, strings, len, &mut err)
+        };
+
+        if err != 0 {
+            return Err(Error::from(err))
+        }
+
+        let this = NonNull::new(id).map(Self).unwrap();
+        this.build(options.into(), ctx)?;
+
+        let kernels = this.kernels()?.into_iter().map(|id| unsafe { RawKernel::from_id(id).unwrap() }).collect::<Box<[_]>>();
+        Ok((this, kernels))
+    }
+
+    pub fn from_binary_in<'a, C: Context> (ctx: &C, source: &[u8], options: impl Into<Option<&'a str>>) -> Result<(Self, Box<[RawKernel]>)> {
+        let lengths = [source.len()].as_ptr();
+        let binaries = [source.as_ptr()].as_ptr();
+
+        let devices = ctx.as_raw().devices()?;
+        let (num_devices, device_list) = (u32::try_from(devices.len()).unwrap(), devices.as_ptr().cast());
+
+        let mut err = 0;
+        let id = unsafe {
+            clCreateProgramWithBinary(ctx.as_raw().id(), num_devices, device_list, lengths, binaries, core::ptr::null_mut(), addr_of_mut!(err))
+        };
+
+        if err != 0 {
+            return Err(Error::from(err))
+        }
+
+        let this = NonNull::new(id).map(Self).unwrap();
+        this.build(options.into(), ctx)?;
+
+        let kernels = this.kernels()?.into_iter().map(|id| unsafe { RawKernel::from_id(id).unwrap() }).collect::<Box<[_]>>();
+        Ok((this, kernels))
+    }
+
+    #[docfg(feature = "cl2_1")]
+    pub fn from_il_in<'a, C: Context> (ctx: &C, source: impl AsRef<[u8]>, options: impl Into<Option<&'a str>>) -> Result<(Self, Box<[RawKernel]>)> {
+        let source = source.as_ref();
+
+        let mut err = 0;
+        let id = unsafe {
+            clCreateProgramWithIL(ctx.as_raw().id(), source.as_ptr().cast(), source.len(), &mut err)
         };
 
         if err != 0 {

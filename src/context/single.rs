@@ -40,6 +40,11 @@ impl SimpleContext {
 
 impl Context for SimpleContext {
     #[inline(always)]
+    fn as_raw (&self) -> &RawContext {
+        &self.ctx
+    }
+
+    #[inline(always)]
     fn queues (&self) -> &[CommandQueue] {
         core::slice::from_ref(&self.queue)
     }
