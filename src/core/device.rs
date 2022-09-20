@@ -604,7 +604,10 @@ impl RawDevice {
     /// The platform associated with this device.
     #[inline(always)]
     pub fn platform (&self) -> Result<RawPlatform> {
-        self.get_info_bits(CL_DEVICE_PLATFORM)
+        let id = self.get_info_bits::<cl_platform_id>(CL_DEVICE_PLATFORM)?;
+        unsafe {
+            return RawPlatform::from_id(id).ok_or_else(|| ErrorType::InvalidPlatform.into())
+        }
     }
 
     /// Is ```true``` if the devices preference is for the user to be responsible for synchronization, when sharing memory objects between OpenCL and other APIs such as DirectX, ```false``` if the device / implementation has a performant path for performing synchronization of memory object shared between OpenCL and other APIs such as DirectX.

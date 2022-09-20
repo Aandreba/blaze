@@ -50,15 +50,18 @@ impl RawProgram {
     }
 
     pub fn from_binary_in<'a, C: Context> (ctx: &C, source: &[u8], options: impl Into<Option<&'a str>>) -> Result<(Self, Box<[RawKernel]>)> {
-        let lengths = [source.len()].as_ptr();
-        let binaries = [source.as_ptr()].as_ptr();
+        let lengths = [source.len()];
+        let binaries = [source.as_ptr()];
 
         let devices = ctx.as_raw().devices()?;
-        let (num_devices, device_list) = (u32::try_from(devices.len()).unwrap(), devices.as_ptr().cast());
+        let (num_devices, device_list) = (u32::try_from(devices.len()).unwrap(), devices.as_ptr().cast::<cl_device_id>());
+
+        println!("{:?}", device_list.is_null());
+        println!("{:?}\n", num_devices == 0);
 
         let mut err = 0;
         let id = unsafe {
-            clCreateProgramWithBinary(ctx.as_raw().id(), num_devices, device_list, lengths, binaries, core::ptr::null_mut(), addr_of_mut!(err))
+            clCreateProgramWithBinary(ctx.as_raw().id(), num_devices, device_list, lengths.as_ptr(), binaries.as_ptr(), core::ptr::null_mut(), addr_of_mut!(err))
         };
 
         if err != 0 {

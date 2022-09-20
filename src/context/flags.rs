@@ -1,7 +1,7 @@
 use opencl_sys::{cl_context_properties, CL_CONTEXT_PLATFORM, cl_platform_id};
 use crate::core::RawPlatform;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub struct ContextProperties {
     /// Specifies the platform to use.
@@ -41,7 +41,7 @@ impl ContextProperties {
 
     #[inline(always)]
     pub fn to_bits (&self) -> Option<[cl_context_properties; Self::SIZE]> {
-        if let Some(platform) = self.platform {
+        if let Some(ref platform) = self.platform {
             cfg_if::cfg_if! {
                 if #[cfg(feature = "cl1_2")] {
                     return Some([
