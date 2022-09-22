@@ -1,4 +1,4 @@
-use std::{sync::{Arc, atomic::{AtomicUsize, Ordering, AtomicI32}}, marker::PhantomData, panic::{catch_unwind, AssertUnwindSafe, resume_unwind}};
+use std::{sync::{Arc, atomic::{AtomicUsize, Ordering, AtomicI32}}, marker::{PhantomData}, panic::{catch_unwind, AssertUnwindSafe, resume_unwind}, pin::Pin};
 use opencl_sys::CL_SUCCESS;
 use crate::{prelude::{Result, RawCommandQueue, RawEvent, Event, Error}, event::consumer::{Consumer, Noop, NoopEvent}};
 use super::{Global, Context};
@@ -32,46 +32,7 @@ pub struct Scope<'scope, 'env: 'scope, C: 'env + Context = Global> {
     env: PhantomData<&'env mut &'env ()>
 }
 
-impl<'scope, 'env: 'scope, C: 'env + Context> Scope<'scope, 'env, C> {
-    #[cfg(feature = "futures")]
-    #[doc(hidden)]
-    #[inline(always)]
-    pub fn new_async (ctx: &'env C) -> Self {
-        return Scope {
-            ctx,
-            data: Arc::new((AtomicUsize::new(0), AtomicI32::new(CL_SUCCESS))),
-            thread: ScopeWaker::Flag(Arc::new(futures::task::AtomicWaker::new())),
-            scope: PhantomData,
-            env: PhantomData
-        }
-    }
-
-    #[cfg(feature = "futures")]
-    #[doc(hidden)]
-    #[inline]
-    pub async unsafe fn wait_async (&self) {
-        use std::task::Poll;
-
-        if let ScopeWaker::Flag(ref flag) = self.thread {
-            return futures::future::poll_fn(move |cx| {
-                flag.register(cx.waker());
-                if self.data.0.load(::std::sync::atomic::Ordering::Acquire) == 0 {
-                    return Poll::Ready(())
-                }
-                return Poll::Pending
-            }).await;
-        }
-
-        std::hint::unreachable_unchecked()
-    }
-
-    #[cfg(feature = "futures")]
-    #[doc(hidden)]
-    #[inline(always)]
-    pub unsafe fn get_data (&self) -> &(AtomicUsize, AtomicI32) {
-        &self.data
-    }
- 
+impl<'scope, 'env: 'scope, C: 'env + Context> Scope<'scope, 'env, C> { 
     /// Enqueues a new event within the scope.
     pub fn enqueue<E: FnOnce(&'env RawCommandQueue) -> Result<RawEvent>, F: Consumer<'scope>> (&'scope self, supplier: E, consumer: F) -> Result<Event<F>> {
         let queue = self.ctx.next_queue();
@@ -147,149 +108,128 @@ pub fn local_scope<'env, T, C: 'env + Context, F: for<'scope> FnOnce(&'scope Sco
     }
 }
 
-/// Creates a new scope with the specified context to enqueue events in.
-/// All events that haven't completed by the end of the future will be automatically awaited before the future returns.
-///
-/// # Example
-/// ```rust
-/// let ctx = SimpleContext::default()?;
-/// let mut buffer = Buffer::new_in(ctx.clone(), &[1, 2, 3, 4, 5], MemAccess::default(), false)?;
+cfg_if::cfg_if! {
+    if #[cfg(feature = "futures")] {
+        use futures::Future;
+        use std::task::Poll;
 
-/// let v = local_scope_async!(
-///     &ctx,
-///     |s| async {
-///         let v = buffer.read(s, .., None)?.join_async()?.await?;
-///         println!("{v:?}");
-///         let _ = buffer.read(s, .., None)?;
-///         Ok(())
-///     }
-/// ).await;
-/// 
-/// buffer.write_blocking(1, &[8, 9], None)?;
-/// ```
-#[docfg(feature = "futures")]
-#[macro_export]
-macro_rules! local_scope_async {
-    ($ctx:expr, |$s:ident| $exp:expr) => {
-        async {
-            #[doc(hidden)]
+        enum AsyncScopeFuture<T, Fut> {
+            Future (futures::future::CatchUnwind<AssertUnwindSafe<Fut>>),
+            Panic (Box<dyn std::any::Any + Send>),
+            Value (Result<T>),
+            Ended
+        }
+
+        struct AsyncScope<'scope, 'env: 'scope, T: Unpin, Fut: 'scope + Unpin + Future<Output = Result<T>>, C: 'env + Unpin + Context> {
+            scope: &'scope Scope<'scope, 'env, C>,
+            fut: AsyncScopeFuture<T, Fut>,
+        }
+
+        impl<'scope, 'env, T: Unpin, Fut: 'scope + Unpin + Future<Output = Result<T>>, C: 'env + Unpin + Context> AsyncScope<'scope, 'env, T, Fut, C> {
+            pub fn new<F: FnOnce(&'scope Scope<'scope, 'env, C>) -> Fut> (scope: &'scope Scope<'scope, 'env, C>, f: F) -> Self {
+                let fut = match catch_unwind(AssertUnwindSafe(|| f(scope))) {
+                    Ok(f) => AsyncScopeFuture::Future(futures::FutureExt::catch_unwind(AssertUnwindSafe(f))),
+                    Err(e) => AsyncScopeFuture::Panic(e)
+                };
+
+                return Self { scope, fut };
+            }
+
             #[inline(always)]
-            fn __catch_unwind__<'scope, 'env: 'scope, T, C: 'env + $crate::prelude::Context, Fut: 'scope + ::std::future::Future<Output = $crate::prelude::Result<T>>, F: ::std::ops::FnOnce(&'scope $crate::prelude::Scope<'scope, 'env, C>) -> Fut> (s: &'scope $crate::prelude::Scope<'scope, 'env, C>, f: F) -> ::std::result::Result<Fut, ::std::boxed::Box<dyn ::std::any::Any + ::std::marker::Send>> {
-                return ::std::panic::catch_unwind(::std::panic::AssertUnwindSafe(|| f(s)))
-            }
-
-            let __scope__ = $crate::prelude::Scope::new_async($ctx);
-
-            // Run `f`, but catch panics so we can make sure to wait for all the threads to join.
-            let __result__ = match __catch_unwind__(&__scope__, |$s| $exp) {
-                Ok(x) => $crate::futures::FutureExt::catch_unwind(::std::panic::AssertUnwindSafe(x)).await,
-                Err(e) => Err(e)
-            };
-
-            // Wait until all the events are finished.
-            unsafe {
-                $crate::prelude::Scope::wait_async(&__scope__).await;
-            }
-
-            // Throw any panic from `f`, or the return value of `f`.
-            match __result__ {
-                Err(e) => ::std::panic::resume_unwind(e),
-                Ok(x) => unsafe {
-                    let e = __scope__.get_data().1.load(::std::sync::atomic::Ordering::Relaxed);
-                    if e == 0 {
-                        x
-                    } else {
-                        Err($crate::prelude::Error::from(e))
-                    }
+            fn get_waker (&self) -> &futures::task::AtomicWaker {
+                match self.scope.thread {
+                    ScopeWaker::Flag(ref x) => x,
+                    _ => unsafe { std::hint::unreachable_unchecked() }
                 }
             }
         }
-    };
-}
 
-/// Creates a new scope with the global context to enqueue events in.
-/// All events that haven't completed by the end of the future will be automatically awaited before the future returns.
-///
-/// # Example
-/// ```rust
-/// let mut buffer = Buffer::new_in(ctx.clone(), &[1, 2, 3, 4, 5], MemAccess::default(), false)?;
+        impl<'scope, 'env, T: Unpin, Fut: 'scope + Unpin + Future<Output = Result<T>>, C: 'env + Unpin + Context> Future for AsyncScope<'scope, 'env, T, Fut, C> {
+            type Output = Result<T>;
 
-/// let v = scope_async!(
-///     |s| async {
-///         let v = buffer.read(s, .., None)?.join_async()?.await?;
-///         println!("{v:?}");
-///         let _ = buffer.read(s, .., None)?;
-///         Ok(())
-///     }
-/// ).await;
-/// 
-/// buffer.write_blocking(1, &[8, 9], None)?;
-/// ```
-#[docfg(feature = "futures")]
-#[macro_export]
-macro_rules! scope_async {
-    (|$s:ident| $exp:expr) => {
-        $crate::local_scope_async! {
-            $crate::prelude::Global::get(),
-            |$s| $exp
+            fn poll(mut self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> std::task::Poll<Self::Output> {
+                // Wait future
+                if let AsyncScopeFuture::Future(ref mut fut) = self.fut {
+                    match futures::FutureExt::poll_unpin(fut, cx) {
+                        Poll::Ready(Ok(x)) => self.fut = AsyncScopeFuture::Value(x),
+                        Poll::Ready(Err(e)) => self.fut = AsyncScopeFuture::Panic(e),
+                        Poll::Pending => return Poll::Pending
+                    }
+                }
+                
+                // Sleep
+                self.get_waker().register(cx.waker());
+                if self.scope.data.0.load(Ordering::Acquire) != 0 {
+                    return std::task::Poll::Pending;
+                }
+
+                // Complete
+                match core::mem::replace(&mut self.fut, AsyncScopeFuture::Ended) {
+                    AsyncScopeFuture::Panic(e) => resume_unwind(e),
+                    AsyncScopeFuture::Value(x) => {
+                        let e = self.scope.data.1.load(Ordering::Relaxed);
+                        if e != CL_SUCCESS {
+                            return std::task::Poll::Ready(Err(Error::from(e)));
+                        }
+                        return std::task::Poll::Ready(x)
+                    },
+                    #[cfg(debug_assertions)]
+                    _ => unreachable!(),
+                    #[cfg(not(debug_assertions))]
+                    _ => unreachable_unchecked()
+                }
+            }
+        }
+
+        impl<'scope, 'env, T: Unpin, Fut: Unpin + Future<Output = Result<T>>, C: 'env + Unpin + Context> Drop for AsyncScope<'scope, 'env, T, Fut, C> {
+            #[inline]
+            fn drop(&mut self) {
+                if self.scope.data.0.load(Ordering::Relaxed) == 0 { return; }
+
+                let thread = Arc::new(std::thread::current());
+                let waker = std::task::RawWaker::new(Arc::into_raw(thread).cast(), &TABLE);
+                let waker = unsafe { std::task::Waker::from_raw(waker) };
+                let mut cx = std::task::Context::from_waker(&waker);
+                
+                while futures::FutureExt::poll_unpin(self, &mut cx).is_pending() {
+                    std::thread::park();
+                }
+            }
+        }
+
+        #[inline(always)]
+        pub async fn local_scope_async<'env, T: Unpin, F, C: 'env + Unpin + Context> (ctx: &'env C, f: F) -> Result<T> 
+        where for<'scope> F: FnOnce(&'scope Scope<'scope, 'env, C>) -> std::pin::Pin<Box<dyn 'scope + Future<Output = Result<T>>>> {
+            let scope = Scope {
+                ctx,
+                data: Arc::new((AtomicUsize::new(0), AtomicI32::new(CL_SUCCESS))),
+                thread: ScopeWaker::Flag(Arc::new(futures::task::AtomicWaker::new())),
+                scope: PhantomData,
+                env: PhantomData
+            };
+
+            return AsyncScope::new(&scope, f).await;
+        }
+
+        static TABLE : std::task::RawWakerVTable = std::task::RawWakerVTable::new(clone_waker, wake, wake_by_ref, drop_waker);
+
+        unsafe fn clone_waker (ptr: *const ()) -> std::task::RawWaker {
+            Arc::increment_strong_count(ptr as *const std::thread::Thread);
+            return std::task::RawWaker::new(ptr, &TABLE);
+        }
+
+        unsafe fn wake (ptr: *const ()) {
+            let thread = Arc::from_raw(ptr as *const std::thread::Thread);
+            thread.unpark();
+        }
+        
+        unsafe fn wake_by_ref (ptr: *const ()) {
+            let thread = &*(ptr as *const std::thread::Thread);
+            thread.unpark();
+        }
+
+        unsafe fn drop_waker (ptr: *const ()) {
+            Arc::decrement_strong_count(ptr as *const std::thread::Thread)
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    #[cfg(feature = "futures")]
-    #[tokio::test]
-    async fn test () -> crate::prelude::Result<()> {
-        use crate::prelude::*;
-
-        let ctx = SimpleContext::default()?;
-        let mut buffer = Buffer::new_in(ctx.clone(), &[1, 2, 3, 4, 5], MemAccess::default(), false)?;
-
-        let _ = local_scope_async!(
-            &ctx,
-            |s| async {
-                let v = buffer.read(s, .., None)?.join_async()?.await?;
-                println!("{v:?}");
-                Ok(())
-            }
-        ).await;
-
-        buffer.write_blocking(1, &[8, 9], None)?;
-
-        return Ok(())
-    }
-}
-
-/*
-```rust
-#[global_context]
-static CTX : SimpleContext = SimpleContext::default();
-
-fn manually () {
-    let mut buffer = Buffer::new(&[1, 2, 3, 4, 5], MemAccess::default(), false);
-
-    scope(|s| {
-        let _ = buffer.write(s, 2, &[6], &[]);
-    });
-
-    scope(|s| {
-        let v = buffer.read(s, .., &[])?.join()?;
-        assert_eq!(v.as_slice(), &[1, 2, 6, 4, 5]);
-    })
-}
-
-#[scoped(s)] // it may default to `s`
-fn auto_v1 () {
-    let mut buffer = Buffer::new(&[1, 2, 3, 4, 5], MemAccess::default(), false);
-    
-    scope(|s| {
-        let _ = buffer.write(s, 2, &[6], &[]);
-        todo!();
-    });
-
-    let v = buffer.read(s, .., &[])?.join()?;
-    assert_eq!(v.as_slice(), &[1, 2, 6, 4, 5]);
-}
-```
-*/

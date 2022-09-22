@@ -396,4 +396,11 @@ impl<'a, T: 'a> Consumer<'a> for BufferRead<'a, T> {
         unsafe { self.0.set_len(self.1); }
         Ok(self.0)
     }
-} 
+}
+
+impl<'a, T> Debug for BufferRead<'a, T> {
+    #[inline(always)]
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("BufferRead").finish_non_exhaustive()
+    }
+}
