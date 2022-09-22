@@ -1,4 +1,4 @@
-use std::{sync::{Arc, atomic::{AtomicUsize, Ordering, AtomicI32}}, marker::{PhantomData}, panic::{catch_unwind, AssertUnwindSafe, resume_unwind}, pin::Pin};
+use std::{sync::{Arc, atomic::{AtomicUsize, Ordering, AtomicI32}}, marker::{PhantomData}, panic::{catch_unwind, AssertUnwindSafe, resume_unwind}, pin::Pin, thread::Thread, mem::ManuallyDrop};
 use opencl_sys::CL_SUCCESS;
 use crate::{prelude::{Result, RawCommandQueue, RawEvent, Event, Error}, event::consumer::{Consumer, Noop, NoopEvent}};
 use super::{Global, Context};
@@ -185,9 +185,12 @@ cfg_if::cfg_if! {
             #[inline]
             fn drop(&mut self) {
                 // Await already-started events, without starting new ones.
-                
-                let thread = Arc::new(std::thread::current());
-                let waker = std::task::RawWaker::new(Arc::into_raw(thread).cast(), &TABLE);
+
+                let thread = unsafe {
+                    std::mem::transmute::<_, *const ()>(std::thread::current())
+                };
+
+                let waker = std::task::RawWaker::new(thread, &TABLE);
                 let waker = unsafe { std::task::Waker::from_raw(waker) };
                 
                 loop {
@@ -218,22 +221,23 @@ cfg_if::cfg_if! {
         static TABLE : std::task::RawWakerVTable = std::task::RawWakerVTable::new(clone_waker, wake, wake_by_ref, drop_waker);
 
         unsafe fn clone_waker (ptr: *const ()) -> std::task::RawWaker {
-            Arc::increment_strong_count(ptr as *const std::thread::Thread);
+            let thread = ManuallyDrop::new(std::mem::transmute::<_, Thread>(ptr));
+            let ptr = std::mem::transmute(Thread::clone(&thread));
             return std::task::RawWaker::new(ptr, &TABLE);
         }
 
         unsafe fn wake (ptr: *const ()) {
-            let thread = Arc::from_raw(ptr as *const std::thread::Thread);
+            let thread = std::mem::transmute::<_, Thread>(ptr);
             thread.unpark();
         }
         
         unsafe fn wake_by_ref (ptr: *const ()) {
-            let thread = &*(ptr as *const std::thread::Thread);
+            let thread = ManuallyDrop::new(std::mem::transmute::<_, Thread>(ptr));
             thread.unpark();
         }
 
         unsafe fn drop_waker (ptr: *const ()) {
-            Arc::decrement_strong_count(ptr as *const std::thread::Thread)
+            let _ = std::mem::transmute::<_, Thread>(ptr);
         }
     }
 }
