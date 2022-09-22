@@ -184,15 +184,19 @@ cfg_if::cfg_if! {
         impl<'scope, 'env, T: Unpin, Fut: Unpin + Future<Output = Result<T>>, C: 'env + Unpin + Context> Drop for AsyncScope<'scope, 'env, T, Fut, C> {
             #[inline]
             fn drop(&mut self) {
-                if self.scope.data.0.load(Ordering::Relaxed) == 0 { return; }
-
+                // Await already-started events, without starting new ones.
+                
                 let thread = Arc::new(std::thread::current());
                 let waker = std::task::RawWaker::new(Arc::into_raw(thread).cast(), &TABLE);
                 let waker = unsafe { std::task::Waker::from_raw(waker) };
-                let mut cx = std::task::Context::from_waker(&waker);
                 
-                while futures::FutureExt::poll_unpin(self, &mut cx).is_pending() {
-                    std::thread::park();
+                loop {
+                    self.get_waker().register(&waker);
+                    if self.scope.data.0.load(Ordering::Acquire) != 0 {
+                        std::thread::park();
+                        continue;
+                    }
+                    break;
                 }
             }
         }
