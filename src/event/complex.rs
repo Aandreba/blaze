@@ -1,4 +1,4 @@
-use std::{ops::Deref, ffi::c_void, time::{SystemTime, Duration}, mem::MaybeUninit, panic::{UnwindSafe, AssertUnwindSafe}};
+use std::{ops::Deref, ffi::c_void, time::{SystemTime, Duration}, mem::MaybeUninit, panic::{UnwindSafe, AssertUnwindSafe}, marker::PhantomData};
 use opencl_sys::*;
 use blaze_proc::docfg;
 use crate::{prelude::*};
@@ -10,13 +10,16 @@ pub type DynEvent<'a, T> = Event<Box<dyn Consumer<'a, Output = T> + Send>>;
 pub type DynLocalEvent<'a, T> = Event<Box<dyn Consumer<'a, Output = T>>>;
 
 pub(crate) mod ext {
+    use std::marker::PhantomData;
     use std::panic::AssertUnwindSafe;
     use crate::event::*;
     use crate::event::_consumer::*;
     use blaze_proc::docfg;
 
-    /// Event that completes without any extra operations.
-    pub type NoopEvent<'a> = Event<Noop::<'a>>;
+    /// Event with no underlying operations.
+    pub type NoopEvent = Event<Noop>;
+    /// Event with a [`PhantomData`] consumer.
+    pub type PhantomEvent<T> = Event<PhantomData<T>>;
     /// Event for [`abortable`](super::Event::abortable).
     #[docfg(feature = "cl1_1")]
     pub type AbortableEvent<C> = Event<abort::Abort<C>>;
@@ -54,21 +57,29 @@ pub struct Event<C> {
     send: std::marker::PhantomData<std::sync::mpsc::Sender<()>>,
 }
 
-impl<'a> NoopEvent<'a> {
-    /// Creates a new [`NoopEvent`].
+impl NoopEvent {
+    /// Creates a new noop event.
     #[inline(always)]
     pub fn new_noop (inner: RawEvent) -> Self {
-        Self::new(inner, Noop::new())
+        Self::new(inner, Noop)
     }
 
-    /// Adds a consumer to a [`NoopEvent`]
+    /// Adds a consumer to a noop event
     #[inline(always)]
-    pub fn set_consumer<C: Consumer<'a>> (self, consumer: C) -> Event<C> {
+    pub fn set_consumer<'a, C: Consumer<'a>> (self, consumer: C) -> Event<C> {
         Event {
             inner: self.inner,
             consumer,
             send: self.send
         }
+    }
+}
+
+impl<'a, T: 'a> PhantomEvent<T> {
+    /// Creates a new phantom event.
+    #[inline(always)]
+    pub fn new_phantom (inner: RawEvent) -> Self {
+        Self::new(inner, PhantomData)
     }
 }
 
@@ -311,7 +322,8 @@ impl<'a, C: Consumer<'a>> Event<C> {
     #[inline(always)]
     pub fn join_all<I: IntoIterator<Item = Self>> (iter: I) -> Result<JoinAllEvent<C>> {
         let mut iter = iter.into_iter().peekable();
-        let size = crate::context::Size::new();
+        let size = std::sync::Arc::new(std::sync::atomic::AtomicUsize::default());
+
         let mut consumers = Vec::with_capacity(match iter.size_hint() {
             (_, Some(len)) => len,
             (len, _) => len
@@ -327,14 +339,15 @@ impl<'a, C: Consumer<'a>> Event<C> {
         for evt in iter.into_iter() {
             let flag = flag.clone();
             let size = size.clone();
+            size.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
 
             evt.on_complete(move |_, err| unsafe {
                 if let Err(e) = err {
-                    clSetUserEventStatus(flag.id(), e.ty as i32);
+                    clSetUserEventStatus(flag.id(), e.ty.as_i32());
                     return;
                 }
 
-                if size.drop_last() {
+                if size.fetch_sub(1, std::sync::atomic::Ordering::AcqRel) == 1 {
                     clSetUserEventStatus(flag.id(), CL_COMPLETE);
                     return;
                 }
@@ -435,7 +448,7 @@ impl<'a, C: Consumer<'a>> Event<C> {
                 let user_data = Box::into_raw(Box::new(f));
                 unsafe {
                     if let Err(e) = self.on_status_raw(status, event_listener, user_data.cast()) {
-                        let _ = Box::from_raw(user_data);
+                        let _ = Box::from_raw(user_data); // drop user data
                         return Err(e);
                     }
 

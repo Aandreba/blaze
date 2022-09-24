@@ -1,5 +1,5 @@
 use core::{mem::MaybeUninit, num::NonZeroUsize};
-use std::{borrow::Cow, ptr::{NonNull, addr_of_mut}, ffi::{c_void, CStr, CString}, ops::Deref};
+use std::{borrow::Cow, ptr::{NonNull, addr_of_mut}, ffi::{c_void}, ops::Deref};
 use box_iter::BoxIntoIter;
 use opencl_sys::*;
 use blaze_proc::docfg;
@@ -243,7 +243,7 @@ impl RawProgram {
 
     #[allow(unused)]
     #[cfg(feature = "cl1_2")]
-    fn compile<C: Context> (&self, headers: Option<(&[&CStr], &[RawProgram])>, options: Option<&str>, ctx: &C) -> Result<()> {        
+    fn compile<C: Context> (&self, headers: Option<(&[&std::ffi::CStr], &[RawProgram])>, options: Option<&str>, ctx: &C) -> Result<()> {        
         let options = match options {
             Some(x) => x.as_ptr(),
             None => core::ptr::null()

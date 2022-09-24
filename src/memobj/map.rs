@@ -25,7 +25,7 @@ impl<T, C: Context> Drop for MapPtr<T, C> {
     #[inline(always)]
     fn drop(&mut self) {
         unsafe {
-            self.ctx.next_queue().enqueue_noop_unchecked(|queue| {
+            self.ctx.next_queue().enqueue_noop(|queue| {
                 let mut event = core::ptr::null_mut();
                 tri!(clEnqueueUnmapMemObject(queue.id(), self.mem.id(), self.ptr.cast(), 0, core::ptr::null(), addr_of_mut!(event)));
                 return Ok(RawEvent::from_id(event).unwrap())

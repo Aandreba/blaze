@@ -8,15 +8,6 @@ pub trait Consumer<'a>: 'a {
     fn consume (self) -> Result<Self::Output>;
 }
 
-impl<'a, T: 'a> Consumer<'a> for Result<T> {
-    type Output = T;
-
-    #[inline(always)]
-    fn consume (self) -> Result<T> {
-        self
-    }
-}
-
 impl<'a, T, F: 'a + FnOnce() -> Result<T>> Consumer<'a> for F {
     type Output = T;
 
@@ -26,27 +17,38 @@ impl<'a, T, F: 'a + FnOnce() -> Result<T>> Consumer<'a> for F {
     }
 }
 
-/// **No**-**op**eration trait consumer.
-#[derive(Clone)] // ???
-#[repr(transparent)]
-pub struct Noop<'a> (PhantomData<&'a ()>);
-
-impl Noop<'_> {
-    #[inline(always)]
-    pub const fn new () -> Self { Self(PhantomData) } 
-}
-
-impl<'a> Consumer<'a> for Noop<'a> {
+impl<'a, T: 'a> Consumer<'a> for PhantomData<T> {
     type Output = ();
 
     #[inline(always)]
-    fn consume (self) -> Result<()> {
+    fn consume (self) -> Result<Self::Output> {
+        Ok(())
+    }
+}
+
+impl<'a, T: 'a> Consumer<'a> for Result<T> {
+    type Output = T;
+
+    #[inline(always)]
+    fn consume (self) -> Result<T> {
+        self
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub struct Noop;
+
+impl Consumer<'_> for Noop {
+    type Output = ();
+
+    #[inline(always)]
+    fn consume (self) -> Result<Self::Output> {
         Ok(())
     }
 }
 
 /// Consumer for [`map`](super::Event::map) event.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct Map<T, C, F> (pub(crate) C, pub(crate) F, PhantomData<T>);
 
 impl<'a, 'b, T, U, C: Consumer<'a, Output = T>, F: 'b + FnOnce(T) -> U> Map<T, C, F> where 'a: 'b {
@@ -65,7 +67,7 @@ impl<'a: 'b, 'b, T: 'b, U, C: Consumer<'a, Output = T>, F: 'b + FnOnce(T) -> U> 
 }
 
 /// Consumer for [`try_map`](super::Event::try_map) event.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct TryMap<T, C, F> (pub(crate) C, pub(crate) F, PhantomData<T>);
 
 impl<'a, 'b, T, U, C: Consumer<'a, Output = T>, F: 'b + FnOnce(T) -> Result<U>> TryMap<T, C, F> where 'a: 'b {
@@ -84,7 +86,7 @@ impl<'a: 'b, 'b, T: 'b, U, C: Consumer<'a, Output = T>, F: 'b + FnOnce(T) -> Res
 }
 
 /// Consumer for [`catch_unwind`](super::Event::catch_unwind) event.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 #[repr(transparent)]
 pub struct CatchUnwind<C: UnwindSafe> (pub(super) C);
 
@@ -102,7 +104,7 @@ impl<'a, C: Consumer<'a> + UnwindSafe> Consumer<'a> for CatchUnwind<C> {
 } 
 
 /// Consumer for [`flatten`](super::Event::flatten) event.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 #[repr(transparent)]
 pub struct Flatten<C> (pub(super) C);
 
@@ -116,7 +118,7 @@ impl<'a, T, C: Consumer<'a, Output = Result<T>>> Consumer<'a> for Flatten<C> {
 }
 
 /// Consumer for [`inspect`](super::Event::inspect) event.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct Inspect<C, F> (pub(super) C, pub(super) F);
 
 impl<'a, C: Consumer<'a>, F: 'a + FnOnce(&C::Output)> Consumer<'a> for Inspect<C, F> {
@@ -132,7 +134,7 @@ impl<'a, C: Consumer<'a>, F: 'a + FnOnce(&C::Output)> Consumer<'a> for Inspect<C
 
 /// Consumer for [`join_all`](super::Event::join_all) event.
 #[docfg(feature = "cl1_1")]
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct JoinAll<C> (pub(super) Vec<C>);
 
 #[cfg(feature = "cl1_1")]

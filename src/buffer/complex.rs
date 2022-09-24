@@ -1,11 +1,14 @@
 use std::{marker::PhantomData, ptr::{NonNull}, ops::{Deref, DerefMut}, fmt::Debug, mem::MaybeUninit};
 use blaze_proc::docfg;
-use crate::{context::{Context, Global, Scope, local_scope}, prelude::{Event}, event::consumer::{NoopEvent, Consumer}, WaitList, memobj::MapPtr};
+use crate::{context::{Context, Global, Scope, local_scope}, prelude::{Event}, event::consumer::{Consumer, PhantomEvent}, WaitList, memobj::MapPtr};
 use crate::core::*;
 use crate::buffer::{flags::{MemFlags, HostPtr, MemAccess}, RawBuffer};
 use super::{IntoRange, BufferRange, MapGuard, BufferMapEvent, BufferMap, BufferMapMutEvent, MapMutGuard, BufferMapMut};
 
 pub type ReadEvent<'a, T> = Event<BufferRead<'a, T>>;
+pub type ReadIntoEvent<'a, T> = PhantomEvent<&'a mut [T]>;
+pub type WriteEvent<'a, T> = PhantomEvent<&'a mut [T]>;
+pub type CopyEvent<'a, T, C> = PhantomEvent<(&'a Buffer<T, C>, &'a mut Buffer<T, C>)>;
 
 #[doc = include_str!("../../docs/src/buffer/README.md")]
 pub struct Buffer<T, C: Context = Global> {
@@ -67,9 +70,7 @@ impl<T, C: Context> Buffer<T, C> {
             let supplier = |queue| unsafe {
                 buffer.inner.fill_raw_in(MaybeUninit::<T>::zeroed(), range, queue, None)
             };
-            unsafe {
-                buffer.ctx.next_queue().enqueue_noop_unchecked(supplier)?.join()?;
-            }
+            buffer.ctx.next_queue().enqueue_noop(supplier)?.join()?;
         }
         #[cfg(not(feature = "cl1_2"))]
         {
@@ -83,9 +84,7 @@ impl<T, C: Context> Buffer<T, C> {
                 buffer.inner.write_from_ptr_in(range, v.as_ptr().cast(), queue, None)
             };
 
-            unsafe {
-                buffer.ctx.next_queue().enqueue_noop_unchecked(supplier)?.join()?;
-            }
+            buffer.ctx.next_queue().enqueue_noop(supplier)?.join()?;
         }
         return Ok(buffer)
     }
@@ -101,6 +100,12 @@ impl<T, C: Context> Buffer<T, C> {
             ctx,
             phtm: PhantomData
         })
+    }
+
+    /// Returns a reference to the [`Buffer`]'s underlying [`Context`].
+    #[inline(always)]
+    pub fn context (&self) -> &C {
+        &self.ctx
     }
 
     /// Creates a shared slice of this buffer.
@@ -181,13 +186,13 @@ impl<T: Copy + Unpin, C: Context> Buffer<T, C> {
 
     /// Reads the contents of the buffer into `dst`.
     #[inline]
-    pub fn read_into<'scope, 'env, R: IntoRange> (&'env self, s: &'scope Scope<'scope, 'env, C>, offset: usize, dst: &'env mut [T], wait: WaitList) -> Result<NoopEvent<'scope>> {
+    pub fn read_into<'scope, 'env, R: IntoRange> (&'env self, s: &'scope Scope<'scope, 'env, C>, offset: usize, dst: &'env mut [T], wait: WaitList) -> Result<ReadIntoEvent<'scope, T>> {
         let range = BufferRange::from_parts::<T>(offset, dst.len())?;
         let supplier = |queue| unsafe {
             self.inner.read_to_ptr_in(range, dst.as_mut_ptr().cast(), queue, wait)
         };
 
-        return s.enqueue_noop(supplier)
+        return s.enqueue_phantom(supplier)
     }
 
     /// Reads the contents of the buffer into `dst`, blocking the current thread until the operation has completed.
@@ -198,20 +203,18 @@ impl<T: Copy + Unpin, C: Context> Buffer<T, C> {
             self.inner.read_to_ptr_in(range, dst.as_mut_ptr().cast(), queue, wait)
         };
 
-        unsafe {
-            self.ctx.next_queue().enqueue_noop_unchecked(supplier)?.join()
-        }
+        self.ctx.next_queue().enqueue_noop(supplier)?.join()
     }
 
     /// Writes the contents of `src` into the buffer
     #[inline]
-    pub fn write<'scope, 'env> (&'scope mut self, scope: &'scope Scope<'scope, 'env, C>, offset: usize, src: &'env [T], wait: WaitList) -> Result<NoopEvent<'scope>> {
+    pub fn write<'scope, 'env> (&'scope mut self, scope: &'scope Scope<'scope, 'env, C>, offset: usize, src: &'env [T], wait: WaitList) -> Result<WriteEvent<'scope, T>> {
         let range = BufferRange::from_parts::<T>(offset, src.len()).unwrap();
         let supplier = |queue| unsafe {
             self.inner.write_from_ptr_in(range, src.as_ptr().cast(), queue, wait)
         };
 
-        scope.enqueue_noop(supplier)
+        scope.enqueue_phantom(supplier)
     }
 
     /// Writes the contents of `src` into the buffer, blocking the current thread until the operation has completed.
@@ -222,14 +225,12 @@ impl<T: Copy + Unpin, C: Context> Buffer<T, C> {
             self.inner.write_from_ptr_in(range, src.as_ptr().cast(), queue, wait)
         };
 
-        unsafe {
-            self.ctx.next_queue().enqueue_noop_unchecked(supplier)?.join()
-        }
+        self.ctx.next_queue().enqueue_noop(supplier)?.join()
     }
 
     /// Copies the contents from `self` to `dst`
     #[inline]
-    pub fn copy_to<'scope, 'env> (&'env self, s: &'scope Scope<'scope, 'env, C>, src_offset: usize, dst: &'env mut Self, dst_offset: usize, size: usize, wait: WaitList) -> Result<NoopEvent<'scope>> {
+    pub fn copy_to<'scope, 'env> (&'env self, s: &'scope Scope<'scope, 'env, C>, src_offset: usize, dst: &'env mut Self, dst_offset: usize, size: usize, wait: WaitList) -> Result<CopyEvent<'scope, T, C>> {
         let src_offset = src_offset.checked_mul(core::mem::size_of::<T>()).unwrap();
         let dst_offset = dst_offset.checked_mul(core::mem::size_of::<T>()).unwrap();
         let size = size.checked_mul(core::mem::size_of::<T>()).unwrap();
@@ -237,7 +238,7 @@ impl<T: Copy + Unpin, C: Context> Buffer<T, C> {
             dst.copy_from_in(dst_offset, &self, src_offset, size, queue, wait)
         };
 
-        s.enqueue_noop(supplier)
+        s.enqueue_phantom(supplier)
     }
 
     /// Copies the contents from `self` to `dst`, blocking the current thread until the operation has completed.
@@ -250,14 +251,12 @@ impl<T: Copy + Unpin, C: Context> Buffer<T, C> {
             dst.copy_from_in(dst_offset, &self, src_offset, size, queue, wait)
         };
 
-        unsafe {
-            self.ctx.next_queue().enqueue_noop_unchecked(supplier)?.join()
-        }
+        self.ctx.next_queue().enqueue_noop(supplier)?.join()
     }
 
     /// Copies the contents from `src` to `self`
     #[inline(always)]
-    pub fn copy_from<'scope, 'env> (&'env mut self, s: &'scope Scope<'scope, 'env, C>, dst_offset: usize, src: &'env Self, src_offset: usize, size: usize, wait: WaitList) -> Result<NoopEvent<'scope>> {
+    pub fn copy_from<'scope, 'env> (&'env mut self, s: &'scope Scope<'scope, 'env, C>, dst_offset: usize, src: &'env Self, src_offset: usize, size: usize, wait: WaitList) -> Result<CopyEvent<'scope, T, C>> {
         src.copy_to(s, src_offset, self, dst_offset, size, wait)
     }
 
@@ -270,13 +269,13 @@ impl<T: Copy + Unpin, C: Context> Buffer<T, C> {
     /// Fills a region of the buffer with `v`
     #[docfg(feature = "cl1_2")]
     #[inline(always)]
-    pub fn fill<'scope, 'env, R: IntoRange> (&'env mut self, s: &'scope Scope<'scope, 'env, C>, v: T, range: R, wait: WaitList) -> Result<NoopEvent<'scope>> {
+    pub fn fill<'scope, 'env, R: IntoRange> (&'env mut self, s: &'scope Scope<'scope, 'env, C>, v: T, range: R, wait: WaitList) -> Result<CopyEvent<'scope, T, C>> {
         let range = range.into_range::<T>(&self.inner)?;
         let supplier = |queue| unsafe {
             self.inner.fill_raw_in(v, range, queue, wait)
         };
         
-        s.enqueue_noop(supplier)
+        s.enqueue_phantom(supplier)
     }
 
     /// Fills a region of the buffer with `v`, blocking the current thread until the operation has completed.
@@ -288,9 +287,7 @@ impl<T: Copy + Unpin, C: Context> Buffer<T, C> {
             self.inner.fill_raw_in(v, range, queue, wait)
         };
         
-        unsafe {
-            self.ctx.next_queue().enqueue_noop_unchecked(supplier)?.join()
-        }
+        self.ctx.next_queue().enqueue_noop(supplier)?.join()
     }
 }
 
@@ -324,7 +321,7 @@ impl<T, C: Context> Buffer<T, C> {
         };
 
         unsafe {
-            self.ctx.next_queue().enqueue_noop_unchecked(supplier)?.join()?;
+            self.ctx.next_queue().enqueue_noop(supplier)?.join()?;
             let ptr = core::slice::from_raw_parts_mut(ptr.assume_init() as *mut T, len);
             let ptr = MapPtr::new(ptr, self.inner.clone().into(), self.ctx.clone());
             return Ok(MapGuard::new(ptr)) 
@@ -360,7 +357,7 @@ impl<T, C: Context> Buffer<T, C> {
         };
 
         unsafe {
-            self.ctx.next_queue().enqueue_noop_unchecked(supplier)?.join()?;
+            self.ctx.next_queue().enqueue_noop(supplier)?.join()?;
             let ptr = core::slice::from_raw_parts_mut(ptr.assume_init() as *mut T, len);
             let ptr = MapPtr::new(ptr, self.inner.clone().into(), self.ctx.clone());
             return Ok(MapMutGuard::new(ptr)) 
@@ -429,18 +426,69 @@ impl<'a, T> Debug for BufferRead<'a, T> {
     }
 }
 
+/// Creates a buffer with sensible defaults.
+/// 
+/// This macro has three forms:
+/// 
+/// - Create a [`Buffer`] containing a list of elements
+/// 
+/// ```rust
+/// use blaze_rs::{buffer, prelude::*};
+/// 
+/// let r#macro: Result<Buffer<i32>> = buffer![1, 2, 3];
+/// let expanded: Result<Buffer<i32>> = Buffer::new(&[1, 2, 3], MemAccess::READ_WRITE, false);
+/// 
+/// assert_eq!(r#macro, expanded);
+/// ```
+/// 
+/// - Create a [`Buffer`] with a given element and size
+/// 
+/// ```rust
+/// use blaze_rs::{buffer, prelude::*};
+/// 
+/// let r#macro: Result<Buffer<i32>> = buffer![1; 3];
+/// let expanded: Result<Buffer<i32>> = Buffer::new(&vec![1; 3], MemAccess::READ_WRITE, false);
+/// 
+/// assert_eq!(r#macro, expanded);
+/// ```
+/// 
+/// - Create a [`Buffer`] with a by-index constructor
+/// 
+/// ```rust
+/// use blaze_rs::{buffer, prelude::*};
+/// 
+/// let r#macro: Buffer<i32> = buffer![|i| i as i32; 3]?;
+/// let expanded: Buffer<i32> = {
+///     let mut res = Buffer::new_uninit(3, MemAccess::READ_WRITE, false)?;
+///     for (i, v) in res.map_mut_blocking(.., WaitList::None)?.iter_mut().enumerate() {
+///         v.write(i as i32);
+///     }
+///     res
+/// };
+/// 
+/// assert_eq!(r#macro, expanded);
+/// ```
+/// 
+/// In particular, the by-index constructor facilitates the construction of Buffers of `!Copy` types.
+/// 
+/// ```rust
+/// use std::sync::*;
+/// use blaze_rs::{buffer, prelude::*};
+/// 
+/// let values: Buffer<Mutex<i32>> = buffer![|i| Mutex::new(i); 5]?;
+/// ```
 #[macro_export]
 macro_rules! buffer {
     ($($v:expr),+) => {
-        $crate::buffer::Buffer::new(&::std::vec![$($v),+], $crate::buffer::flags::MemAccess::READ_WRITE, false)
+        $crate::buffer::Buffer::new(&[$($v),+], $crate::buffer::flags::MemAccess::READ_WRITE, false)
     };
 
     (|$i:ident| $v:expr; $len:expr) => {
         match $crate::buffer::Buffer::new_uninit($len, $crate::buffer::flags::MemAccess::READ_WRITE, false) {
-            Ok(__1_) => match __1_.map_mut_blocking(.., $crate::WaitList::None) {
-                Ok(__2_) => {
-                    for ($i, __3_) in __2_.into_iter().enumerate() {
-                        __3_.write((|$i| $v)($i));
+            Ok(mut __1_) => match __1_.map_mut_blocking(.., $crate::WaitList::None) {
+                Ok(mut __2_) => {
+                    for ($i, __3_) in __2_.iter_mut().enumerate() {
+                        __3_.write($v);
                     }
                     unsafe { Ok(__1_.assume_init()) }
                 },

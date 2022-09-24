@@ -96,6 +96,16 @@ impl<'a, T: Debug, C: Context> Debug for MapGuard<'_, T, C> {
     }
 }
 
+impl<'a, 'b: 'a, T, C: Context> IntoIterator for &'b MapGuard<'a, T, C> {
+    type Item = &'b T;
+    type IntoIter = core::slice::Iter<'b, T>;
+
+    #[inline(always)]
+    fn into_iter(self) -> Self::IntoIter {
+        self.deref().iter()
+    }
+}
+
 /// Guard for a read-write map of a [`Buffer`]
 pub struct MapMutGuard<'a, T, C: Context = Global> {
     ptr: MapPtr<T, C>,
@@ -126,6 +136,16 @@ impl<'a, T, C: Context> DerefMut for MapMutGuard<'a, T, C> {
         unsafe {
             &mut *self.ptr.ptr
         }
+    }
+}
+
+impl<'a, 'b: 'a, T, C: Context> IntoIterator for &'b mut MapMutGuard<'a, T, C> {
+    type Item = &'b mut T;
+    type IntoIter = core::slice::IterMut<'b, T>;
+
+    #[inline(always)]
+    fn into_iter(self) -> Self::IntoIter {
+        self.deref_mut().iter_mut()
     }
 }
 

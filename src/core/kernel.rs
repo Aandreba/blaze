@@ -71,7 +71,7 @@ impl RawKernel {
     }
 
     #[inline(always)]
-    pub unsafe fn enqueue_with_scope<'scope, 'env, C: Context, const N: usize> (&mut self, scope: &'scope Scope<'scope, 'env, C>, global_work_dims: [usize; N], local_work_dims: impl Into<Option<[usize; N]>>, wait: WaitList) -> Result<NoopEvent<'scope>> {
+    pub unsafe fn enqueue_with_scope<'scope, 'env, C: Context, const N: usize> (&mut self, scope: &'scope Scope<'scope, 'env, C>, global_work_dims: [usize; N], local_work_dims: impl Into<Option<[usize; N]>>, wait: WaitList) -> Result<NoopEvent> {
         let work_dim = u32::try_from(N).expect("Integer overflow");
         let local_work_dims = local_work_dims.into();
         let local_work_dims = match local_work_dims {

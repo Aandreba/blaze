@@ -176,9 +176,9 @@ impl RawEvent {
     }
 }
 
-impl<'a> Into<NoopEvent<'a>> for RawEvent {
+impl Into<NoopEvent> for RawEvent {
     #[inline(always)]
-    fn into(self) -> NoopEvent<'a> {
+    fn into(self) -> NoopEvent {
         Event::new_noop(self)
     }
 }

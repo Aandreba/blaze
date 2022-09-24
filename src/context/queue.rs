@@ -1,11 +1,11 @@
-use std::{sync::{atomic::{AtomicUsize, Ordering}}, ops::{Deref, DerefMut}, ptr::NonNull, alloc::Layout, num::NonZeroUsize, mem::ManuallyDrop};
+use std::{sync::{atomic::{AtomicUsize, Ordering}, Arc}, ops::{Deref, DerefMut}, marker::PhantomData};
 use crate::{prelude::{RawCommandQueue, Result, Event, RawEvent}, event::consumer::*};
 
 /// A command queue with extra capabilities to a raw OpenCL one.
 #[derive(Debug, Clone)]
 pub struct CommandQueue {
     inner: RawCommandQueue,
-    pub(super) size: Size
+    pub(super) size: Arc<AtomicUsize>
 }
 
 impl CommandQueue {
@@ -14,7 +14,7 @@ impl CommandQueue {
     pub fn new (inner: RawCommandQueue) -> Self {
         Self {
             inner,
-            size: Size::new()
+            size: Arc::new(AtomicUsize::default())
         }
     }
 
@@ -23,9 +23,7 @@ impl CommandQueue {
     /// Whilst this method is safe, it's result should be considered [ephemeral](https://en.wikipedia.org/wiki/Ephemerality).
     #[inline(always)]
     pub fn size (&self) -> usize {
-        unsafe {
-            self.size.0.as_ref().load(Ordering::Relaxed)
-        }
+        self.size.load(Ordering::Relaxed)
     }
 
     /// Enqueues a new event without checking if the event's consumer has a safe lifetime.
@@ -35,15 +33,20 @@ impl CommandQueue {
         let evt = Event::new(inner, consumer);
 
         let size = self.size.clone();
-        evt.on_complete(move |_, _| drop(size)).unwrap();
+        if let Err(e) = evt.on_complete(move |_, _| {
+            size.fetch_sub(1, Ordering::AcqRel);
+        }) {
+            self.size.fetch_sub(1, Ordering::AcqRel);
+            return Err(e);
+        }
 
         return Ok(evt)
     }
 
-    /// Enqueues a new noop event without checking if the event's consumer has a safe lifetime.
+    /// Enqueues a new phantom event without checking if the event's consumer has a safe lifetime.
     #[inline(always)]
-    pub unsafe fn enqueue_noop_unchecked<'a, 'b, 'r: 'b, E: 'b + FnOnce(&'r RawCommandQueue) -> Result<RawEvent>> (&'r self, supplier: E) -> Result<NoopEvent<'a>> {
-        self.enqueue_unchecked(supplier, Noop::new())
+    pub unsafe fn enqueue_phantom_unchecked<'a, 'r: 'a, T, E: 'a + FnOnce(&'r RawCommandQueue) -> Result<RawEvent>> (&'r self, supplier: E) -> Result<PhantomEvent<T>> {
+        self.enqueue_unchecked(supplier, PhantomData)
     }
 
     /// Enqueues a new event with a consumer with `'static` lifetime. 
@@ -55,11 +58,16 @@ impl CommandQueue {
         }
     }
 
-     /// Enqueues a new noop event with a consumer with `'static` lifetime. 
-    /// The `'static` lifetime ensures the compiler that the consumer is safe to be called at any time in the lifetime of the program.
+    /// Enqueues a new noop event.
     #[inline(always)]
-    pub fn enqueue_noop<'b, 'r: 'b, E: 'b + FnOnce(&'r RawCommandQueue) -> Result<RawEvent>> (&'r self, supplier: E) -> Result<NoopEvent<'static>> {
-        self.enqueue(supplier, Noop::new())
+    pub fn enqueue_noop<'a, 'r: 'a, E: 'a + FnOnce(&'r RawCommandQueue) -> Result<RawEvent>> (&'r self, supplier: E) -> Result<NoopEvent> {
+        self.enqueue(supplier, Noop)
+    }
+
+    /// Enqueues a new phantom event with a `'static` lifetime. The `'static` lifetime ensures the compiler that the consumer is safe to be called at any time in the lifetime of the program.
+    #[inline(always)]
+    pub fn enqueue_phantom<'a, 'r: 'a, T: 'static, E: 'a + FnOnce(&'r RawCommandQueue) -> Result<RawEvent>> (&'r self, supplier: E) -> Result<PhantomEvent<T>> {
+        self.enqueue(supplier, PhantomData)
     }
 }
 
@@ -78,55 +86,3 @@ impl DerefMut for CommandQueue {
         &mut self.inner
     }
 }
-
-#[derive(Debug)]
-#[repr(transparent)]
-pub(crate) struct Size (NonNull<AtomicUsize>);
-
-impl Size {
-    #[inline(always)]
-    pub fn new () -> Size {
-        unsafe {
-            let alloc = std::alloc::alloc_zeroed(Layout::new::<AtomicUsize>());
-            NonNull::new(alloc.cast()).map(Size).unwrap()
-        }
-    }
-
-    #[allow(unused)]
-    #[inline(always)]
-    pub fn drop_last (self) -> bool {
-        let this = ManuallyDrop::new(self);
-
-        unsafe {
-            if this.0.as_ref().fetch_sub(1, Ordering::AcqRel) == 0 {
-                std::alloc::dealloc(this.0.as_ptr().cast(), Layout::new::<AtomicUsize>());
-                return true
-            }
-            return false
-        }
-    }
-}
-
-impl Clone for Size {
-    #[inline(always)]
-    fn clone(&self) -> Self {
-        unsafe {
-            self.0.as_ref().fetch_add(1, Ordering::AcqRel);
-        }
-        Self(self.0)
-    }
-}
-
-impl Drop for Size {
-    #[inline(always)]
-    fn drop(&mut self) {
-        unsafe {
-            if self.0.as_ref().fetch_sub(1, Ordering::AcqRel) == 0 {
-                std::alloc::dealloc(self.0.as_ptr().cast(), Layout::new::<AtomicUsize>())
-            }
-        }
-    }
-}
-
-unsafe impl Send for Size {}
-unsafe impl Sync for Size {}

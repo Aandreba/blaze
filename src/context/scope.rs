@@ -1,6 +1,6 @@
-use std::{sync::{Arc, atomic::{AtomicUsize, Ordering, AtomicI32}}, marker::{PhantomData, PhantomPinned}, panic::{catch_unwind, AssertUnwindSafe, resume_unwind}, thread::Thread};
+use std::{sync::{Arc, atomic::{AtomicUsize, Ordering, AtomicI32}}, marker::{PhantomData}, panic::{catch_unwind, AssertUnwindSafe, resume_unwind}, thread::Thread};
 use opencl_sys::CL_SUCCESS;
-use crate::{prelude::{Result, RawCommandQueue, RawEvent, Event, Error}, event::consumer::{Consumer, Noop, NoopEvent}};
+use crate::{prelude::{Result, RawCommandQueue, RawEvent, Event, Error}, event::consumer::{Consumer, Noop, NoopEvent, PhantomEvent}};
 use super::{Global, Context};
 use blaze_proc::docfg;
 
@@ -33,17 +33,20 @@ pub struct Scope<'scope, 'env: 'scope, C: 'env + Context = Global> {
 }
 
 impl<'scope, 'env: 'scope, C: 'env + Context> Scope<'scope, 'env, C> {
+    /// Creates a new [`Event`] scope in the current thread
     #[inline(always)]
     pub fn new (ctx: &'env C) -> Self {
         Self::with_thread(ctx, std::thread::current())
     }
 
+    /// Creates a new [`Event`] scope targeted to `async` use
     #[docfg(feature = "futures")]
     #[inline(always)]
     pub fn new_async (ctx: &'env C) -> Self {
         Self::with_waker(ctx, Arc::new(futures::task::AtomicWaker::new()))
     }
     
+    /// Creates a new [`Event`] scope with the specified thread
     #[inline(always)]
     pub fn with_thread (ctx: &'env C, thread: Thread) -> Self {
         Self {
@@ -55,6 +58,7 @@ impl<'scope, 'env: 'scope, C: 'env + Context> Scope<'scope, 'env, C> {
         }
     }
 
+    /// Creates a new `async` [`Event`] scope with the specified waker 
     #[docfg(feature = "futures")]
     #[inline(always)]
     pub fn with_waker (ctx: &'env C, waker: Arc<futures::task::AtomicWaker>) -> Self {
@@ -98,8 +102,14 @@ impl<'scope, 'env: 'scope, C: 'env + Context> Scope<'scope, 'env, C> {
 
     /// Enqueues a new [`NoopEvent`] within the scope.
     #[inline(always)]
-    pub fn enqueue_noop<E: FnOnce(&'env RawCommandQueue) -> Result<RawEvent>> (&'scope self, supplier: E) -> Result<NoopEvent<'scope>> {
-        self.enqueue(supplier, Noop::new())
+    pub fn enqueue_noop<E: FnOnce(&'env RawCommandQueue) -> Result<RawEvent>> (&'scope self, supplier: E) -> Result<NoopEvent> {
+        self.enqueue(supplier, Noop)
+    }
+
+    /// Enqueues a new [`NoopEvent`] within the scope.
+    #[inline(always)]
+    pub fn enqueue_phantom<T: 'scope, E: FnOnce(&'env RawCommandQueue) -> Result<RawEvent>> (&'scope self, supplier: E) -> Result<PhantomEvent<T>> {
+        self.enqueue(supplier, PhantomData)
     }
 }
 
@@ -158,17 +168,17 @@ cfg_if::cfg_if! {
         pub struct InnerAsyncScope<'scope, 'env: 'scope, T, Fut: 'scope + Future<Output = Result<T>>, C: 'env + Context> {
             scope: &'scope Scope<'scope, 'env, C>,
             fut: AsyncScopeFuture<T, Fut>,
-            _pin: PhantomPinned
+            _pin: std::marker::PhantomPinned
         }
 
         impl<'scope, 'env: 'scope, T, Fut: 'scope + Future<Output = Result<T>>, C: 'env + Context> InnerAsyncScope<'scope, 'env, T, Fut, C> {
-            pub fn new<F: FnOnce(&'scope Scope<'scope, 'env, C>) -> Fut> (scope: &'scope Scope<'scope, 'env, C>, f: F) -> Self {
+            pub unsafe fn new<F: FnOnce(&'scope Scope<'scope, 'env, C>) -> Fut> (scope: &'scope Scope<'scope, 'env, C>, f: F) -> Self {
                 let fut = match catch_unwind(AssertUnwindSafe(|| f(scope))) {
                     Ok(f) => AsyncScopeFuture::Future(futures::FutureExt::catch_unwind(AssertUnwindSafe(f))),
                     Err(e) => AsyncScopeFuture::Panic(e)
                 };
 
-                return Self { scope, fut, _pin: PhantomPinned };
+                return Self { scope, fut, _pin: std::marker::PhantomPinned };
             }
 
             #[inline(always)]
@@ -242,6 +252,66 @@ cfg_if::cfg_if! {
             }
         }
 
+        /// Creates a new scope for spawining scoped events.
+        /// 
+        /// The [`scope_async`](crate::scope_async) macro allows for the creation of `async` scopes, returning a [`Future`](std::future::Future)
+        /// that completes when all the events spawned inside the scope have completed.
+        /// 
+        /// ```rust
+        /// use blaze_rs::prelude::*;
+        /// use futures::future::*;
+        /// 
+        /// let buffer = buffer![1, 2, 3, 4, 5]?;
+        /// 
+        /// let (left, right) = scope_async!(|s| async {
+        ///     let left = buffer.read(s, ..2, None)?.join_async()?;
+        ///     let right = buffer.read(s, ..2, None)?.join_async()?;
+        ///     return try_join!(left, right);
+        /// }).await?;
+        /// 
+        /// assert_eq!(left, vec![1, 2]);
+        /// assert_eq!(right, vec![3, 4, 5]);
+        /// ```
+        /// 
+        /// This macro can be called with the same form as [`scope`] or [`local_scope`].
+        /// 
+        /// ```rust
+        /// use blaze_rs::prelude::*;
+        /// use futures::future::*;
+        /// 
+        /// let ctx = SimpleContext::default()?;
+        /// let buffer = Buffer::new_in(ctx, &[1, 2, 3, 4, 5], MemAccess::default(), false)?;
+        /// 
+        /// let (left, right) = scope_async!(buffer.context(), |s| async {
+        ///     let left = buffer.read(s, ..2, None)?.join_async()?;
+        ///     let right = buffer.read(s, ..2, None)?.join_async()?;
+        ///     return try_join!(left, right);
+        /// }).await?;
+        /// 
+        /// assert_eq!(left, vec![1, 2]);
+        /// assert_eq!(right, vec![3, 4, 5]);
+        /// ```
+        /// 
+        /// Unlike it's [blocking](local_scope) counterpart, [`scope_async`](crate::scope_async) does **not** ensure that all events inside the future
+        /// will be ran. Rather, if the future is dropped before completion, it's destructor will block the current thread until every **already-started** event has completed,
+        /// and discarting the remaining uninitialized events.
+        /// 
+        /// ```rust
+        /// use blaze_rs::{buffer, scope_async};
+        /// use futures::{task::*, future::*};
+        /// 
+        /// let buffer = buffer![1, 2, 3, 4, 5]?;
+        /// 
+        /// let mut scope = Box::pin(scope_async!(|s| async {
+        ///     let left = buffer.read(s, ..2, None)?.inspect(|_| println!("Left done!")).join_async()?.await;
+        ///     let right = buffer.read(s, ..2, None)?.inspect(|_| println!("Right done!")).join_async()?.await;
+        ///     return Ok((left, right));
+        /// }));
+        /// 
+        /// let mut ctx = std::task::Context::from_waker(noop_waker_ref());
+        /// let _ = scope.poll_unpin(&mut ctx)?;
+        /// drop(scope); // prints "Left done!", doesn't print "Right done!"
+        /// ```
         #[macro_export]
         macro_rules! scope_async {
             ($f:expr) => {
@@ -251,7 +321,9 @@ cfg_if::cfg_if! {
             ($ctx:expr, $f:expr) => {
                 async {
                     let scope = $crate::context::Scope::new_async($ctx);
-                    $crate::context::InnerAsyncScope::new(&scope, $f).await
+                    unsafe {
+                        $crate::context::InnerAsyncScope::new(&scope, $f).await
+                    }
                 }
             };
         }
