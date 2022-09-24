@@ -1,5 +1,5 @@
 use std::{ffi::c_void, task::{Poll, Waker}, marker::PhantomData};
-use futures::{Future, FutureExt};
+use futures::{Future, FutureExt, future::FusedFuture};
 use opencl_sys::*;
 use utils_atomics::{flag::{AsyncFlag, AsyncSubscribe}, FillQueue};
 use crate::prelude::Result;
@@ -51,6 +51,13 @@ impl<'a, C: Unpin + Consumer<'a>> Future for EventWait<'a, C> {
         }
 
         return Poll::Pending;
+    }
+}
+
+impl<'a, C: Unpin + Consumer<'a>> FusedFuture for EventWait<'a, C> {
+    #[inline(always)]
+    fn is_terminated(&self) -> bool {
+        self.inner.is_none()
     }
 }
 

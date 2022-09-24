@@ -42,7 +42,8 @@ pub(crate) mod ext {
 
 use super::consumer::*;
 
-/// An event with a consumer that will be executed on the completion of the former.\
+/// An event with a consumer that will be executed on the completion of the former.
+/// 
 /// When using OpenCL 1.0, the event will also contain a [`Sender`](std::sync::mpsc::Sender) that will send the event's callbacks,
 /// (like [`on_complete`](Event::on_complete)) to a different thread to be executed acordingly. 
 #[derive(Debug)]
@@ -54,7 +55,7 @@ pub struct Event<C> {
     #[cfg(feature = "cl1_1")]
     /// `Sender` is `!Sync`, but `Event` only contains a `Send` in OpenCL 1.0.\
     /// For the sake of consistency, `!Sync` should be implemented in all features.
-    send: std::marker::PhantomData<std::sync::mpsc::Sender<()>>,
+    send: std::marker::PhantomData<()>,
 }
 
 impl NoopEvent {
@@ -102,6 +103,12 @@ impl<'a, C: Consumer<'a>> Event<C> {
             #[cfg(feature = "cl1_1")]
             send: std::marker::PhantomData
         }
+    }
+
+    /// Consumes the event and returns it's inner parts
+    #[inline(always)]
+    pub fn into_parts (self) -> (RawEvent, C) {
+        (self.inner, self.consumer)
     }
 
     /// Returns a reference to the underlying [`RawEvent`].

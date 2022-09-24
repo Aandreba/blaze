@@ -10,6 +10,8 @@ pub mod consumer {
     pub use super::abort::Abort;
 }
 
+pub use consumer::Consumer;
+
 #[cfg(feature = "cl1_1")]
 flat_mod!(flag);
 

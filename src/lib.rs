@@ -83,10 +83,27 @@ pub extern crate utils_atomics;
 
 extern crate blaze_proc;
 
+/// Re-export of the public-facing macros in `blaze_proc`
 pub mod macros {
     #[doc = include_str!("../docs/src/program/README.md")]
     pub use blaze_proc::blaze;
     pub use blaze_proc::{global_context};
+
+    /// Similar to [`Event::join_all_blocking`](crate::event::Event::join_all_blocking), but it can also join events with different [`Consumer`](crate::event::Consumer)s
+    /// ```rust
+    /// use std::ops::Deref;  
+    ///   
+    /// let buffer = Buffer::new(&[1, 2, 3, 4, 5], MemAccess::default(), false)?;
+    /// 
+    /// let (left, right) = scope(|s| {
+    ///     let left = buffer.read(s, 2.., None)?;
+    ///     let right = buffer.map(s, 2.., None)?;
+    ///     return join_various_blocking!(left, right)
+    /// })?;
+    /// 
+    /// assert_eq!(left.as_slice(), right.deref());
+    /// ```
+    pub use blaze_proc::join_various_blocking;
 }
 
 #[doc = include_str!("../docs/src/raw.md")]

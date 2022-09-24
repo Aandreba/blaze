@@ -2,8 +2,8 @@ use std::{marker::PhantomData, ops::{Deref, DerefMut}, ffi::c_void, fmt::Debug};
 use crate::{prelude::{Context, Global, Event}, memobj::MapPtr, event::consumer::Consumer};
 use super::Buffer;
 
-pub type BufferMapEvent<'scope, 'env, T, C> = Event<BufferMap<'scope, 'env, T, C>>;
-pub type BufferMapMutEvent<'scope, 'env, T, C> = Event<BufferMapMut<'scope, 'env, T, C>>;
+pub type BufferMapEvent<'scope, 'env, T, C = Global> = Event<BufferMap<'scope, 'env, T, C>>;
+pub type BufferMapMutEvent<'scope, 'env, T, C = Global> = Event<BufferMapMut<'scope, 'env, T, C>>;
 
 pub struct BufferMap<'scope, 'env: 'scope, T, C: Context> {
     ptr: *const c_void,

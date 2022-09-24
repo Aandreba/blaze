@@ -5,6 +5,8 @@ use crate::prelude::Result;
 /// A trait that represents the consumer of an [`Event`](super::Event)
 pub trait Consumer<'a>: 'a {
     type Output;
+
+    /// Consumes the [`Consumer`]
     fn consume (self) -> Result<Self::Output>;
 }
 
@@ -35,7 +37,8 @@ impl<'a, T: 'a> Consumer<'a> for Result<T> {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+/// A **no**-**op**eration consumer
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct Noop;
 
 impl Consumer<'_> for Noop {

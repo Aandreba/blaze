@@ -1,4 +1,5 @@
 #![feature(nonzero_min_max)]
+use blaze_proc::join_various_blocking;
 use blaze_rs::{prelude::*};
 
 #[global_context]
@@ -6,7 +7,17 @@ static CONTEXT : SimpleContext = SimpleContext::default();
 
 #[test]
 fn invalid_raw () -> Result<()> {
-    let mut buffer = Buffer::new(&[1, 2, 3, 4, 5], MemAccess::default(), false)?;
+    use std::ops::Deref;
+    
+    let buffer = Buffer::new(&[1, 2, 3, 4, 5], MemAccess::default(), false)?;
+    
+    let (left, right) = scope(|s| {
+        let left = buffer.read(s, 2.., None)?;
+        let right = buffer.map(s, 2.., None)?;
+        return join_various_blocking!(left, right)
+    })?;
+
+    assert_eq!(left.as_slice(), right.deref());
     Ok(())
 }
 
