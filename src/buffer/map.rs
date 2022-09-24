@@ -22,7 +22,7 @@ impl<'scope, 'env, T, C: Context> BufferMap<'scope, 'env, T, C> {
     }
 }
 
-impl<'scope, 'env, T, C: Context> Consumer<'scope> for BufferMap<'scope, 'env, T, C> where C: Clone {
+impl<'scope, 'env, T, C: Context> Consumer<'scope> for BufferMap<'scope, 'env, T, C> {
     type Output = MapGuard<'env, T, C>;
     
     #[inline]
@@ -30,7 +30,7 @@ impl<'scope, 'env, T, C: Context> Consumer<'scope> for BufferMap<'scope, 'env, T
         let ptr = unsafe {
             core::slice::from_raw_parts_mut(self.ptr as *mut T, self.len)
         };
-        let ptr = MapPtr::new(ptr, self.buff.inner.clone().into(), self.buff.ctx.clone());
+        let ptr = MapPtr::new(ptr, self.buff.inner.clone().into(), &self.buff.ctx);
         return Ok(MapGuard::new(ptr))
     }
 }
@@ -52,7 +52,7 @@ impl<'scope, 'env, T, C: Context> BufferMapMut<'scope, 'env, T, C> {
     }
 }
 
-impl<'scope, 'env, T, C: Context> Consumer<'scope> for BufferMapMut<'scope, 'env, T, C> where C: Clone {
+impl<'scope, 'env, T, C: Context> Consumer<'scope> for BufferMapMut<'scope, 'env, T, C> {
     type Output = MapMutGuard<'env, T, C>;
 
     #[inline]
@@ -60,20 +60,20 @@ impl<'scope, 'env, T, C: Context> Consumer<'scope> for BufferMapMut<'scope, 'env
         let ptr = unsafe {
             core::slice::from_raw_parts_mut(self.ptr as *mut T, self.len)
         };
-        let ptr = MapPtr::new(ptr, self.buff.inner.clone().into(), self.buff.ctx.clone());
+        let ptr = MapPtr::new(ptr, self.buff.inner.clone().into(), &self.buff.ctx);
         return Ok(MapMutGuard::new(ptr))
     }
 }
 
 /// Guard for a read-only map of a [`Buffer`]
 pub struct MapGuard<'a, T, C: Context = Global> {
-    ptr: MapPtr<T, C>,
+    ptr: MapPtr<T, &'a C>,
     phtm: PhantomData<&'a Buffer<T, C>>
 }
 
 impl<'a, T, C: Context> MapGuard<'a, T, C> {
     #[inline(always)]
-    pub(super) fn new (ptr: MapPtr<T, C>) -> Self {
+    pub(super) fn new (ptr: MapPtr<T, &'a C>) -> Self {
         Self { ptr, phtm: PhantomData }
     }
 }
@@ -108,13 +108,13 @@ impl<'a, 'b: 'a, T, C: Context> IntoIterator for &'b MapGuard<'a, T, C> {
 
 /// Guard for a read-write map of a [`Buffer`]
 pub struct MapMutGuard<'a, T, C: Context = Global> {
-    ptr: MapPtr<T, C>,
+    ptr: MapPtr<T, &'a C>,
     phtm: PhantomData<&'a mut Buffer<T, C>>
 }
 
 impl<'a, T, C: Context> MapMutGuard<'a, T, C> {
     #[inline(always)]
-    pub(super) fn new (ptr: MapPtr<T, C>) -> Self {
+    pub(super) fn new (ptr: MapPtr<T, &'a C>) -> Self {
         Self { ptr, phtm: PhantomData }
     }
 }

@@ -16,6 +16,7 @@ pub extern "C" {
     fn next_bytes (n: u32, out: *mut MaybeUninit<u8>);
 }
 
+#[cfg(feature = "cl3")]
 #[test]
 fn main () -> Result<()> {
     const SIZE : usize = 50;

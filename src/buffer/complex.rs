@@ -160,7 +160,7 @@ impl<T: Copy + Unpin, C: Context> Buffer<T, C> {
             self.inner.read_to_ptr_in(range, dst.cast(), queue, wait)
         };
 
-        return scope.enqueue(supplier, BufferRead(result, len, PhantomData))
+        return scope.enqueue(supplier, BufferRead(result, PhantomData))
     }
 
     /// Reads the contents of the buffer, blocking the current thread until the operation has completed.
@@ -292,7 +292,7 @@ impl<T: Copy + Unpin, C: Context> Buffer<T, C> {
 }
 
 impl<T, C: Context> Buffer<T, C> {
-    pub fn map<'scope, 'env, R: IntoRange> (&'env self, s: &'scope Scope<'scope, 'env, C>, range: R, wait: WaitList) -> Result<BufferMapEvent<'scope, 'env, T, C>> where C: Clone {
+    pub fn map<'scope, 'env, R: IntoRange> (&'env self, s: &'scope Scope<'scope, 'env, C>, range: R, wait: WaitList) -> Result<BufferMapEvent<'scope, 'env, T, C>> {
         let range = range.into_range::<T>(&self.inner)?;
         let len = range.cb / core::mem::size_of::<T>();
         let mut ptr = MaybeUninit::uninit();
@@ -310,7 +310,7 @@ impl<T, C: Context> Buffer<T, C> {
         }
     }
 
-    pub fn map_blocking<'a, R: IntoRange> (&'a self, range: R, wait: WaitList) -> Result<MapGuard<'a, T, C>> where C: Clone {
+    pub fn map_blocking<'a, R: IntoRange> (&'a self, range: R, wait: WaitList) -> Result<MapGuard<'a, T, C>> {
         let range = range.into_range::<T>(&self.inner)?;
         let len = range.cb / core::mem::size_of::<T>();
         let mut ptr = MaybeUninit::uninit();
@@ -323,12 +323,12 @@ impl<T, C: Context> Buffer<T, C> {
         unsafe {
             self.ctx.next_queue().enqueue_noop(supplier)?.join()?;
             let ptr = core::slice::from_raw_parts_mut(ptr.assume_init() as *mut T, len);
-            let ptr = MapPtr::new(ptr, self.inner.clone().into(), self.ctx.clone());
+            let ptr = MapPtr::new(ptr, self.inner.clone().into(), &self.ctx);
             return Ok(MapGuard::new(ptr)) 
         }
     }
 
-    pub fn map_mut<'scope, 'env, R: IntoRange> (&'env mut self, s: &'scope Scope<'scope, 'env, C>, range: R, wait: WaitList) -> Result<BufferMapMutEvent<'scope, 'env, T, C>> where C: Clone {
+    pub fn map_mut<'scope, 'env, R: IntoRange> (&'env mut self, s: &'scope Scope<'scope, 'env, C>, range: R, wait: WaitList) -> Result<BufferMapMutEvent<'scope, 'env, T, C>> {
         let range = range.into_range::<T>(&self.inner)?;
         let len = range.cb / core::mem::size_of::<T>();
         let mut ptr = MaybeUninit::uninit();
@@ -346,7 +346,7 @@ impl<T, C: Context> Buffer<T, C> {
         }
     }
 
-    pub fn map_mut_blocking<'a, R: IntoRange> (&'a mut self, range: R, wait: WaitList) -> Result<MapMutGuard<'a, T, C>> where C: Clone {
+    pub fn map_mut_blocking<'a, R: IntoRange> (&'a mut self, range: R, wait: WaitList) -> Result<MapMutGuard<'a, T, C>> {
         let range = range.into_range::<T>(&self.inner)?;
         let len = range.cb / core::mem::size_of::<T>();
         let mut ptr = MaybeUninit::uninit();
@@ -359,7 +359,7 @@ impl<T, C: Context> Buffer<T, C> {
         unsafe {
             self.ctx.next_queue().enqueue_noop(supplier)?.join()?;
             let ptr = core::slice::from_raw_parts_mut(ptr.assume_init() as *mut T, len);
-            let ptr = MapPtr::new(ptr, self.inner.clone().into(), self.ctx.clone());
+            let ptr = MapPtr::new(ptr, self.inner.clone().into(), &self.ctx);
             return Ok(MapMutGuard::new(ptr)) 
         }
     }
@@ -381,7 +381,7 @@ impl<T, C: Context> DerefMut for Buffer<T, C> {
     }
 }
 
-impl<T: Unpin + PartialEq, C: Context + Clone> PartialEq for Buffer<T, C> {
+impl<T: PartialEq, C: Context> PartialEq for Buffer<T, C> {
     fn eq(&self, other: &Self) -> bool {
         if self.eq_buffer(other) {
             return true;
@@ -397,24 +397,24 @@ impl<T: Unpin + PartialEq, C: Context + Clone> PartialEq for Buffer<T, C> {
     }
 }
 
-impl<T: Unpin + Debug, C: Context + Clone> Debug for Buffer<T, C> {
+impl<T: Debug, C: Context> Debug for Buffer<T, C> {
     #[inline(always)]
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let v = self.map_blocking(.., None).unwrap();
+        let v = self.map_blocking(.., None).map_err(|_| std::fmt::Error)?;
         Debug::fmt(&v, f)
     }
 }
 
-impl<T: Copy + Unpin + Eq, C: Context + Clone> Eq for Buffer<T, C> {}
+impl<T: Eq, C: Context> Eq for Buffer<T, C> {}
 
-pub struct BufferRead<'a, T> (Vec<T>, usize, PhantomData<&'a RawBuffer>);
+pub struct BufferRead<'a, T> (Vec<T>, PhantomData<&'a RawBuffer>);
 
 impl<'a, T: 'a> Consumer<'a> for BufferRead<'a, T> {
     type Output = Vec<T>;
     
     #[inline(always)]
     fn consume (mut self) -> Result<Vec<T>> {
-        unsafe { self.0.set_len(self.1); }
+        unsafe { self.0.set_len(self.0.capacity()); }
         Ok(self.0)
     }
 }
@@ -450,6 +450,7 @@ impl<'a, T> Debug for BufferRead<'a, T> {
 /// let expanded: Result<Buffer<i32>> = Buffer::new(&vec![1; 3], MemAccess::READ_WRITE, false);
 /// 
 /// assert_eq!(r#macro, expanded);
+/// # Ok::<(), Error>(())
 /// ```
 /// 
 /// - Create a [`Buffer`] with a by-index constructor
@@ -467,15 +468,22 @@ impl<'a, T> Debug for BufferRead<'a, T> {
 /// };
 /// 
 /// assert_eq!(r#macro, expanded);
+/// # Ok::<(), Error>(())
 /// ```
 /// 
 /// In particular, the by-index constructor facilitates the construction of Buffers of `!Copy` types.
 /// 
 /// ```rust
-/// use std::sync::*;
 /// use blaze_rs::{buffer, prelude::*};
 /// 
-/// let values: Buffer<Mutex<i32>> = buffer![|i| Mutex::new(i); 5]?;
+/// #[repr(C)]
+/// struct NoCopyStruct {
+///     lock: bool,
+///     val: i32,
+/// }
+/// 
+/// let values: Buffer<NoCopyStruct> = buffer![|i| NoCopyStruct { lock: false, val: i as i32 }; 5]?;
+/// # Ok::<(), Error>(())
 /// ```
 #[macro_export]
 macro_rules! buffer {

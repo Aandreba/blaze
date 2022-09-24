@@ -209,11 +209,6 @@ fn create_kernel (parent: &Ident, impl_generics: &Generics, parent_generics: &Ge
     }
 }
 
-fn new_arg (arg: &Argument, generics: &mut Generics, lt: bool) -> syn::Type {
-    let Argument { name, .. } = arg;
-    return arg.ty(generics, lt);
-}
-
 fn set_arg (arg: &Argument, idx: u32) -> TokenStream {
     let Argument { name, .. } = arg;
 
