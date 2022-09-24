@@ -1,7 +1,7 @@
-use std::{mem::MaybeUninit, ffi::c_void, ptr::{addr_of_mut, NonNull}, borrow::Borrow};
+use std::{mem::MaybeUninit, ffi::c_void, ptr::{addr_of_mut, NonNull}, borrow::Borrow, marker::PhantomData};
 use opencl_sys::*;
 use blaze_proc::docfg;
-use crate::{core::*, context::{RawContext, Context}, event::{RawEvent, consumer::NoopEvent}, wait_list, prelude::Scope, WaitList};
+use crate::{core::*, context::{RawContext, Context}, event::{RawEvent, consumer::{NoopEvent, PhantomEvent}}, wait_list, prelude::Scope, WaitList};
 
 #[derive(Debug, PartialEq, Eq, Hash)]
 #[repr(transparent)]
@@ -86,6 +86,11 @@ impl RawKernel {
             tri!(clEnqueueNDRangeKernel(queue.id(), self.id(), work_dim, core::ptr::null(), global_work_dims.as_ptr(), local_work_dims, num_events_in_wait_list, event_wait_list, addr_of_mut!(event)));
             return Ok(RawEvent::from_id(event).unwrap())
         })
+    }
+
+    #[inline(always)]
+    pub unsafe fn enqueue_phantom_with_scope<'scope, 'env, T: 'scope, C: Context, const N: usize> (&mut self, scope: &'scope Scope<'scope, 'env, C>, global_work_dims: [usize; N], local_work_dims: impl Into<Option<[usize; N]>>, wait: WaitList) -> Result<PhantomEvent<T>> {
+        Ok(self.enqueue_with_scope(scope, global_work_dims, local_work_dims, wait)?.set_consumer(PhantomData))
     }
 
     /// Return the kernel function name.

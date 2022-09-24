@@ -3,6 +3,8 @@ use proc_macro2::{TokenStream, Ident};
 use quote::{quote, format_ident, ToTokens};
 use syn::{Visibility, Token, Generics, parse_quote, Abi, punctuated::Punctuated, Attribute, Expr};
 
+use crate::utils::to_pascal_case;
+
 macro_rules! peek_and_parse {
     ($i:ident in $input:expr) => {{
         let v = $input.peek($i);
@@ -47,7 +49,7 @@ pub fn blaze_c (ident: Ident, generics: Generics, blaze: Blaze, content: Expr) -
     }).collect::<Vec<_>>();
 
     let kernel_structs = kernels.iter()
-        .map(|x| create_kernel(&vis, &ident, &generics, &program_generics, x));
+        .map(|x| create_kernel(&ident, &generics, &program_generics, x));
 
     let kernel_defs = kernels.iter().map(|x| {
         let name = &x.ident;
@@ -66,13 +68,13 @@ pub fn blaze_c (ident: Ident, generics: Generics, blaze: Blaze, content: Expr) -
 
         impl #glob_imp #ident #glob_ty #glob_wher {
             #[inline(always)]
-            #vis fn new<'a> (options: impl Into<Option<&'a str>>) -> ::blaze_rs::core::Result<Self> {
+            #vis fn new (options: Option<&str>) -> ::blaze_rs::core::Result<Self> {
                 Self::new_in(::blaze_rs::context::Global, options)
             }
         }
 
         impl #prog_imp #ident #prog_ty #prog_wher {
-            #vis fn new_in<'a> (ctx: C, options: impl Into<Option<&'a str>>) -> ::blaze_rs::core::Result<Self> {
+            #vis fn new_in (ctx: C, options: Option<&str>) -> ::blaze_rs::core::Result<Self> {
                 let __blaze_ctx__ = ctx;
                 let (__blaze_inner__, __blaze_kernels__) = ::blaze_rs::core::RawProgram::from_source_in(&__blaze_ctx__, #content, options)?;
 
@@ -114,31 +116,48 @@ pub fn blaze_c (ident: Ident, generics: Generics, blaze: Blaze, content: Expr) -
     }
 }
 
-fn create_kernel (parent_vis: &Visibility, parent: &Ident, impl_generics: &Generics, parent_generics: &Generics, kernel: &Kernel) -> TokenStream {
+fn create_kernel (parent: &Ident, impl_generics: &Generics, parent_generics: &Generics, kernel: &Kernel) -> TokenStream {
     let Kernel { vis, ident, args, .. } = kernel;
-    let mut generics = parse_quote! { <'__scope__, '__env__, const N: usize> };
+    let mut generics = parse_quote! { <'__scope__, '__env__: '__scope__> };
     let (parent_imp, parent_ty, parent_wher) = parent_generics.split_for_impl();
 
-    let vis = match vis {
-        Visibility::Inherited => parent_vis,
-        other => other
-    };
+    let name = args.iter().map(|x| x.name.clone()).collect::<Vec<_>>();
+    let new = args.iter().map(|x| x.ty(&mut generics, true)).collect::<Vec<_>>();
+    assert_eq!(name.len(), new.len());
+    //panic!("{name:?}: {new:?}");
 
-    let new = args.iter().map(|x| new_arg(x, &mut generics, true)).collect::<Vec<_>>();();
     let pointer_names = args.iter().filter_map(|x| if x.ty.is_pointer() { Some(&x.name) } else { None }).collect::<Vec<_>>();
     let set = args.iter().enumerate().map(|(i, x)| set_arg(x, u32::try_from(i).unwrap())).collect::<Vec<_>>();
     generics.params.extend(impl_generics.params.iter().cloned());
-    let (r#impl, _, r#where) = generics.split_for_impl();
 
     let blocking_ident = format_ident!("{ident}_blocking");
     let mut blocking_generics : Generics = parse_quote! { <const N: usize> };
-    let blocking_new = args.iter().map(|x| new_arg(x, &mut blocking_generics, false)).collect::<Vec<_>>();();
+    let blocking_new = args.iter().map(|x| x.ty(&mut blocking_generics, false)).collect::<Vec<_>>();();
     blocking_generics.params.extend(impl_generics.params.iter().cloned());
     let (blocking_impl, _, blocking_where) = blocking_generics.split_for_impl();
 
+    let event_generics = generics.clone();
+    let event_new = new.iter().map(|x| {
+        let mut x = x.clone();
+        if let syn::Type::Reference(ref mut rf) = x {
+            if rf.lifetime == Some(parse_quote! { '__env__ }) {
+                rf.lifetime = Some(parse_quote! { '__scope__ });    
+            }   
+        }
+        return x
+    });
+    let (_, event_type, _) = event_generics.split_for_impl();
+    let event_name = format_ident!("{}Event", to_pascal_case(&ident.to_string()));
+
+
+    generics.params.push(parse_quote! { const N: usize });
+    let (r#impl, _, r#where) = generics.split_for_impl();
+
     quote! {
+        #vis type #event_name #event_type = ::blaze_rs::event::consumer::PhantomEvent<(#(#event_new),*)>;
+
         impl #parent_imp #parent #parent_ty #parent_wher {
-            #vis unsafe fn #ident #r#impl (&self, scope: &'__scope__ ::blaze_rs::context::Scope<'__scope__, '__env__, C>, #(#new,)* global_work_dims: [usize; N], local_work_dims: impl Into<Option<[usize; N]>>, wait: ::blaze_rs::WaitList) -> ::blaze_rs::prelude::Result<::blaze_rs::event::consumer::NoopEvent<'__scope__>> #r#where {
+            #vis unsafe fn #ident #r#impl (&self, scope: &'__scope__ ::blaze_rs::context::Scope<'__scope__, '__env__, C>, #(#name: #new,)* global_work_dims: [usize; N], local_work_dims: impl Into<Option<[usize; N]>>, wait: ::blaze_rs::WaitList) -> ::blaze_rs::prelude::Result<#event_name #event_type> #r#where {
                 let mut wait = match wait {
                     ::blaze_rs::WaitList::Some(x) => x.to_vec(),
                     ::blaze_rs::WaitList::None => ::std::vec::Vec::new()
@@ -151,7 +170,7 @@ fn create_kernel (parent_vis: &Visibility, parent: &Ident, impl_generics: &Gener
 
                 #(#set);*;
 
-                let __blaze_inner__ = __blaze_kernel__.enqueue_with_scope(&scope, global_work_dims, local_work_dims, Some(&wait))?;
+                let __blaze_inner__ = __blaze_kernel__.enqueue_phantom_with_scope(&scope, global_work_dims, local_work_dims, Some(&wait))?;
                 drop(__blaze_kernel__);
 
                 #(
@@ -161,7 +180,7 @@ fn create_kernel (parent_vis: &Visibility, parent: &Ident, impl_generics: &Gener
                 return Ok(__blaze_inner__)
             }
 
-            #vis unsafe fn #blocking_ident #blocking_impl (&self, #(#blocking_new,)* global_work_dims: [usize; N], local_work_dims: impl Into<Option<[usize; N]>>, wait: ::blaze_rs::WaitList) -> ::blaze_rs::prelude::Result<()> #blocking_where {
+            #vis unsafe fn #blocking_ident #blocking_impl (&self, #(#name: #blocking_new,)* global_work_dims: [usize; N], local_work_dims: impl Into<Option<[usize; N]>>, wait: ::blaze_rs::WaitList) -> ::blaze_rs::prelude::Result<()> #blocking_where {
                 let mut wait = match wait {
                     ::blaze_rs::WaitList::Some(x) => x.to_vec(),
                     ::blaze_rs::WaitList::None => ::std::vec::Vec::new()
@@ -190,13 +209,9 @@ fn create_kernel (parent_vis: &Visibility, parent: &Ident, impl_generics: &Gener
     }
 }
 
-fn new_arg (arg: &Argument, generics: &mut Generics, lt: bool) -> TokenStream {
+fn new_arg (arg: &Argument, generics: &mut Generics, lt: bool) -> syn::Type {
     let Argument { name, .. } = arg;
-    let ty = arg.ty(generics, lt);
-
-    return quote! {
-        #name: #ty
-    }
+    return arg.ty(generics, lt);
 }
 
 fn set_arg (arg: &Argument, idx: u32) -> TokenStream {
