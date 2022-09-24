@@ -300,7 +300,7 @@ impl RawProgram {
             };
 
             let result = unsafe { result.assume_init() };
-            return Err(Error::new(build_result, String::from_utf8_lossy(&result[..result.len()])));
+            return Err(Error::new(build_result, String::from_utf8_lossy(&result[..result.len()]).into_owned()));
         }
 
         Err(build_result.into())

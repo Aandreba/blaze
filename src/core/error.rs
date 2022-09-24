@@ -61,7 +61,7 @@ impl From<::core::result::Result<ErrorKind, i32>> for ErrorCode {
 #[non_exhaustive]
 pub struct Error {
     pub ty: ErrorCode,
-    pub desc: Option<Arc<str>>,
+    pub desc: Option<Arc<dyn Display>>,
     #[cfg_attr(docsrs, doc(cfg(debug_assertions)))]
     #[cfg(debug_assertions)]
     pub backtrace: Arc<Backtrace>
@@ -69,12 +69,12 @@ pub struct Error {
 
 impl Error {
     #[inline(always)]
-    pub fn new (ty: impl Into<ErrorCode>, desc: impl ToString) -> Self {
-        Self::from_parts(ty, Some(Arc::from(desc.to_string())), Arc::new(Backtrace::capture()))
+    pub fn new<D: 'static + Display> (ty: impl Into<ErrorCode>, desc: D) -> Self {
+        Self::from_parts(ty, Some(Arc::new(desc)), Arc::new(Backtrace::capture()))
     }
 
     #[inline(always)]
-    pub fn from_parts (ty: impl Into<ErrorCode>, desc: Option<Arc<str>>, #[cfg(debug_assertions)] backtrace: Arc<Backtrace>) -> Self {
+    pub fn from_parts (ty: impl Into<ErrorCode>, desc: Option<Arc<dyn Display>>, #[cfg(debug_assertions)] backtrace: Arc<Backtrace>) -> Self {
         Self { 
             ty: ty.into(),
             desc,
