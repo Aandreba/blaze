@@ -18,12 +18,12 @@ impl BufferRange {
     pub fn from_parts<T> (offset: usize, size: usize) -> Result<Self> {
         let offset = match offset.checked_mul(core::mem::size_of::<T>()) {
             Some(x) => x,
-            None => return Err(Error::new(ErrorType::InvalidBufferSize, "overflow calculating range offset"))
+            None => return Err(Error::new(ErrorKind::InvalidBufferSize, "overflow calculating range offset"))
         };
 
         let size = match size.checked_mul(core::mem::size_of::<T>()) {
             Some(x) => x,
-            None => return Err(Error::new(ErrorType::InvalidBufferSize, "overflow calculating range size"))
+            None => return Err(Error::new(ErrorKind::InvalidBufferSize, "overflow calculating range size"))
         };
 
         Ok(Self::new(offset, size))
@@ -38,7 +38,7 @@ impl BufferRange {
     pub fn from_range<T, R: RangeBounds<usize>> (range: R, max_size: usize) -> Result<Self> {
         macro_rules! _tri_ {
             ($e:expr, $desc:expr) => {
-                $e.ok_or_else(|| Error::new(ErrorType::InvalidBufferSize, $desc))?
+                $e.ok_or_else(|| Error::new(ErrorKind::InvalidBufferSize, $desc))?
             };
         }
 

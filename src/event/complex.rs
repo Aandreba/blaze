@@ -319,7 +319,7 @@ impl<'a, C: Consumer<'a>> Event<C> {
 
         let ctx = match iter.peek() {
             Some(evt) => evt.raw_context()?,
-            None => return Err(Error::new(ErrorType::InvalidEventWaitList, "no events inside the iterator"))
+            None => return Err(Error::new(ErrorKind::InvalidEventWaitList, "no events inside the iterator"))
         };
 
         let flag = super::FlagEvent::new_in(&ctx)?.into_inner();

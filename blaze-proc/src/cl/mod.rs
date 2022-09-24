@@ -81,14 +81,14 @@ pub fn blaze_c (ident: Ident, generics: Generics, blaze: Blaze, content: Expr) -
                     match __blaze_kernel__.name()?.as_str() {
                         #(#kernel_extern_names => #kernel_names = unsafe { Some(__blaze_kernel__.clone()) }),*,
                         _ => {}
-                        //__other => return Err(::blaze_rs::core::Error::new(::blaze_rs::core::ErrorType::InvalidKernel, format!("unknown kernel '{}'", __other)))
+                        //__other => return Err(::blaze_rs::core::Error::new(::blaze_rs::core::ErrorKind::InvalidKernel, format!("unknown kernel '{}'", __other)))
                     }
                 }
 
                 #(
                     let #kernel_names = match #kernel_names {
                         Some(__x) => ::std::sync::Mutex::new(__x),
-                        None => return Err(::blaze_rs::core::Error::new(::blaze_rs::core::ErrorType::InvalidKernel, concat!("kernel '", stringify!(#kernel_names), "' not found")))
+                        None => return Err(::blaze_rs::core::Error::new(::blaze_rs::core::ErrorKind::InvalidKernel, concat!("kernel '", stringify!(#kernel_names), "' not found")))
                     };
                 )*
 

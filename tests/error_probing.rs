@@ -13,15 +13,14 @@ fn invalid_raw () -> Result<()> {
 #[cfg(feature = "cl1_2")]
 #[test]
 fn test () -> Result<()> {
-    use std::sync::atomic::AtomicUsize;
-    let mut buffer = blaze_rs::buffer![|i| AtomicUsize::new(i); 10];
+    let mut buffer = blaze_rs::buffer![|i| i; 10]?;
 
-    let [left, right] = scope(|s| {
-        let evt = buffer.read_into(s, offset, dst, wait);
-        todo!();
+    let v = scope(|s| {
+        let (evt, abort) = buffer.read(s, 1..=4, None)?.abortable()?;
+        return Ok(abort);
     })?;
     
-    println!("{left:?}, {right:?}");
+    //println!("{left:?}, {right:?}");
     Ok(())
 }
 

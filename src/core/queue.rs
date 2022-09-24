@@ -109,7 +109,7 @@ impl RawCommandQueue {
                         return Ok(dev);
                     }
 
-                    Err(ErrorType::InvalidDevice.into())
+                    Err(ErrorKind::InvalidDevice.into())
                 }
             }
         }

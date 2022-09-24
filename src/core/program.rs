@@ -155,7 +155,7 @@ impl RawProgram {
 
         let options = match options.into() {
             Some(x) => {
-                let v = std::ffi::CString::new(x).map_err(|e| Error::new(ErrorType::InvalidBuildOptions, e))?;
+                let v = std::ffi::CString::new(x).map_err(|e| Error::new(ErrorKind::InvalidBuildOptions, e))?;
                 Some(v)
             },
             None => None

@@ -199,7 +199,7 @@ impl RawContext {
         for i in 0..len {
             let v = match ImageFormat::from_raw(values[i]) {
                 Ok(x) => x,
-                Err(e) => return Err(Error::new(ErrorType::InvalidImageFormatDescriptor, format!("{e:?}")))
+                Err(e) => return Err(Error::new(ErrorKind::InvalidImageFormatDescriptor, format!("{e:?}")))
             };
 
             result.push(v)

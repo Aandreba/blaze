@@ -26,7 +26,7 @@ impl SimpleContext {
 
     #[inline(always)]
     pub fn default() -> Result<Self> {
-        let device = RawDevice::first().ok_or(ErrorType::InvalidDevice)?;
+        let device = RawDevice::first().ok_or(ErrorKind::InvalidDevice)?;
 
         cfg_if::cfg_if! {
             if #[cfg(all(debug_assertions, feature = "cl3"))] {

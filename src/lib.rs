@@ -111,7 +111,7 @@ pub mod svm;
 
 /// Turns a [`WaitList`] into raw components to be passed to an OpenCL method.
 /// # Error
-/// This method returns [`ErrorType::InvalidEventWaitList`](core::ErrorType::InvalidEventWaitList) if the list's size cannot fit inside a `u32`.
+/// This method returns [`ErrorKind::InvalidEventWaitList`](core::ErrorKind::InvalidEventWaitList) if the list's size cannot fit inside a `u32`.
 #[inline(always)]
 pub fn wait_list (v: WaitList) -> core::Result<(u32, *const opencl_sys::cl_event)> {
     return match v {
@@ -119,7 +119,7 @@ pub fn wait_list (v: WaitList) -> core::Result<(u32, *const opencl_sys::cl_event
             0 => Ok((0, ::core::ptr::null())),
             len => {
                 let len = <u32 as std::convert::TryFrom<usize>>::try_from(len)
-                    .map_err(|e| core::Error::new(core::ErrorType::InvalidEventWaitList, e))?;
+                    .map_err(|e| core::Error::new(core::ErrorKind::InvalidEventWaitList, e))?;
 
                 return Ok((len, v.as_ptr().cast()))
             },

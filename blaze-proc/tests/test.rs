@@ -45,7 +45,7 @@ impl<C: ::blaze_rs::context::Context> Arith<C> {
             None => {
                 return Err(
                     ::blaze_rs::core::Error::new(
-                        ::blaze_rs::core::ErrorType::InvalidKernel,
+                        ::blaze_rs::core::ErrorKind::InvalidKernel,
                         "kernel \'test\' not found",
                     ),
                 );

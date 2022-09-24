@@ -3,7 +3,7 @@ pub mod atomics;
 
 use std::{alloc::{Layout, Allocator, GlobalAlloc}, ptr::{NonNull, addr_of_mut}, ffi::c_void};
 use opencl_sys::*;
-use crate::{WaitList, context::{Context, Global}, event::{RawEvent}, core::Result, prelude::{Error, ErrorType, device::SvmCapability}, buffer::flags::MemAccess, wait_list};
+use crate::{WaitList, context::{Context, Global}, event::{RawEvent}, core::Result, prelude::{Error, ErrorKind, device::SvmCapability}, buffer::flags::MemAccess, wait_list};
 
 #[derive(Clone, Copy)]
 pub struct Svm<C: Context = Global> {
@@ -55,7 +55,7 @@ impl<C: Context> Svm<C> {
     pub unsafe fn alloc_with_flags (&self, flags: SvmFlags, layout: Layout) -> Result<*mut u8> {
         #[cfg(debug_assertions)]
         if self.coarse && flags.utils.is_some() {
-            return Err(Error::new(ErrorType::InvalidValue, "SVM allocator marked as coarse-grained, but added fine-grained flags"));
+            return Err(Error::new(ErrorKind::InvalidValue, "SVM allocator marked as coarse-grained, but added fine-grained flags"));
         }
 
         let align = u32::try_from(layout.align()).unwrap();

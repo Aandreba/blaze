@@ -435,13 +435,20 @@ macro_rules! buffer {
         $crate::buffer::Buffer::new(&::std::vec![$($v),+], $crate::buffer::flags::MemAccess::READ_WRITE, false)
     };
 
-    (|$i:ident| $v:expr; $len:expr) => {{
-        let mut __1_ = $crate::buffer::Buffer::new_uninit($len, $crate::buffer::flags::MemAccess::READ_WRITE, false)?;
-        for ($i, __2_) in __1_.map_mut_blocking(.., $crate::WaitList::None)?.into_iter().enumerate() {
-            __2_.write((|$i| $v)($i));
+    (|$i:ident| $v:expr; $len:expr) => {
+        match $crate::buffer::Buffer::new_uninit($len, $crate::buffer::flags::MemAccess::READ_WRITE, false) {
+            Ok(__1_) => match __1_.map_mut_blocking(.., $crate::WaitList::None) {
+                Ok(__2_) => {
+                    for ($i, __3_) in __2_.into_iter().enumerate() {
+                        __3_.write((|$i| $v)($i));
+                    }
+                    unsafe { Ok(__1_.assume_init()) }
+                },
+                Err(e) => Err(e)
+            },
+            Err(e) => Err(e)
         }
-        return unsafe { __1_.assume_init() };
-    }};
+    };
 
     ($v:expr; $len:expr) => {{
         $crate::buffer::Buffer::new(&::std::vec![$v; $len], $crate::buffer::flags::MemAccess::READ_WRITE, false)
