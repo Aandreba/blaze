@@ -1,3 +1,4 @@
+use std::{sync::Arc, rc::Rc};
 use crate::prelude::Result;
 
 flat_mod!(scope, raw, flags, global, single, queue);
@@ -25,5 +26,39 @@ pub trait Context {
             queue.finish()?
         }
         Ok(())
+    }
+}
+
+impl<T: Context> Context for Rc<T> {
+    #[inline(always)]
+    fn as_raw (&self) -> &RawContext {
+        T::as_raw(self)
+    }
+
+    #[inline(always)]
+    fn queues (&self) -> &[CommandQueue] {
+        T::queues(self)
+    }
+
+    #[inline(always)]
+    fn next_queue (&self) -> &CommandQueue {
+        T::next_queue(self)
+    }
+}
+
+impl<T: Context> Context for Arc<T> {
+    #[inline(always)]
+    fn as_raw (&self) -> &RawContext {
+        T::as_raw(self)
+    }
+
+    #[inline(always)]
+    fn queues (&self) -> &[CommandQueue] {
+        T::queues(self)
+    }
+
+    #[inline(always)]
+    fn next_queue (&self) -> &CommandQueue {
+        T::next_queue(self)
     }
 }

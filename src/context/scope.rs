@@ -1,4 +1,4 @@
-use std::{sync::{Arc, atomic::{AtomicUsize, Ordering, AtomicI32}}, marker::{PhantomData}, panic::{catch_unwind, AssertUnwindSafe, resume_unwind}, pin::Pin, thread::Thread, mem::ManuallyDrop};
+use std::{sync::{Arc, atomic::{AtomicUsize, Ordering, AtomicI32}}, marker::{PhantomData, PhantomPinned}, panic::{catch_unwind, AssertUnwindSafe, resume_unwind}, thread::Thread};
 use opencl_sys::CL_SUCCESS;
 use crate::{prelude::{Result, RawCommandQueue, RawEvent, Event, Error}, event::consumer::{Consumer, Noop, NoopEvent}};
 use super::{Global, Context};
@@ -32,7 +32,41 @@ pub struct Scope<'scope, 'env: 'scope, C: 'env + Context = Global> {
     env: PhantomData<&'env mut &'env ()>
 }
 
-impl<'scope, 'env: 'scope, C: 'env + Context> Scope<'scope, 'env, C> { 
+impl<'scope, 'env: 'scope, C: 'env + Context> Scope<'scope, 'env, C> {
+    #[inline(always)]
+    pub fn new (ctx: &'env C) -> Self {
+        Self::with_thread(ctx, std::thread::current())
+    }
+
+    #[docfg(feature = "futures")]
+    #[inline(always)]
+    pub fn new_async (ctx: &'env C) -> Self {
+        Self::with_waker(ctx, Arc::new(futures::task::AtomicWaker::new()))
+    }
+    
+    #[inline(always)]
+    pub fn with_thread (ctx: &'env C, thread: Thread) -> Self {
+        Self {
+            ctx,
+            data: Arc::new((AtomicUsize::new(0), AtomicI32::new(CL_SUCCESS))),
+            thread: ScopeWaker::Thread(thread),
+            scope: PhantomData,
+            env: PhantomData
+        }
+    }
+
+    #[docfg(feature = "futures")]
+    #[inline(always)]
+    pub fn with_waker (ctx: &'env C, waker: Arc<futures::task::AtomicWaker>) -> Self {
+        Self {
+            ctx,
+            data: Arc::new((AtomicUsize::new(0), AtomicI32::new(CL_SUCCESS))),
+            thread: ScopeWaker::Flag(waker),
+            scope: PhantomData,
+            env: PhantomData
+        }
+    }
+
     /// Enqueues a new event within the scope.
     pub fn enqueue<E: FnOnce(&'env RawCommandQueue) -> Result<RawEvent>, F: Consumer<'scope>> (&'scope self, supplier: E, consumer: F) -> Result<Event<F>> {
         let queue = self.ctx.next_queue();
@@ -120,19 +154,21 @@ cfg_if::cfg_if! {
             Ended
         }
 
-        struct AsyncScope<'scope, 'env: 'scope, T: Unpin, Fut: 'scope + Unpin + Future<Output = Result<T>>, C: 'env + Unpin + Context> {
+        #[doc(hidden)]
+        pub struct InnerAsyncScope<'scope, 'env: 'scope, T, Fut: 'scope + Future<Output = Result<T>>, C: 'env + Context> {
             scope: &'scope Scope<'scope, 'env, C>,
             fut: AsyncScopeFuture<T, Fut>,
+            _pin: PhantomPinned
         }
 
-        impl<'scope, 'env, T: Unpin, Fut: 'scope + Unpin + Future<Output = Result<T>>, C: 'env + Unpin + Context> AsyncScope<'scope, 'env, T, Fut, C> {
+        impl<'scope, 'env: 'scope, T, Fut: 'scope + Future<Output = Result<T>>, C: 'env + Context> InnerAsyncScope<'scope, 'env, T, Fut, C> {
             pub fn new<F: FnOnce(&'scope Scope<'scope, 'env, C>) -> Fut> (scope: &'scope Scope<'scope, 'env, C>, f: F) -> Self {
                 let fut = match catch_unwind(AssertUnwindSafe(|| f(scope))) {
                     Ok(f) => AsyncScopeFuture::Future(futures::FutureExt::catch_unwind(AssertUnwindSafe(f))),
                     Err(e) => AsyncScopeFuture::Panic(e)
                 };
 
-                return Self { scope, fut };
+                return Self { scope, fut, _pin: PhantomPinned };
             }
 
             #[inline(always)]
@@ -144,48 +180,53 @@ cfg_if::cfg_if! {
             }
         }
 
-        impl<'scope, 'env, T: Unpin, Fut: 'scope + Unpin + Future<Output = Result<T>>, C: 'env + Unpin + Context> Future for AsyncScope<'scope, 'env, T, Fut, C> {
+        impl<'scope, 'env, T, Fut: 'scope + Future<Output = Result<T>>, C: 'env + Context> Future for InnerAsyncScope<'scope, 'env, T, Fut, C> {
             type Output = Result<T>;
 
-            fn poll(mut self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> std::task::Poll<Self::Output> {
+            fn poll(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> std::task::Poll<Self::Output> {
+                let this = unsafe {
+                    self.get_unchecked_mut()
+                };
+                
                 // Wait future
-                if let AsyncScopeFuture::Future(ref mut fut) = self.fut {
-                    match futures::FutureExt::poll_unpin(fut, cx) {
-                        Poll::Ready(Ok(x)) => self.fut = AsyncScopeFuture::Value(x),
-                        Poll::Ready(Err(e)) => self.fut = AsyncScopeFuture::Panic(e),
+                if let AsyncScopeFuture::Future(ref mut fut) = this.fut {
+                    // Safety: Self is `!Unpin` and has already been pinned, so it cannot move
+                    match unsafe { std::pin::Pin::new_unchecked(fut).poll(cx) } {
+                        Poll::Ready(Ok(x)) => this.fut = AsyncScopeFuture::Value(x),
+                        Poll::Ready(Err(e)) => this.fut = AsyncScopeFuture::Panic(e),
                         Poll::Pending => return Poll::Pending
                     }
                 }
                 
                 // Sleep
-                self.get_waker().register(cx.waker());
-                if self.scope.data.0.load(Ordering::Acquire) != 0 {
+                this.get_waker().register(cx.waker());
+                if this.scope.data.0.load(Ordering::Acquire) != 0 {
                     return std::task::Poll::Pending;
                 }
 
                 // Complete
-                match core::mem::replace(&mut self.fut, AsyncScopeFuture::Ended) {
+                match core::mem::replace(&mut this.fut, AsyncScopeFuture::Ended) {
                     AsyncScopeFuture::Panic(e) => resume_unwind(e),
                     AsyncScopeFuture::Value(x) => {
-                        let e = self.scope.data.1.load(Ordering::Relaxed);
-                        if e != CL_SUCCESS {
-                            return std::task::Poll::Ready(Err(Error::from(e)));
+                        let e = this.scope.data.1.load(Ordering::Relaxed);
+                        if e == CL_SUCCESS {
+                            return std::task::Poll::Ready(x)
                         }
-                        return std::task::Poll::Ready(x)
+                        return std::task::Poll::Ready(Err(Error::from(e)));
                     },
+                    AsyncScopeFuture::Ended => panic!("Scope already finished"),
                     #[cfg(debug_assertions)]
-                    _ => unreachable!(),
+                    AsyncScopeFuture::Future(_) => unreachable!(),
                     #[cfg(not(debug_assertions))]
-                    _ => unreachable_unchecked()
+                    AsyncScopeFuture::Future(_) => unreachable_unchecked()
                 }
             }
         }
 
-        impl<'scope, 'env, T: Unpin, Fut: Unpin + Future<Output = Result<T>>, C: 'env + Unpin + Context> Drop for AsyncScope<'scope, 'env, T, Fut, C> {
+        impl<'scope, 'env, T, Fut: Future<Output = Result<T>>, C: 'env + Context> Drop for InnerAsyncScope<'scope, 'env, T, Fut, C> {
             #[inline]
             fn drop(&mut self) {
                 // Await already-started events, without starting new ones.
-
                 let thread = unsafe {
                     std::mem::transmute::<_, *const ()>(std::thread::current())
                 };
@@ -195,49 +236,47 @@ cfg_if::cfg_if! {
                 
                 loop {
                     self.get_waker().register(&waker);
-                    if self.scope.data.0.load(Ordering::Acquire) != 0 {
-                        std::thread::park();
-                        continue;
-                    }
-                    break;
+                    if self.scope.data.0.load(Ordering::Acquire) == 0 { break }
+                    std::thread::park();
                 }
             }
         }
 
-        #[inline(always)]
-        pub async fn local_scope_async<'env, T: Unpin, F, C: 'env + Unpin + Context> (ctx: &'env C, f: F) -> Result<T> 
-        where for<'scope> F: FnOnce(&'scope Scope<'scope, 'env, C>) -> std::pin::Pin<Box<dyn 'scope + Future<Output = Result<T>>>> {
-            let scope = Scope {
-                ctx,
-                data: Arc::new((AtomicUsize::new(0), AtomicI32::new(CL_SUCCESS))),
-                thread: ScopeWaker::Flag(Arc::new(futures::task::AtomicWaker::new())),
-                scope: PhantomData,
-                env: PhantomData
+        #[macro_export]
+        macro_rules! scope_async {
+            ($f:expr) => {
+                $crate::scope_async!($crate::context::Global::get(), $f)
             };
 
-            return AsyncScope::new(&scope, f).await;
+            ($ctx:expr, $f:expr) => {
+                async {
+                    let scope = $crate::context::Scope::new_async($ctx);
+                    $crate::context::InnerAsyncScope::new(&scope, $f).await
+                }
+            };
         }
 
         static TABLE : std::task::RawWakerVTable = std::task::RawWakerVTable::new(clone_waker, wake, wake_by_ref, drop_waker);
 
         unsafe fn clone_waker (ptr: *const ()) -> std::task::RawWaker {
-            let thread = ManuallyDrop::new(std::mem::transmute::<_, Thread>(ptr));
-            let ptr = std::mem::transmute(Thread::clone(&thread));
+            let thread = std::mem::ManuallyDrop::new(std::mem::transmute::<_, std::thread::Thread>(ptr));
+            let ptr = std::mem::transmute(std::thread::Thread::clone(&thread));
             return std::task::RawWaker::new(ptr, &TABLE);
         }
 
         unsafe fn wake (ptr: *const ()) {
-            let thread = std::mem::transmute::<_, Thread>(ptr);
+            let thread = std::mem::transmute::<_, std::thread::Thread>(ptr);
             thread.unpark();
         }
         
         unsafe fn wake_by_ref (ptr: *const ()) {
-            let thread = ManuallyDrop::new(std::mem::transmute::<_, Thread>(ptr));
+            let thread = std::mem::ManuallyDrop::new(std::mem::transmute::<_, std::thread::Thread>(ptr));
             thread.unpark();
         }
 
         unsafe fn drop_waker (ptr: *const ()) {
-            let _ = std::mem::transmute::<_, Thread>(ptr);
+            let _ = std::mem::transmute::<_, std::thread::Thread>(ptr);
         }
     }
+
 }

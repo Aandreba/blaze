@@ -5,14 +5,14 @@ use super::Buffer;
 pub type BufferMapEvent<'scope, 'env, T, C> = Event<BufferMap<'scope, 'env, T, C>>;
 pub type BufferMapMutEvent<'scope, 'env, T, C> = Event<BufferMapMut<'scope, 'env, T, C>>;
 
-pub struct BufferMap<'scope, 'env: 'scope, T: Copy, C: Context> {
+pub struct BufferMap<'scope, 'env: 'scope, T, C: Context> {
     ptr: *const c_void,
     buff: &'env Buffer<T, C>,
     len: usize,
     scope: PhantomData<&'scope mut &'scope ()>,
 }
 
-impl<'scope, 'env, T: Copy, C: Context> BufferMap<'scope, 'env, T, C> {
+impl<'scope, 'env, T, C: Context> BufferMap<'scope, 'env, T, C> {
     #[inline(always)]
     pub(super) fn new (ptr: *const c_void, buff: &'env Buffer<T, C>, len: usize) -> Self {
         Self {
@@ -22,7 +22,7 @@ impl<'scope, 'env, T: Copy, C: Context> BufferMap<'scope, 'env, T, C> {
     }
 }
 
-impl<'scope, 'env, T: Copy, C: Context> Consumer<'scope> for BufferMap<'scope, 'env, T, C> where C: Clone {
+impl<'scope, 'env, T, C: Context> Consumer<'scope> for BufferMap<'scope, 'env, T, C> where C: Clone {
     type Output = MapGuard<'env, T, C>;
     
     #[inline]
@@ -35,14 +35,14 @@ impl<'scope, 'env, T: Copy, C: Context> Consumer<'scope> for BufferMap<'scope, '
     }
 }
 
-pub struct BufferMapMut<'scope, 'env: 'scope, T: Copy, C: Context> {
+pub struct BufferMapMut<'scope, 'env: 'scope, T, C: Context> {
     ptr: *const c_void,
     buff: &'env mut Buffer<T, C>,
     len: usize,
     scope: PhantomData<&'scope mut &'scope ()>,
 }
 
-impl<'scope, 'env, T: Copy, C: Context> BufferMapMut<'scope, 'env, T, C> {
+impl<'scope, 'env, T, C: Context> BufferMapMut<'scope, 'env, T, C> {
     #[inline(always)]
     pub(super) fn new (ptr: *const c_void, buff: &'env mut Buffer<T, C>, len: usize) -> Self {
         Self {
@@ -52,7 +52,7 @@ impl<'scope, 'env, T: Copy, C: Context> BufferMapMut<'scope, 'env, T, C> {
     }
 }
 
-impl<'scope, 'env, T: Copy, C: Context> Consumer<'scope> for BufferMapMut<'scope, 'env, T, C> where C: Clone {
+impl<'scope, 'env, T, C: Context> Consumer<'scope> for BufferMapMut<'scope, 'env, T, C> where C: Clone {
     type Output = MapMutGuard<'env, T, C>;
 
     #[inline]
@@ -66,19 +66,19 @@ impl<'scope, 'env, T: Copy, C: Context> Consumer<'scope> for BufferMapMut<'scope
 }
 
 /// Guard for a read-only map of a [`Buffer`]
-pub struct MapGuard<'a, T: Copy, C: Context = Global> {
+pub struct MapGuard<'a, T, C: Context = Global> {
     ptr: MapPtr<T, C>,
     phtm: PhantomData<&'a Buffer<T, C>>
 }
 
-impl<'a, T: Copy, C: Context> MapGuard<'a, T, C> {
+impl<'a, T, C: Context> MapGuard<'a, T, C> {
     #[inline(always)]
     pub(super) fn new (ptr: MapPtr<T, C>) -> Self {
         Self { ptr, phtm: PhantomData }
     }
 }
 
-impl<'a, T: Copy, C: Context> Deref for MapGuard<'a, T, C> {
+impl<'a, T, C: Context> Deref for MapGuard<'a, T, C> {
     type Target = [T];
 
     #[inline(always)]
@@ -89,7 +89,7 @@ impl<'a, T: Copy, C: Context> Deref for MapGuard<'a, T, C> {
     }
 }
 
-impl<'a, T: Debug + Copy, C: Context> Debug for MapGuard<'_, T, C> {
+impl<'a, T: Debug, C: Context> Debug for MapGuard<'_, T, C> {
     #[inline(always)]
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.deref().fmt(f)
@@ -97,19 +97,19 @@ impl<'a, T: Debug + Copy, C: Context> Debug for MapGuard<'_, T, C> {
 }
 
 /// Guard for a read-write map of a [`Buffer`]
-pub struct MapMutGuard<'a, T: Copy, C: Context = Global> {
+pub struct MapMutGuard<'a, T, C: Context = Global> {
     ptr: MapPtr<T, C>,
     phtm: PhantomData<&'a mut Buffer<T, C>>
 }
 
-impl<'a, T: Copy, C: Context> MapMutGuard<'a, T, C> {
+impl<'a, T, C: Context> MapMutGuard<'a, T, C> {
     #[inline(always)]
     pub(super) fn new (ptr: MapPtr<T, C>) -> Self {
         Self { ptr, phtm: PhantomData }
     }
 }
 
-impl<'a, T: Copy, C: Context> Deref for MapMutGuard<'a, T, C> {
+impl<'a, T, C: Context> Deref for MapMutGuard<'a, T, C> {
     type Target = [T];
 
     #[inline(always)]
@@ -120,7 +120,7 @@ impl<'a, T: Copy, C: Context> Deref for MapMutGuard<'a, T, C> {
     }
 }
 
-impl<'a, T: Copy, C: Context> DerefMut for MapMutGuard<'a, T, C> {
+impl<'a, T, C: Context> DerefMut for MapMutGuard<'a, T, C> {
     #[inline(always)]
     fn deref_mut(&mut self) -> &mut Self::Target {
         unsafe {
@@ -129,7 +129,7 @@ impl<'a, T: Copy, C: Context> DerefMut for MapMutGuard<'a, T, C> {
     }
 }
 
-impl<'a, T: Debug + Copy, C: Context> Debug for MapMutGuard<'_, T, C> {
+impl<'a, T: Debug, C: Context> Debug for MapMutGuard<'_, T, C> {
     #[inline(always)]
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.deref().fmt(f)

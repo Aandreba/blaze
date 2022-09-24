@@ -8,16 +8,16 @@ use super::{IntoRange, BufferRange, MapGuard, BufferMapEvent, BufferMap, BufferM
 pub type ReadEvent<'a, T> = Event<BufferRead<'a, T>>;
 
 #[doc = include_str!("../../docs/src/buffer/README.md")]
-pub struct Buffer<T: Copy, C: Context = Global> {
+pub struct Buffer<T, C: Context = Global> {
     pub(super) inner: RawBuffer,
     pub(super) ctx: C,
     pub(super) phtm: PhantomData<T>
 }
 
-impl<T: Copy> Buffer<T> {
+impl<T> Buffer<T> {
     /// Creates a new buffer with the given values and flags.
     #[inline(always)]
-    pub fn new (v: &[T], access: MemAccess, alloc: bool) -> Result<Self> {
+    pub fn new (v: &[T], access: MemAccess, alloc: bool) -> Result<Self> where T: Copy {
         Self::new_in(Global, v, access, alloc)
     }
 
@@ -30,7 +30,7 @@ impl<T: Copy> Buffer<T> {
     /// Creates a new zero-filled, uninitialized buffer with the given size and flags.
     /// If using OpenCL 1.2 or higher, this uses the `fill` event. Otherwise, a regular `write` is used. 
     #[inline(always)]
-    pub fn new_zeroed (len: usize, access: MemAccess, alloc: bool) -> Result<Buffer<MaybeUninit<T>>> where T: Unpin {
+    pub fn new_zeroed (len: usize, access: MemAccess, alloc: bool) -> Result<Buffer<MaybeUninit<T>>> {
         Self::new_zeroed_in(Global, len, access, alloc)
     }
 
@@ -41,10 +41,10 @@ impl<T: Copy> Buffer<T> {
     }
 }
 
-impl<T: Copy, C: Context> Buffer<T, C> {
+impl<T, C: Context> Buffer<T, C> {
     /// Creates a new buffer with the given values and flags.
     #[inline]
-    pub fn new_in (ctx: C, v: &[T], access: MemAccess, alloc: bool) -> Result<Self> {
+    pub fn new_in (ctx: C, v: &[T], access: MemAccess, alloc: bool) -> Result<Self> where T: Copy {
         let flags = MemFlags::new(access, HostPtr::new(alloc, true));
         unsafe { Self::create_in(ctx, v.len(), flags, NonNull::new(v.as_ptr() as *mut _)) }
     }
@@ -59,12 +59,34 @@ impl<T: Copy, C: Context> Buffer<T, C> {
     /// Creates a new zero-filled, uninitialized buffer with the given size and flags.
     /// If using OpenCL 1.2 or higher, this uses the `fill` event. Otherwise, a regular `write` is used.
     #[inline(always)]
-    pub fn new_zeroed_in (ctx: C, len: usize, access: MemAccess, alloc: bool) -> Result<Buffer<MaybeUninit<T>, C>> where T: Unpin {
+    pub fn new_zeroed_in (ctx: C, len: usize, access: MemAccess, alloc: bool) -> Result<Buffer<MaybeUninit<T>, C>> {
         let mut buffer = Self::new_uninit_in(ctx, len, access, alloc)?;
         #[cfg(feature = "cl1_2")]
-        buffer.fill_blocking(MaybeUninit::zeroed(), .., WaitList::None)?;
+        {
+            let range = (..).into_range::<T>(&buffer)?;
+            let supplier = |queue| unsafe {
+                buffer.inner.fill_raw_in(MaybeUninit::<T>::zeroed(), range, queue, None)
+            };
+            unsafe {
+                buffer.ctx.next_queue().enqueue_noop_unchecked(supplier)?.join()?;
+            }
+        }
         #[cfg(not(feature = "cl1_2"))]
-        buffer.write_blocking(0, &vec![MaybeUninit::zeroed(); len], WaitList::None)?;
+        {
+            let mut v = Vec::<T>::with_capacity(len);
+            unsafe {
+                core::ptr::write_bytes(v.as_mut_ptr(), 0, len);
+            }
+
+            let range = BufferRange::from_parts::<T>(0, len).unwrap();
+            let supplier = |queue| unsafe {
+                buffer.inner.write_from_ptr_in(range, v.as_ptr().cast(), queue, None)
+            };
+
+            unsafe {
+                buffer.ctx.next_queue().enqueue_noop_unchecked(supplier)?.join()?;
+            }
+        }
         return Ok(buffer)
     }
 
@@ -99,7 +121,7 @@ impl<T: Copy, C: Context> Buffer<T, C> {
     /// # Safety
     /// This function has the same safety as [`transmute`](std::mem::transmute)
     #[inline(always)]
-    pub unsafe fn transmute<U: Copy> (self) -> Buffer<U, C> {
+    pub unsafe fn transmute<U> (self) -> Buffer<U, C> {
         debug_assert_eq!(core::mem::size_of::<T>(), core::mem::size_of::<U>());
         Buffer { inner: self.inner, ctx: self.ctx, phtm: PhantomData }
     }
@@ -111,7 +133,7 @@ impl<T: Copy, C: Context> Buffer<T, C> {
     }
 }
 
-impl<T: Copy, C: Context> Buffer<MaybeUninit<T>, C> {
+impl<T, C: Context> Buffer<MaybeUninit<T>, C> {
     /// Extracts the value from `Buffer<MaybeUninit<T>>` to `Buffer<T>`
     /// # Safety
     /// This function has the same safety as [`MaybeUninit`](std::mem::MaybeUninit)'s `assume_init`
@@ -270,7 +292,9 @@ impl<T: Copy + Unpin, C: Context> Buffer<T, C> {
             self.ctx.next_queue().enqueue_noop_unchecked(supplier)?.join()
         }
     }
+}
 
+impl<T, C: Context> Buffer<T, C> {
     pub fn map<'scope, 'env, R: IntoRange> (&'env self, s: &'scope Scope<'scope, 'env, C>, range: R, wait: WaitList) -> Result<BufferMapEvent<'scope, 'env, T, C>> where C: Clone {
         let range = range.into_range::<T>(&self.inner)?;
         let len = range.cb / core::mem::size_of::<T>();
@@ -344,7 +368,7 @@ impl<T: Copy + Unpin, C: Context> Buffer<T, C> {
     }
 }
 
-impl<T: Copy, C: Context> Deref for Buffer<T, C> {
+impl<T, C: Context> Deref for Buffer<T, C> {
     type Target = RawBuffer;
 
     #[inline(always)]
@@ -353,38 +377,38 @@ impl<T: Copy, C: Context> Deref for Buffer<T, C> {
     }
 }
 
-impl<T: Copy, C: Context> DerefMut for Buffer<T, C> {
+impl<T, C: Context> DerefMut for Buffer<T, C> {
     #[inline(always)]
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.inner
     }
 }
 
-impl<T: Copy + Unpin + PartialEq, C: Context> PartialEq for Buffer<T, C> {
+impl<T: Unpin + PartialEq, C: Context + Clone> PartialEq for Buffer<T, C> {
     fn eq(&self, other: &Self) -> bool {
         if self.eq_buffer(other) {
             return true;
         }
 
         let [this, other] = local_scope(&self.ctx, |s| {
-            let this = self.read(s, .., None)?;
-            let other = other.read(s, .., None)?;
+            let this = self.map(s, .., None)?;
+            let other = other.map(s, .., None)?;
             Event::join_all_sized_blocking([this, other])
         }).unwrap();
 
-        this == other
+        this.deref() == other.deref()
     }
 }
 
-impl<T: Copy + Unpin + Debug, C: Context> Debug for Buffer<T, C> {
+impl<T: Unpin + Debug, C: Context + Clone> Debug for Buffer<T, C> {
     #[inline(always)]
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let v = self.read_blocking(.., None).unwrap();
+        let v = self.map_blocking(.., None).unwrap();
         Debug::fmt(&v, f)
     }
 }
 
-impl<T: Copy + Unpin + Eq, C: Context> Eq for Buffer<T, C> {}
+impl<T: Copy + Unpin + Eq, C: Context + Clone> Eq for Buffer<T, C> {}
 
 pub struct BufferRead<'a, T> (Vec<T>, usize, PhantomData<&'a RawBuffer>);
 
@@ -403,4 +427,23 @@ impl<'a, T> Debug for BufferRead<'a, T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("BufferRead").finish_non_exhaustive()
     }
+}
+
+#[macro_export]
+macro_rules! buffer {
+    ($($v:expr),+) => {
+        $crate::buffer::Buffer::new(&::std::vec![$($v),+], $crate::buffer::flags::MemAccess::READ_WRITE, false)
+    };
+
+    (|$i:ident| $v:expr; $len:expr) => {{
+        let mut __1_ = $crate::buffer::Buffer::new_uninit($len, $crate::buffer::flags::MemAccess::READ_WRITE, false)?;
+        for ($i, __2_) in __1_.map_mut_blocking(.., $crate::WaitList::None)?.into_iter().enumerate() {
+            __2_.write((|$i| $v)($i));
+        }
+        return unsafe { __1_.assume_init() };
+    }};
+
+    ($v:expr; $len:expr) => {{
+        $crate::buffer::Buffer::new(&::std::vec![$v; $len], $crate::buffer::flags::MemAccess::READ_WRITE, false)
+    }};
 }

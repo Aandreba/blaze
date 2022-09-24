@@ -5,12 +5,12 @@ use super::IntoRange;
 /// An immutable slice of a [`Buffer`]
 #[cfg_attr(docsrs, doc(cfg(feature = "cl1_1")))]
 #[repr(transparent)]
-pub struct Buf<'a, T: Copy, C: Context = Global> {
+pub struct Buf<'a, T, C: Context = Global> {
     inner: Buffer<T, C>,
     phtm: PhantomData<&'a Buffer<T, C>>
 }
 
-impl<'a, T: Copy, C: Context> Buf<'a, T, C> {
+impl<'a, T, C: Context> Buf<'a, T, C> {
     #[inline]
     pub fn new<R: IntoRange> (parent: &'a Buffer<T, C>, range: R) -> Result<Self> where C: Clone {
         let region = range.into_range::<T>(parent)?;
@@ -25,7 +25,7 @@ impl<'a, T: Copy, C: Context> Buf<'a, T, C> {
     } 
 }
 
-impl<'a, T: Copy, C: Context> Deref for Buf<'a, T, C> {
+impl<'a, T, C: Context> Deref for Buf<'a, T, C> {
     type Target = Buffer<T, C>;
 
     #[inline(always)]
@@ -34,31 +34,31 @@ impl<'a, T: Copy, C: Context> Deref for Buf<'a, T, C> {
     }
 }
 
-impl<T: Copy + Unpin + Debug, C: Context> Debug for Buf<'_, T, C> {
+impl<T: Debug, C: Context> Debug for Buf<'_, T, C> {
     #[inline(always)]
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.inner.fmt(f)
     }
 }
 
-impl<T: Copy + Unpin + PartialEq, C: Context> PartialEq for Buf<'_, T, C> {
+impl<T: PartialEq, C: Context> PartialEq for Buf<'_, T, C> {
     #[inline(always)]
     fn eq(&self, other: &Self) -> bool {
         self.inner.eq(other)
     }
 }
 
-impl<T: Copy + Unpin + Eq, C: Context> Eq for Buf<'_, T, C> {}
+impl<T: Eq, C: Context> Eq for Buf<'_, T, C> {}
 
 /// A mutable slice of a [`Buffer`]
 #[cfg_attr(docsrs, doc(cfg(feature = "cl1_1")))]
 #[repr(transparent)]
-pub struct BufMut<'a, T: Copy, C: Context = Global> {
+pub struct BufMut<'a, T, C: Context = Global> {
     inner: Buffer<T, C>,
     phtm: PhantomData<&'a mut Buffer<T, C>>
 }
 
-impl<'a, T: Copy, C: Context> BufMut<'a, T, C> {
+impl<'a, T, C: Context> BufMut<'a, T, C> {
     #[inline]
     pub fn new<R: IntoRange> (parent: &'a mut Buffer<T, C>, range: R) -> Result<Self> where C: Clone {
         let region = range.into_range::<T>(parent)?;
@@ -73,7 +73,7 @@ impl<'a, T: Copy, C: Context> BufMut<'a, T, C> {
     } 
 }
 
-impl<'a, T: Copy, C: Context> Deref for BufMut<'a, T, C> {
+impl<'a, T, C: Context> Deref for BufMut<'a, T, C> {
     type Target = Buffer<T, C>;
 
     #[inline(always)]
@@ -82,25 +82,25 @@ impl<'a, T: Copy, C: Context> Deref for BufMut<'a, T, C> {
     }
 }
 
-impl<'a, T: Copy, C: Context> DerefMut for BufMut<'a, T, C> {
+impl<'a, T, C: Context> DerefMut for BufMut<'a, T, C> {
     #[inline(always)]
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.inner
     }
 }
 
-impl<T: Copy + Unpin + Debug, C: Context> Debug for BufMut<'_, T, C> {
+impl<T: Debug, C: Context> Debug for BufMut<'_, T, C> {
     #[inline(always)]
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.inner.fmt(f)
     }
 }
 
-impl<T: Copy + Unpin + PartialEq, C: Context> PartialEq for BufMut<'_, T, C> {
+impl<T: PartialEq, C: Context> PartialEq for BufMut<'_, T, C> {
     #[inline(always)]
     fn eq(&self, other: &Self) -> bool {
         self.inner.eq(other)
     }
 }
 
-impl<T: Copy + Unpin + Eq, C: Context> Eq for BufMut<'_, T, C> {}
+impl<T: Eq, C: Context> Eq for BufMut<'_, T, C> {}
