@@ -422,9 +422,9 @@ impl<T: Debug, C: Context> Debug for Buffer<T, C> {
 
 impl<T: Eq, C: Context> Eq for Buffer<T, C> {}
 
-pub struct BufferRead<'a, T, C: Context = Global> (Vec<T>, PhantomData<&'a Buffer<T, C>>);
+pub struct BufferRead<'a, T: Copy, C: Context = Global> (Vec<T>, PhantomData<&'a Buffer<T, C>>);
 
-impl<'a, T> Consumer for BufferRead<'a, T> {
+impl<'a, T: Copy> Consumer for BufferRead<'a, T> {
     type Output = Vec<T>;
     
     #[inline(always)]
@@ -434,7 +434,7 @@ impl<'a, T> Consumer for BufferRead<'a, T> {
     }
 }
 
-impl<'a, T> Debug for BufferRead<'a, T> {
+impl<'a, T: Copy> Debug for BufferRead<'a, T> {
     #[inline(always)]
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("BufferRead").finish_non_exhaustive()

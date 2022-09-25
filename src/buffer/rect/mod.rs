@@ -1,17 +1,22 @@
 flat_mod!(host);
 
-use std::{ptr::NonNull, ops::{Deref, DerefMut}, num::NonZeroUsize, mem::MaybeUninit, fmt::Debug};
-use crate::{prelude::*};
+use std::{ptr::NonNull, ops::{Deref, DerefMut}, num::NonZeroUsize, mem::MaybeUninit, fmt::Debug, marker::PhantomData};
+use crate::{prelude::*, event::Consumer};
 use super::{Buffer, flags::{MemFlags, MemAccess, HostPtr}};
+use blaze_proc::docfg;
+
+#[deprecated(since = "0.1.0", note = "use `RectBuffer2D` instead")]
+pub type BufferRect2D<T, C = Global> = RectBuffer2D<T, C>;
+pub type ReadRectEvent<'a, T, C = Global> = Event<ReadRect<'a, T, C>>;
 
 /// Buffer that conatins a 2D rectangle.
-pub struct BufferRect2D<T, C: Context = Global> {
+pub struct RectBuffer2D<T, C: Context = Global> {
     inner: Buffer<T, C>,
     width: NonZeroUsize,
     height: NonZeroUsize
 }
 
-impl<T> BufferRect2D<T> {
+impl<T> RectBuffer2D<T> {
     /// Creates a new rectangular buffer from the specified values in [row-major order](https://en.wikipedia.org/wiki/Row-_and_column-major_order).
     #[inline(always)]
     pub fn new (v: &[T], width: usize, access: MemAccess, alloc: bool) -> Result<Self> where T: Copy {
@@ -24,7 +29,7 @@ impl<T> BufferRect2D<T> {
     }
 
     #[inline(always)]
-    pub fn new_uninit (width: usize, height: usize, access: MemAccess, alloc: bool) -> Result<BufferRect2D<MaybeUninit<T>>> {
+    pub fn new_uninit (width: usize, height: usize, access: MemAccess, alloc: bool) -> Result<RectBuffer2D<MaybeUninit<T>>> {
         Self::new_uninit_in(Global, width, height, access, alloc)
     }
     
@@ -34,7 +39,7 @@ impl<T> BufferRect2D<T> {
     }
 }
 
-impl<T, C: Context> BufferRect2D<T, C> {
+impl<T, C: Context> RectBuffer2D<T, C> {
     /// Creates a new rectangular buffer, in the specified context, from the specified values in [row-major order](https://en.wikipedia.org/wiki/Row-_and_column-major_order).
     #[inline]
     pub fn new_in (ctx: C, v: &[T], width: usize, access: MemAccess, alloc: bool) -> Result<Self> where T: Copy {
@@ -51,9 +56,9 @@ impl<T, C: Context> BufferRect2D<T, C> {
     }
 
     #[inline]
-    pub fn new_uninit_in (ctx: C, width: usize, height: usize, access: MemAccess, alloc: bool) -> Result<BufferRect2D<MaybeUninit<T>, C>> {
+    pub fn new_uninit_in (ctx: C, width: usize, height: usize, access: MemAccess, alloc: bool) -> Result<RectBuffer2D<MaybeUninit<T>, C>> {
         let host = MemFlags::new(access, HostPtr::new(alloc, false));
-        unsafe { BufferRect2D::create_in(ctx, width, height, host, None) }
+        unsafe { RectBuffer2D::create_in(ctx, width, height, host, None) }
     }
     
     #[inline]
@@ -85,19 +90,19 @@ impl<T, C: Context> BufferRect2D<T, C> {
     }
 
     #[inline(always)]
-    pub unsafe fn transmute<U: Copy> (self) -> BufferRect2D<U, C> {
-        BufferRect2D::<U, C> { inner: self.inner.transmute(), width: self.width, height: self.height }
+    pub unsafe fn transmute<U: Copy> (self) -> RectBuffer2D<U, C> {
+        RectBuffer2D::<U, C> { inner: self.inner.transmute(), width: self.width, height: self.height }
     }
 }
 
-impl<T: Copy, C: Context> BufferRect2D<MaybeUninit<T>, C> {
+impl<T: Copy, C: Context> RectBuffer2D<MaybeUninit<T>, C> {
     #[inline(always)]
-    pub unsafe fn assume_init (self) -> BufferRect2D<T, C> {
+    pub unsafe fn assume_init (self) -> RectBuffer2D<T, C> {
         self.transmute()
     }
 }
 
-impl<T: Copy, C: Context> BufferRect2D<T, C> {
+impl<T: Copy, C: Context> RectBuffer2D<T, C> {
     #[inline(always)]
     pub fn width (&self) -> usize {
         self.width.get()
@@ -125,7 +130,59 @@ impl<T: Copy, C: Context> BufferRect2D<T, C> {
     }
 }
 
-impl<T, C: Context> Deref for BufferRect2D<T, C> {
+#[cfg(feature = "cl1_1")]
+use crate::{WaitList, memobj::IntoRange2D};
+
+#[docfg(feature = "cl1_1")]
+impl<T: Copy, C: Context> RectBuffer2D<T, C> {
+    pub fn read<'scope, 'env, R: IntoRange2D> (&'env self, scope: &'scope Scope<'scope, 'env, C>, range: R, wait: WaitList) -> Result<ReadRectEvent<'scope, T, C>> {
+        let (buffer_row_pitch, buffer_slice_pitch) = self.row_and_slice_pitch();
+        let range = range.into_range(self.width(), self.height())?;
+
+        let [buffer_origin, region] = range.raw_parts_buffer::<T>();
+        let mut dst = Rect2D::<T>::new_uninit(range.width(), range.height())
+            .ok_or_else(|| Error::from_type(ErrorKind::InvalidBufferSize)
+        )?;
+
+        let supplier = |queue| unsafe {
+            self.read_rect_to_ptr_in(
+                buffer_origin, [0; 3], region,
+                Some(buffer_row_pitch), Some(buffer_slice_pitch),
+                Some(0), Some(0),
+                dst.as_mut_ptr().cast(), queue, wait
+            )
+        };
+
+        return Ok(scope
+            .enqueue_noop(supplier)?
+            .set_consumer(ReadRect(dst, PhantomData))
+        )
+    }
+    
+    pub fn read_blocking<R: IntoRange2D> (&self, range: R, wait: WaitList) -> Result<Rect2D<T>> {
+        let (buffer_row_pitch, buffer_slice_pitch) = self.row_and_slice_pitch();
+        let range = range.into_range(self.width(), self.height())?;
+
+        let [buffer_origin, region] = range.raw_parts_buffer::<T>();
+        let mut dst = Rect2D::<T>::new_uninit(range.width(), range.height())
+            .ok_or_else(|| Error::from_type(ErrorKind::InvalidBufferSize)
+        )?;
+
+        let supplier = |queue| unsafe {
+            self.read_rect_to_ptr_in(
+                buffer_origin, [0; 3], region,
+                Some(buffer_row_pitch), Some(buffer_slice_pitch),
+                Some(0), Some(0),
+                dst.as_mut_ptr().cast(), queue, wait
+            )
+        };
+
+        self.context().next_queue().enqueue_noop(supplier)?.join()?;
+        return unsafe { Ok(dst.assume_init()) }
+    }
+}
+
+impl<T, C: Context> Deref for RectBuffer2D<T, C> {
     type Target = Buffer<T, C>;
 
     #[inline(always)]
@@ -134,14 +191,14 @@ impl<T, C: Context> Deref for BufferRect2D<T, C> {
     }
 }
 
-impl<T, C: Context> DerefMut for BufferRect2D<T, C> {
+impl<T, C: Context> DerefMut for RectBuffer2D<T, C> {
     #[inline(always)]
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.inner
     }
 }
 
-impl<T: Unpin + PartialEq, C: Context + Clone> PartialEq for BufferRect2D<T, C> {
+impl<T: PartialEq, C: Context> PartialEq for RectBuffer2D<T, C> {
     #[inline]
     fn eq(&self, other: &Self) -> bool {
         self.width == other.width && 
@@ -150,7 +207,7 @@ impl<T: Unpin + PartialEq, C: Context + Clone> PartialEq for BufferRect2D<T, C> 
     }
 }
 
-impl<T: Unpin + Debug, C: Context + Clone> Debug for BufferRect2D<T, C> {
+impl<T: Debug, C: Context> Debug for RectBuffer2D<T, C> {
     #[inline]
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let map = Buffer::map_blocking(&self, .., None).map_err(|_| std::fmt::Error)?;
@@ -158,4 +215,24 @@ impl<T: Unpin + Debug, C: Context + Clone> Debug for BufferRect2D<T, C> {
     }
 }
 
-impl<T: Unpin + Eq, C: Context + Clone> Eq for BufferRect2D<T, C> {}
+impl<T: Eq, C: Context> Eq for RectBuffer2D<T, C> {}
+
+pub struct ReadRect<'a, T: Copy, C: Context = Global> (Rect2D<MaybeUninit<T>>, PhantomData<&'a RectBuffer2D<T, C>>);
+
+impl<'a, T: Copy, C: Context> Consumer for ReadRect<'a, T, C> {
+    type Output = Rect2D<T>;
+
+    #[inline(always)]
+    fn consume (self) -> Result<Self::Output> {
+        unsafe {
+            Ok(self.0.assume_init())
+        }
+    }
+}
+
+impl<'a, T: Copy> Debug for ReadRect<'a, T> {
+    #[inline(always)]
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ReadRect").finish_non_exhaustive()
+    }
+}

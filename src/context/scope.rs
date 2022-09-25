@@ -258,7 +258,7 @@ cfg_if::cfg_if! {
         /// that completes when all the events spawned inside the scope have completed.
         /// 
         /// ```rust
-        /// use blaze_rs::prelude::*;
+        /// use blaze_rs::{buffer, scope_async, prelude::*};
         /// use futures::future::*;
         /// 
         /// let buffer = buffer![1, 2, 3, 4, 5]?;
@@ -271,12 +271,13 @@ cfg_if::cfg_if! {
         /// 
         /// assert_eq!(left, vec![1, 2]);
         /// assert_eq!(right, vec![3, 4, 5]);
+        /// # Ok::<_, Error>()
         /// ```
         /// 
         /// This macro can be called with the same form as [`scope`] or [`local_scope`].
         /// 
         /// ```rust
-        /// use blaze_rs::prelude::*;
+        /// use blaze_rs::{scope_async, prelude::*};
         /// use futures::future::*;
         /// 
         /// let ctx = SimpleContext::default()?;
@@ -290,6 +291,7 @@ cfg_if::cfg_if! {
         /// 
         /// assert_eq!(left, vec![1, 2]);
         /// assert_eq!(right, vec![3, 4, 5]);
+        /// # Ok::<_, Error>()
         /// ```
         /// 
         /// Unlike it's [blocking](local_scope) counterpart, [`scope_async`](crate::scope_async) does **not** ensure that all events inside the future
@@ -297,7 +299,7 @@ cfg_if::cfg_if! {
         /// and discarting the remaining uninitialized events.
         /// 
         /// ```rust
-        /// use blaze_rs::{buffer, scope_async};
+        /// use blaze_rs::{buffer, scope_async, scope_async};
         /// use futures::{task::*, future::*};
         /// 
         /// let buffer = buffer![1, 2, 3, 4, 5]?;
@@ -311,6 +313,7 @@ cfg_if::cfg_if! {
         /// let mut ctx = std::task::Context::from_waker(noop_waker_ref());
         /// let _ = scope.poll_unpin(&mut ctx)?;
         /// drop(scope); // prints "Left done!", doesn't print "Right done!"
+        /// # Ok::<_, Error>()
         /// ```
         #[macro_export]
         macro_rules! scope_async {

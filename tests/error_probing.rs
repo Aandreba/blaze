@@ -58,7 +58,7 @@ async fn async_test () -> Result<()> {
 
 #[test]
 fn rect () -> Result<()> {
-    let buff = BufferRect2D::new(&[1, 2, 3, 4, 5, 6], 2, MemAccess::READ_WRITE, false)?;
+    let buff = RectBuffer2D::new(&[1, 2, 3, 4, 5, 6], 2, MemAccess::READ_WRITE, false)?;
     println!("{buff:?}");
     Ok(())
 }

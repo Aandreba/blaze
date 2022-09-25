@@ -32,15 +32,14 @@ extern "C" {
 fn buffer_mul () -> Result<()> {
     let ops = MatrixOps::new(None)?;
 
-    let lhs = BufferRect2D::<f32>::new(&[1.,2.,4.,5.,7.,8.], 2, MemAccess::READ_ONLY, false)?; // 3 x 2
-    let rhs = BufferRect2D::<f32>::new(&[1.,2.,3.,4.,5.,6.], 3, MemAccess::READ_ONLY, false)?; // 2 x 3
-    let mut result = BufferRect2D::<f32>::new_uninit(3, 3, MemAccess::WRITE_ONLY, false)?; // 3 x 3
+    let lhs = RectBuffer2D::<f32>::new(&[1.,2.,4.,5.,7.,8.], 2, MemAccess::READ_ONLY, false)?; // 3 x 2
+    let rhs = RectBuffer2D::<f32>::new(&[1.,2.,3.,4.,5.,6.], 3, MemAccess::READ_ONLY, false)?; // 2 x 3
+    let mut result = RectBuffer2D::<f32>::new_uninit(3, 3, MemAccess::WRITE_ONLY, false)?; // 3 x 3
 
-    scope(|s| unsafe {
-        ops.matrix_mul(s, 2, &lhs, &rhs, &mut result, [3, 3], None, None)?.join()?;
-        Ok(())
-    })?;
-
+    unsafe {
+        ops.matrix_mul_blocking(2, &lhs, &rhs, &mut result, [3, 3], None, None)?;
+    }
+    
     let result = unsafe { result.assume_init() };
     println!("{:?}", result);
     

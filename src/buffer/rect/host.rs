@@ -365,6 +365,17 @@ impl<T, A: Allocator> Rect2D<MaybeUninit<T>, A> {
     }
 }
 
+impl<T: PartialEq, A: Allocator> PartialEq for Rect2D<T, A> {
+    #[inline]
+    fn eq(&self, other: &Self) -> bool {
+        self.width == other.width &&
+        self.height == other.height &&
+        self.as_slice() == other.as_slice()
+    }
+}
+
+impl<T: Eq, A: Allocator> Eq for Rect2D<T, A> {}
+
 #[docfg(feature = "svm")]
 unsafe impl<T, C: crate::prelude::Context> crate::svm::SvmPointer<T> for SvmRect2D<T, C> {
     type Context = C;
