@@ -2,17 +2,30 @@ use std::{ptr::{NonNull, addr_of}, num::NonZeroUsize, mem::{MaybeUninit, Manuall
 use blaze_proc::docfg;
 
 #[docfg(feature = "svm")]
-pub type SvmRect2D<T, C = crate::prelude::Global> = Rect2D<T, crate::svm::Svm<C>>;
+pub type SvmRect2D<T, C = crate::prelude::Global> = RectBox2D<T, crate::svm::Svm<C>>;
 
 /// A 2D rectangle stored in host memory in [row-major order](https://en.wikipedia.org/wiki/Row-_and_column-major_order)
-pub struct Rect2D<T, A: Allocator = Global> {
+pub struct Rect2D<T> {
+    width: NonZeroUsize,
+    inner: [T],
+}
+
+impl<T> Rect2D<T> {
+    pub fn from_slice (v: &[T], width: usize) -> &Self {
+        let 
+        todo!()
+    }
+}
+
+/// A 2D rectangle stored in host memory in [row-major order](https://en.wikipedia.org/wiki/Row-_and_column-major_order)
+pub struct RectBox2D<T, A: Allocator = Global> {
     ptr: NonNull<T>,
     width: NonZeroUsize,
     height: NonZeroUsize,
     alloc: A
 }
 
-impl<T> Rect2D<T> {
+impl<T> RectBox2D<T> {
     #[inline(always)]
     pub fn new (v: &[T], width: usize) -> Option<Self> where T: Copy {
         Self::new_in(v, width, Global)
@@ -24,12 +37,12 @@ impl<T> Rect2D<T> {
     }
 
     #[inline(always)]
-    pub fn new_uninit (width: usize, height: usize) -> Option<Rect2D<MaybeUninit<T>>> {
+    pub fn new_uninit (width: usize, height: usize) -> Option<RectBox2D<MaybeUninit<T>>> {
         Self::new_uninit_in(width, height, Global)
     }
 
     #[inline(always)]
-    pub fn new_zeroed (width: usize, height: usize) -> Option<Rect2D<MaybeUninit<T>>> {
+    pub fn new_zeroed (width: usize, height: usize) -> Option<RectBox2D<MaybeUninit<T>>> {
         Self::new_zeroed_in(width, height, Global)
     }
 
@@ -45,7 +58,7 @@ impl<T> Rect2D<T> {
     }
 }
 
-impl<T, A: Allocator> Rect2D<T, A> {
+impl<T, A: Allocator> RectBox2D<T, A> {
     #[inline(always)]
     pub fn as_ptr (&self) -> *const T {
         self.ptr.as_ptr()
@@ -111,10 +124,10 @@ impl<T, A: Allocator> Rect2D<T, A> {
     }
 
     #[inline(always)]
-    pub unsafe fn transmute<U> (self) -> Rect2D<U, A> {
+    pub unsafe fn transmute<U> (self) -> RectBox2D<U, A> {
         let this = ManuallyDrop::new(self);
         let alloc = core::ptr::read(addr_of!(this.alloc));
-        Rect2D { ptr: this.ptr.cast(), width: this.width, height: this.height, alloc }
+        RectBox2D { ptr: this.ptr.cast(), width: this.width, height: this.height, alloc }
     }
 
     #[inline(always)]
@@ -265,7 +278,7 @@ impl<T, A: Allocator> Rect2D<T, A> {
         }
     }
 
-    pub fn new_uninit_in (width: usize, height: usize, alloc: A) -> Option<Rect2D<MaybeUninit<T>, A>> {
+    pub fn new_uninit_in (width: usize, height: usize, alloc: A) -> Option<RectBox2D<MaybeUninit<T>, A>> {
         let len = match width.checked_mul(height) {
             Some(0) | None => return None,
             Some(len) => len
@@ -278,7 +291,7 @@ impl<T, A: Allocator> Rect2D<T, A> {
             let width = NonZeroUsize::new_unchecked(width);
             let height = NonZeroUsize::new_unchecked(height);
             
-            Some(Rect2D {
+            Some(RectBox2D {
                 ptr,
                 alloc,
                 width,
@@ -287,7 +300,7 @@ impl<T, A: Allocator> Rect2D<T, A> {
         }
     }
 
-    pub fn new_zeroed_in (width: usize, height: usize, alloc: A) -> Option<Rect2D<MaybeUninit<T>, A>> {
+    pub fn new_zeroed_in (width: usize, height: usize, alloc: A) -> Option<RectBox2D<MaybeUninit<T>, A>> {
         let len = match width.checked_mul(height) {
             Some(0) | None => return None,
             Some(len) => len
@@ -300,7 +313,7 @@ impl<T, A: Allocator> Rect2D<T, A> {
             let width = NonZeroUsize::new_unchecked(width);
             let height = NonZeroUsize::new_unchecked(height);
             
-            Some(Rect2D {
+            Some(RectBox2D {
                 ptr,
                 alloc,
                 width,
@@ -349,14 +362,14 @@ impl<T, A: Allocator> Rect2D<T, A> {
     }
 }
 
-impl<T, A: Allocator> Rect2D<MaybeUninit<T>, A> {
+impl<T, A: Allocator> RectBox2D<MaybeUninit<T>, A> {
     #[inline(always)]
-    pub unsafe fn assume_init (self) -> Rect2D<T, A> {
+    pub unsafe fn assume_init (self) -> RectBox2D<T, A> {
         assert_eq!(core::mem::size_of::<T>(), core::mem::size_of::<MaybeUninit<T>>());
         let this = ManuallyDrop::new(self);
         let alloc = core::ptr::read(addr_of!(this.alloc));
 
-        Rect2D { 
+        RectBox2D { 
             ptr: this.ptr.cast(),
             width: this.width,
             height: this.height,
@@ -365,7 +378,7 @@ impl<T, A: Allocator> Rect2D<MaybeUninit<T>, A> {
     }
 }
 
-impl<T: PartialEq, A: Allocator> PartialEq for Rect2D<T, A> {
+impl<T: PartialEq, A: Allocator> PartialEq for RectBox2D<T, A> {
     #[inline]
     fn eq(&self, other: &Self) -> bool {
         self.width == other.width &&
@@ -374,7 +387,7 @@ impl<T: PartialEq, A: Allocator> PartialEq for Rect2D<T, A> {
     }
 }
 
-impl<T: Eq, A: Allocator> Eq for Rect2D<T, A> {}
+impl<T: Eq, A: Allocator> Eq for RectBox2D<T, A> {}
 
 #[docfg(feature = "svm")]
 unsafe impl<T, C: crate::prelude::Context> crate::svm::SvmPointer<T> for SvmRect2D<T, C> {
@@ -434,7 +447,7 @@ unsafe impl<T: Sync, C: crate::prelude::Context> crate::buffer::KernelPointer<T>
     }
 }
 
-impl<T, A: Allocator> Index<usize> for Rect2D<T, A> {
+impl<T, A: Allocator> Index<usize> for RectBox2D<T, A> {
     type Output = [T];
 
     #[inline(always)]
@@ -444,7 +457,7 @@ impl<T, A: Allocator> Index<usize> for Rect2D<T, A> {
     }
 }
 
-impl<T, A: Allocator> Index<(usize, usize)> for Rect2D<T, A> {
+impl<T, A: Allocator> Index<(usize, usize)> for RectBox2D<T, A> {
     type Output = T;
 
     #[inline]
@@ -456,7 +469,7 @@ impl<T, A: Allocator> Index<(usize, usize)> for Rect2D<T, A> {
     }
 }
 
-impl<T, A: Allocator> Index<[usize; 2]> for Rect2D<T, A> {
+impl<T, A: Allocator> Index<[usize; 2]> for RectBox2D<T, A> {
     type Output = T;
 
     #[inline]
@@ -468,7 +481,7 @@ impl<T, A: Allocator> Index<[usize; 2]> for Rect2D<T, A> {
     }
 }
 
-impl<T, A: Allocator> IndexMut<usize> for Rect2D<T, A> {
+impl<T, A: Allocator> IndexMut<usize> for RectBox2D<T, A> {
     #[inline]
     fn index_mut (&mut self, index: usize) -> &mut Self::Output {
         assert!(index < self.height.get());
@@ -476,7 +489,7 @@ impl<T, A: Allocator> IndexMut<usize> for Rect2D<T, A> {
     }
 }
 
-impl<T, A: Allocator> IndexMut<(usize, usize)> for Rect2D<T, A> {
+impl<T, A: Allocator> IndexMut<(usize, usize)> for RectBox2D<T, A> {
     #[inline]
     fn index_mut(&mut self, index: (usize, usize)) -> &mut Self::Output {
         let (x, y) = index;
@@ -486,7 +499,7 @@ impl<T, A: Allocator> IndexMut<(usize, usize)> for Rect2D<T, A> {
     }
 }
 
-impl<T, A: Allocator> IndexMut<[usize; 2]> for Rect2D<T, A> {
+impl<T, A: Allocator> IndexMut<[usize; 2]> for RectBox2D<T, A> {
     #[inline]
     fn index_mut(&mut self, index: [usize; 2]) -> &mut Self::Output {
         let [x, y] = index;
@@ -496,7 +509,7 @@ impl<T, A: Allocator> IndexMut<[usize; 2]> for Rect2D<T, A> {
     }
 }
 
-impl<T, A: Allocator> Drop for Rect2D<T, A> {
+impl<T, A: Allocator> Drop for RectBox2D<T, A> {
     #[inline]
     fn drop(&mut self) {
         let len = self.width.get() * self.height.get();
@@ -512,18 +525,18 @@ impl<T, A: Allocator> Drop for Rect2D<T, A> {
     }
 }
 
-impl<T: Debug, A: Allocator> Debug for Rect2D<T, A> {
+impl<T: Debug, A: Allocator> Debug for RectBox2D<T, A> {
     #[inline(always)]
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_list().entries(self.rows_iter()).finish()
     }
 }
 
-unsafe impl<T: Send, A: Send + Allocator> Send for Rect2D<T, A> {}
-unsafe impl<T: Sync, A: Sync + Allocator> Sync for Rect2D<T, A> {}
+unsafe impl<T: Send, A: Send + Allocator> Send for RectBox2D<T, A> {}
+unsafe impl<T: Sync, A: Sync + Allocator> Sync for RectBox2D<T, A> {}
 
 pub struct Rows<'a, T, A: Allocator = Global> {
-    pub(super) inner: &'a Rect2D<T, A>,
+    pub(super) inner: &'a RectBox2D<T, A>,
     pub(super) idx: usize
 }
 
@@ -555,7 +568,7 @@ impl<'a, T, A: Allocator> ExactSizeIterator for Rows<'a, T, A> {
 }
 
 pub struct RowsMut<'a, T, A: Allocator = Global> {
-    pub(super) inner: &'a mut Rect2D<T, A>,
+    pub(super) inner: &'a mut RectBox2D<T, A>,
     pub(super) idx: usize
 }
 
@@ -592,7 +605,7 @@ impl<'a, T, A: Allocator> ExactSizeIterator for RowsMut<'a, T, A> {
 }
 
 pub struct Cols<'a, T, A: Allocator = Global> {
-    pub(super) inner: &'a Rect2D<T, A>,
+    pub(super) inner: &'a RectBox2D<T, A>,
     pub(super) idx: usize
 }
 
@@ -630,7 +643,7 @@ impl<'a, T, A: Allocator> ExactSizeIterator for Cols<'a, T, A> {
 }
 
 pub struct Col<'a, T, A: Allocator = Global> {
-    inner: &'a Rect2D<T, A>,
+    inner: &'a RectBox2D<T, A>,
     row: usize,
     idx: usize
 }

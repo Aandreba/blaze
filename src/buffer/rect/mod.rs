@@ -24,7 +24,7 @@ impl<T> RectBuffer2D<T> {
     }
 
     #[inline(always)]
-    pub fn from_rect (v: &Rect2D<T>, access: MemAccess, alloc: bool) -> Result<Self> where T: Copy {
+    pub fn from_rect (v: &RectBox2D<T>, access: MemAccess, alloc: bool) -> Result<Self> where T: Copy {
         Self::from_rect_in(Global, v, access, alloc)
     }
 
@@ -50,7 +50,7 @@ impl<T, C: Context> RectBuffer2D<T, C> {
 
     /// Creates new rectangular buffer
     #[inline]
-    pub fn from_rect_in (ctx: C, v: &Rect2D<T>, access: MemAccess, alloc: bool) -> Result<Self> where T: Copy {
+    pub fn from_rect_in (ctx: C, v: &RectBox2D<T>, access: MemAccess, alloc: bool) -> Result<Self> where T: Copy {
         let host = MemFlags::new(access, HostPtr::new(alloc, true));
         unsafe { Self::create_in(ctx, v.width(), v.height(), host, NonNull::new(v.as_ptr() as *mut _)) }
     }
@@ -140,7 +140,7 @@ impl<T: Copy, C: Context> RectBuffer2D<T, C> {
         let range = range.into_range(self.width(), self.height())?;
 
         let [buffer_origin, region] = range.raw_parts_buffer::<T>();
-        let mut dst = Rect2D::<T>::new_uninit(range.width(), range.height())
+        let mut dst = RectBox2D::<T>::new_uninit(range.width(), range.height())
             .ok_or_else(|| Error::from_type(ErrorKind::InvalidBufferSize)
         )?;
 
@@ -159,12 +159,12 @@ impl<T: Copy, C: Context> RectBuffer2D<T, C> {
         )
     }
     
-    pub fn read_blocking<R: IntoRange2D> (&self, range: R, wait: WaitList) -> Result<Rect2D<T>> {
+    pub fn read_blocking<R: IntoRange2D> (&self, range: R, wait: WaitList) -> Result<RectBox2D<T>> {
         let (buffer_row_pitch, buffer_slice_pitch) = self.row_and_slice_pitch();
         let range = range.into_range(self.width(), self.height())?;
 
         let [buffer_origin, region] = range.raw_parts_buffer::<T>();
-        let mut dst = Rect2D::<T>::new_uninit(range.width(), range.height())
+        let mut dst = RectBox2D::<T>::new_uninit(range.width(), range.height())
             .ok_or_else(|| Error::from_type(ErrorKind::InvalidBufferSize)
         )?;
 
@@ -179,6 +179,24 @@ impl<T: Copy, C: Context> RectBuffer2D<T, C> {
 
         self.context().next_queue().enqueue_noop(supplier)?.join()?;
         return unsafe { Ok(dst.assume_init()) }
+    }
+
+    pub fn write_blocking (&mut self, offset: [usize; 2], src: (&[T], usize), wait: WaitList) -> Result<()> {
+        let (buffer_row_pitch, buffer_slice_pitch) = self.row_and_slice_pitch();
+        let host_row_pitch = src.1 * core::mem::size_of::<T>();
+        let buffer_origin = [offset_src[0] * core::mem::size_of::<T>(), offset_src[1], 0];
+        let host_origin = [offset_dst[0] * core::mem::size_of::<T>(), offset_dst[1], 0];
+
+        let supplier = |queue| unsafe {
+            self.write_rect_from_ptr_in(
+                buffer_origin, host_origin, region,
+                buffer_row_pitch, buffer_slice_pitch,
+                host_row_pitch, host_slice_pitch,
+                src, queue, wait
+            )
+        };
+
+        return self.context().next_queue().enqueue_noop(supplier)?.join()
     }
 }
 
@@ -217,10 +235,10 @@ impl<T: Debug, C: Context> Debug for RectBuffer2D<T, C> {
 
 impl<T: Eq, C: Context> Eq for RectBuffer2D<T, C> {}
 
-pub struct ReadRect<'a, T: Copy, C: Context = Global> (Rect2D<MaybeUninit<T>>, PhantomData<&'a RectBuffer2D<T, C>>);
+pub struct ReadRect<'a, T: Copy, C: Context = Global> (RectBox2D<MaybeUninit<T>>, PhantomData<&'a RectBuffer2D<T, C>>);
 
 impl<'a, T: Copy, C: Context> Consumer for ReadRect<'a, T, C> {
-    type Output = Rect2D<T>;
+    type Output = RectBox2D<T>;
 
     #[inline(always)]
     fn consume (self) -> Result<Self::Output> {

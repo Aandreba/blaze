@@ -67,7 +67,7 @@ pub mod prelude {
     pub use crate::context::{Context, Global, RawContext, SimpleContext, Scope, scope};
     pub use crate::event::{RawEvent, Event};
     pub use crate::memobj::RawMemObject;
-    pub use crate::buffer::rect::{RectBuffer2D, Rect2D};
+    pub use crate::buffer::rect::{RectBuffer2D, RectBox2D};
 }
 
 #[doc(hidden)]
