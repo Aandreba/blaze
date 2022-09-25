@@ -1,4 +1,4 @@
-use std::{ffi::c_void, task::{Poll, Waker}, marker::PhantomData};
+use std::{ffi::c_void, task::{Poll, Waker}};
 use futures::{Future, FutureExt, future::FusedFuture};
 use opencl_sys::*;
 use utils_atomics::{flag::{AsyncFlag, AsyncSubscribe}, FillQueue};
@@ -7,14 +7,13 @@ use super::{Event, consumer::Consumer};
 
 /// Future for [`join_async`](super::Event::join_async).
 #[cfg_attr(docsrs, doc(cfg(feature = "futures")))]
-#[derive(Debug)]
-pub struct EventWait<'a, C: 'a> {
+#[derive(Debug, Clone)]
+pub struct EventWait<C> {
     inner: Option<Event<C>>,
-    sub: AsyncSubscribe,
-    phtm: PhantomData<&'a ()>
+    sub: AsyncSubscribe
 }
 
-impl<'a, C: Unpin + Consumer<'a>> EventWait<'a, C> {
+impl<C: Unpin + Consumer> EventWait<C> {
     #[inline(always)]
     pub fn new (inner: Event<C>) -> Result<Self> {
         let flag = AsyncFlag::new();
@@ -24,22 +23,11 @@ impl<'a, C: Unpin + Consumer<'a>> EventWait<'a, C> {
             inner.on_complete_raw(wake_future, flag.into_raw() as *mut _)?;
         }
 
-        return Ok(Self { inner: Some(inner), sub, phtm: PhantomData })
+        return Ok(Self { inner: Some(inner), sub })
     }
 }
 
-impl<'a, C: Clone + Consumer<'a>> Clone for EventWait<'a, C> {
-    #[inline]
-    fn clone(&self) -> Self {
-        Self { 
-            inner: self.inner.clone(),
-            sub: self.sub.clone(),
-            phtm: self.phtm.clone()
-        }
-    }
-}
-
-impl<'a, C: Unpin + Consumer<'a>> Future for EventWait<'a, C> {
+impl<C: Unpin + Consumer> Future for EventWait<C> {
     type Output = Result<C::Output>;
 
     #[inline(always)]
@@ -54,7 +42,7 @@ impl<'a, C: Unpin + Consumer<'a>> Future for EventWait<'a, C> {
     }
 }
 
-impl<'a, C: Unpin + Consumer<'a>> FusedFuture for EventWait<'a, C> {
+impl<C: Unpin + Consumer> FusedFuture for EventWait<C> {
     #[inline(always)]
     fn is_terminated(&self) -> bool {
         self.inner.is_none()

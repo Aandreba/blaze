@@ -5,9 +5,9 @@ use crate::{prelude::*};
 use super::{RawEvent, EventStatus, ProfilingInfo};
 
 /// A dynamic event that **can** be shared between threads.
-pub type DynEvent<'a, T> = Event<Box<dyn Consumer<'a, Output = T> + Send>>;
+pub type DynEvent<'a, T> = Event<Box<dyn 'a + Consumer<Output = T> + Send>>;
 /// A dynamic event that **cannot** be shared between threads.
-pub type DynLocalEvent<'a, T> = Event<Box<dyn Consumer<'a, Output = T>>>;
+pub type DynLocalEvent<'a, T> = Event<Box<dyn 'a + Consumer<Output = T>>>;
 
 pub(crate) mod ext {
     use std::marker::PhantomData;
@@ -46,7 +46,7 @@ use super::consumer::*;
 /// 
 /// When using OpenCL 1.0, the event will also contain a [`Sender`](std::sync::mpsc::Sender) that will send the event's callbacks,
 /// (like [`on_complete`](Event::on_complete)) to a different thread to be executed acordingly. 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Event<C> {
     inner: RawEvent,
     consumer: C,
@@ -55,7 +55,7 @@ pub struct Event<C> {
     #[cfg(feature = "cl1_1")]
     /// `Sender` is `!Sync`, but `Event` only contains a `Send` in OpenCL 1.0.\
     /// For the sake of consistency, `!Sync` should be implemented in all features.
-    send: std::marker::PhantomData<()>,
+    send: std::marker::PhantomData<std::sync::mpsc::Sender<()>>,
 }
 
 impl NoopEvent {
@@ -67,7 +67,7 @@ impl NoopEvent {
 
     /// Adds a consumer to a noop event
     #[inline(always)]
-    pub fn set_consumer<'a, C: Consumer<'a>> (self, consumer: C) -> Event<C> {
+    pub fn set_consumer<C: Consumer> (self, consumer: C) -> Event<C> {
         Event {
             inner: self.inner,
             consumer,
@@ -84,7 +84,7 @@ impl<'a, T: 'a> PhantomEvent<T> {
     }
 }
 
-impl<'a, C: Consumer<'a>> Event<C> { 
+impl<C: Consumer> Event<C> { 
     /// Creates a new event with the specified consumer.   
     #[inline(always)]
     pub fn new (inner: RawEvent, consumer: C) -> Self {
@@ -115,28 +115,6 @@ impl<'a, C: Consumer<'a>> Event<C> {
     #[inline(always)]
     pub fn as_raw (&self) -> &RawEvent {
         &self.inner
-    }
-
-    /// Turn's the event into a [`DynEvent`].
-    /// A [`DynEvent`] contains a boxed [dynamic](https://doc.rust-lang.org/stable/book/ch19-04-advanced-types.html#dynamically-sized-types-and-the-sized-trait) consumer that **can** be shared between threads.
-    #[inline(always)]
-    pub fn into_dyn (self) -> DynEvent<'a, C::Output> where C: Send {
-        DynEvent {
-            inner: self.inner,
-            consumer: Box::new(self.consumer),
-            send: self.send
-        }
-    }
-
-    /// Turn's the event into a [`DynLocalEvent`].
-    /// A [`DynLocalEvent`] contains a boxed [dynamic](https://doc.rust-lang.org/stable/book/ch19-04-advanced-types.html#dynamically-sized-types-and-the-sized-trait) consumer that **cannot** be shared between threads.
-    #[inline(always)]
-    pub fn into_local (self) -> DynLocalEvent<'a, C::Output> {
-        DynLocalEvent {
-            inner: self.inner,
-            consumer: Box::new(self.consumer),
-            send: self.send
-        }
     }
 
     /// Makes the current event abortable.
@@ -172,18 +150,13 @@ impl<'a, C: Consumer<'a>> Event<C> {
             consumer: self.consumer,
         };
 
-        let event = AbortableEvent {
-            inner: flag.into_inner(),
-            consumer,
-            send: self.send,
-        };
-        
+        let event = AbortableEvent::new(flag.into_inner(), consumer);
         return Ok((event, handle))
     }
 
     /// Returns an event that maps the result of the previous event.
     #[inline(always)]
-    pub fn map<'b, F: 'b + FnOnce(C::Output) -> U, U> (self, f: F) -> MapEvent<C::Output, C, F> where 'a: 'b {
+    pub fn map<F: FnOnce(C::Output) -> U, U> (self, f: F) -> MapEvent<C::Output, C, F> {
         Event { 
             inner: self.inner,
             consumer: Map::new(self.consumer, f),
@@ -193,7 +166,7 @@ impl<'a, C: Consumer<'a>> Event<C> {
 
     /// Returns an event that maps the result of the previous event, flattening the result.
     #[inline(always)]
-    pub fn try_map<'b, F: 'b + FnOnce(C::Output) -> Result<U>, U> (self, f: F) -> TryMapEvent<C::Output, C, F> where 'a: 'b {
+    pub fn try_map<F: FnOnce(C::Output) -> Result<U>, U> (self, f: F) -> TryMapEvent<C::Output, C, F> {
         Event { 
             inner: self.inner,
             consumer: TryMap::new(self.consumer, f),
@@ -237,7 +210,7 @@ impl<'a, C: Consumer<'a>> Event<C> {
 
     /// Returns an event that will inspect it's parent's return value before completing.
     #[inline(always)]
-    pub fn inspect<'b, F: 'b + FnOnce(&C::Output)> (self, f: F) -> InspectEvent<C, F> where 'a: 'b {
+    pub fn inspect<F: FnOnce(&C::Output)> (self, f: F) -> InspectEvent<C, F> {
         InspectEvent {
             inner: self.inner,
             consumer: Inspect(self.consumer, f),
@@ -251,7 +224,29 @@ impl<'a, C: Consumer<'a>> Event<C> {
     }
 }
 
-impl<'a, C: Consumer<'a>> Event<C> {
+impl<'a, C: 'a + Consumer> Event<C> {
+    /// Turn's the event into a [`DynEvent`].
+    /// A [`DynEvent`] contains a boxed [dynamic](https://doc.rust-lang.org/stable/book/ch19-04-advanced-types.html#dynamically-sized-types-and-the-sized-trait) consumer that **can** be shared between threads.
+    #[inline(always)]
+    pub fn into_dyn (self) -> DynEvent<'a, C::Output> where C: Send {
+        DynEvent {
+            inner: self.inner,
+            consumer: Box::new(self.consumer),
+            send: self.send
+        }
+    }
+
+    /// Turn's the event into a [`DynLocalEvent`].
+    /// A [`DynLocalEvent`] contains a boxed [dynamic](https://doc.rust-lang.org/stable/book/ch19-04-advanced-types.html#dynamically-sized-types-and-the-sized-trait) consumer that **cannot** be shared between threads.
+    #[inline(always)]
+    pub fn into_local (self) -> DynLocalEvent<'a, C::Output> {
+        DynLocalEvent {
+            inner: self.inner,
+            consumer: Box::new(self.consumer),
+            send: self.send
+        }
+    }
+
     /// Blocks the current thread until the event has completed, consuming it and returning it's value.
     #[inline(always)]
     pub fn join (self) -> Result<C::Output> {
@@ -295,7 +290,7 @@ impl<'a, C: Consumer<'a>> Event<C> {
     /// Returns a future that waits for the event to complete without blocking.
     #[inline(always)]
     #[docfg(feature = "futures")]
-    pub fn join_async (self) -> Result<crate::event::EventWait<'a, C>> where C: Unpin {
+    pub fn join_async (self) -> Result<crate::event::EventWait<C>> where C: Unpin {
         crate::event::EventWait::new(self)
     }
 
@@ -400,7 +395,7 @@ impl<'a, C: Consumer<'a>> Event<C> {
     }
 }
 
-impl<'a, C: Consumer<'a>> Event<C> {
+impl<C: Consumer> Event<C> {
     /// Adds a callback function that will be executed when the event is submitted.
     #[inline(always)]
     pub fn on_submit (&self, f: impl 'static + FnOnce(RawEvent, Result<EventStatus>) + Send) -> Result<()> {
@@ -505,18 +500,7 @@ impl<'a, C: Consumer<'a>> Event<C> {
     }
 }
 
-impl<'a, C: Clone + Consumer<'a>> Clone for Event<C> {
-    #[inline]
-    fn clone(&self) -> Self {
-        Self { 
-            inner: self.inner.clone(), 
-            consumer: self.consumer.clone(),
-            send: self.send.clone()
-        }
-    }
-}
-
-impl<'a, C: Consumer<'a>> Deref for Event<C> {
+impl<C: Consumer> Deref for Event<C> {
     type Target = RawEvent;
 
     #[inline(always)]
@@ -525,7 +509,7 @@ impl<'a, C: Consumer<'a>> Deref for Event<C> {
     }
 }
 
-impl<C: Unpin> Unpin for Event<C> {}
+//impl<C: Unpin> Unpin for Event<C> {}
 
 #[cfg(feature = "cl1_1")]
 unsafe extern "C" fn event_listener (event: cl_event, event_command_status: cl_int, user_data: *mut c_void) {

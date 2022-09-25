@@ -18,12 +18,12 @@ impl AbortHandle {
     /// Attempts to abort it's assigned event, returning `true` when successfully aborted and `false` when the event has already completed or been aborted.
     #[inline(always)]
     pub fn try_abort (&self) -> Result<bool> {
-        let v = self.inner.try_mark(None)?;
-        if v {
+        if self.inner.try_mark(None)? {
             self.aborted.store(TRUE, Ordering::Release);
+            return Ok(true);
         }
 
-        return Ok(v)
+        return Ok(false)
     }
 }
 
@@ -34,7 +34,7 @@ pub struct Abort<C> {
     pub(super) consumer: C
 }
 
-impl<'a, C: Consumer<'a>> Consumer<'a> for Abort<C> {
+impl<C: Consumer> Consumer for Abort<C> {
     type Output = Option<C::Output>;
 
     #[inline]

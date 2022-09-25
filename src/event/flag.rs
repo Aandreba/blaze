@@ -13,7 +13,7 @@ impl FlagEvent {
     /// Creates a new [`FlagEvent`] with the [`Global`] context
     #[inline(always)]
     pub fn new () -> Result<Self> {
-        Self::new_in(&Global)
+        Self::new_in(Global::get())
     }
 
     /// Creates a new [`FlagEvent`] with the specified context.

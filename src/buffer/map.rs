@@ -22,7 +22,7 @@ impl<'scope, 'env, T, C: Context> BufferMap<'scope, 'env, T, C> {
     }
 }
 
-impl<'scope, 'env, T, C: Context> Consumer<'scope> for BufferMap<'scope, 'env, T, C> {
+impl<'scope, 'env, T, C: Context> Consumer for BufferMap<'scope, 'env, T, C> {
     type Output = MapGuard<'env, T, C>;
     
     #[inline]
@@ -52,7 +52,7 @@ impl<'scope, 'env, T, C: Context> BufferMapMut<'scope, 'env, T, C> {
     }
 }
 
-impl<'scope, 'env, T, C: Context> Consumer<'scope> for BufferMapMut<'scope, 'env, T, C> {
+impl<'scope, 'env, T, C: Context> Consumer for BufferMapMut<'scope, 'env, T, C> {
     type Output = MapMutGuard<'env, T, C>;
 
     #[inline]

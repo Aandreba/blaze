@@ -1,14 +1,15 @@
-use std::{marker::PhantomData, ptr::{NonNull}, ops::{Deref, DerefMut}, fmt::Debug, mem::MaybeUninit};
+use std::{marker::PhantomData, ptr::{NonNull}, ops::{Deref, DerefMut}, fmt::Debug, mem::{MaybeUninit, transmute}};
 use blaze_proc::docfg;
 use crate::{context::{Context, Global, Scope, local_scope}, prelude::{Event}, event::consumer::{Consumer, PhantomEvent}, WaitList, memobj::MapPtr};
 use crate::core::*;
 use crate::buffer::{flags::{MemFlags, HostPtr, MemAccess}, RawBuffer};
 use super::{IntoRange, BufferRange, MapGuard, BufferMapEvent, BufferMap, BufferMapMutEvent, MapMutGuard, BufferMapMut};
 
-pub type ReadEvent<'a, T> = Event<BufferRead<'a, T>>;
-pub type ReadIntoEvent<'a, T> = PhantomEvent<&'a mut [T]>;
-pub type WriteEvent<'a, T> = PhantomEvent<&'a mut [T]>;
-pub type CopyEvent<'a, T, C> = PhantomEvent<(&'a Buffer<T, C>, &'a mut Buffer<T, C>)>;
+pub type ReadEvent<'a, T, C = Global> = Event<BufferRead<'a, T, C>>;
+pub type ReadIntoEvent<'a, T, C = Global> = PhantomEvent<(&'a Buffer<T, C>, &'a mut [T])>;
+pub type WriteEvent<'a, T, C = Global> = PhantomEvent<(&'a mut Buffer<T, C>, &'a [T])>;
+pub type CopyEvent<'a, T, C = Global> = PhantomEvent<(&'a Buffer<T, C>, &'a mut Buffer<T, C>)>;
+pub type FillEvent<'a, T, C = Global> = PhantomEvent<(&'a mut Buffer<T, C>, T)>;
 
 #[doc = include_str!("../../docs/src/buffer/README.md")]
 pub struct Buffer<T, C: Context = Global> {
@@ -139,6 +140,20 @@ impl<T, C: Context> Buffer<T, C> {
 }
 
 impl<T, C: Context> Buffer<MaybeUninit<T>, C> {
+    /// Convenience method for writing to an unitialized buffer. See [`write`](Buffer::write).
+    #[inline(always)]
+    pub fn write_init<'scope, 'env> (&'env mut self, scope: &'scope Scope<'scope, 'env, C>, offset: usize, src: &'env [T], wait: WaitList) -> Result<WriteEvent<'scope, MaybeUninit<T>, C>> where T: Copy {
+        let src = unsafe { transmute::<&'env [T], &'env [MaybeUninit<T>]>(src) };
+        self.write(scope, offset, src, wait)
+    }
+
+    /// Convenience method for filling an unitialized buffer. See [`fill`](Buffer::fill).
+    #[docfg(feature = "cl1_2")]
+    #[inline(always)]
+    pub fn fill_init<'scope, 'env, R: IntoRange> (&'env mut self, scope: &'scope Scope<'scope, 'env, C>, v: T, range: R, wait: WaitList) -> Result<FillEvent<'scope, MaybeUninit<T>, C>> where T: Copy {
+        self.fill(s, MaybeUninit::new(v), range, wait)
+    }
+
     /// Extracts the value from `Buffer<MaybeUninit<T>>` to `Buffer<T>`
     /// # Safety
     /// This function has the same safety as [`MaybeUninit`](std::mem::MaybeUninit)'s `assume_init`
@@ -148,7 +163,7 @@ impl<T, C: Context> Buffer<MaybeUninit<T>, C> {
     }
 }
 
-impl<T: Copy + Unpin, C: Context> Buffer<T, C> {
+impl<T: Copy, C: Context> Buffer<T, C> {
     /// Reads the contents of the buffer.
     pub fn read<'scope, 'env, R: IntoRange> (&'env self, scope: &'scope Scope<'scope, 'env, C>, range: R, wait: WaitList) -> Result<ReadEvent<'scope, T>> {
         let range = range.into_range::<T>(&self.inner)?;
@@ -186,7 +201,7 @@ impl<T: Copy + Unpin, C: Context> Buffer<T, C> {
 
     /// Reads the contents of the buffer into `dst`.
     #[inline]
-    pub fn read_into<'scope, 'env, R: IntoRange> (&'env self, s: &'scope Scope<'scope, 'env, C>, offset: usize, dst: &'env mut [T], wait: WaitList) -> Result<ReadIntoEvent<'scope, T>> {
+    pub fn read_into<'scope, 'env, R: IntoRange> (&'env self, s: &'scope Scope<'scope, 'env, C>, offset: usize, dst: &'env mut [T], wait: WaitList) -> Result<ReadIntoEvent<'scope, T, C>> {
         let range = BufferRange::from_parts::<T>(offset, dst.len())?;
         let supplier = |queue| unsafe {
             self.inner.read_to_ptr_in(range, dst.as_mut_ptr().cast(), queue, wait)
@@ -208,7 +223,7 @@ impl<T: Copy + Unpin, C: Context> Buffer<T, C> {
 
     /// Writes the contents of `src` into the buffer
     #[inline]
-    pub fn write<'scope, 'env> (&'scope mut self, scope: &'scope Scope<'scope, 'env, C>, offset: usize, src: &'env [T], wait: WaitList) -> Result<WriteEvent<'scope, T>> {
+    pub fn write<'scope, 'env> (&'env mut self, scope: &'scope Scope<'scope, 'env, C>, offset: usize, src: &'env [T], wait: WaitList) -> Result<WriteEvent<'scope, T, C>> {
         let range = BufferRange::from_parts::<T>(offset, src.len()).unwrap();
         let supplier = |queue| unsafe {
             self.inner.write_from_ptr_in(range, src.as_ptr().cast(), queue, wait)
@@ -269,7 +284,7 @@ impl<T: Copy + Unpin, C: Context> Buffer<T, C> {
     /// Fills a region of the buffer with `v`
     #[docfg(feature = "cl1_2")]
     #[inline(always)]
-    pub fn fill<'scope, 'env, R: IntoRange> (&'env mut self, s: &'scope Scope<'scope, 'env, C>, v: T, range: R, wait: WaitList) -> Result<CopyEvent<'scope, T, C>> {
+    pub fn fill<'scope, 'env, R: IntoRange> (&'env mut self, s: &'scope Scope<'scope, 'env, C>, v: T, range: R, wait: WaitList) -> Result<FillEvent<'scope, T, C>> {
         let range = range.into_range::<T>(&self.inner)?;
         let supplier = |queue| unsafe {
             self.inner.fill_raw_in(v, range, queue, wait)
@@ -407,9 +422,9 @@ impl<T: Debug, C: Context> Debug for Buffer<T, C> {
 
 impl<T: Eq, C: Context> Eq for Buffer<T, C> {}
 
-pub struct BufferRead<'a, T> (Vec<T>, PhantomData<&'a RawBuffer>);
+pub struct BufferRead<'a, T, C: Context = Global> (Vec<T>, PhantomData<&'a Buffer<T, C>>);
 
-impl<'a, T: 'a> Consumer<'a> for BufferRead<'a, T> {
+impl<'a, T> Consumer for BufferRead<'a, T> {
     type Output = Vec<T>;
     
     #[inline(always)]

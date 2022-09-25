@@ -59,6 +59,12 @@ impl RawEvent {
 }
 
 impl RawEvent {
+    /// Converts the [`RawEvent`] into a [`NoopEvent`].
+    #[inline(always)]
+    pub fn into_event (self) -> NoopEvent {
+        self.into()
+    }
+
     #[inline(always)]
     pub fn join_with_nanos_by_ref (self) -> Result<ProfilingInfo<u64>> {
         self.join_by_ref()?;
