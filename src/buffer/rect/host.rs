@@ -12,9 +12,10 @@ pub struct Rect2D<T> {
 
 impl<T> Rect2D<T> {
     pub fn from_slice (v: &[T], width: usize) -> &Self {
-        let 
         todo!()
     }
+
+    
 }
 
 /// A 2D rectangle stored in host memory in [row-major order](https://en.wikipedia.org/wiki/Row-_and_column-major_order)

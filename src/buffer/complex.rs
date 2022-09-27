@@ -151,7 +151,7 @@ impl<T, C: Context> Buffer<MaybeUninit<T>, C> {
     #[docfg(feature = "cl1_2")]
     #[inline(always)]
     pub fn fill_init<'scope, 'env, R: IntoRange> (&'env mut self, scope: &'scope Scope<'scope, 'env, C>, v: T, range: R, wait: WaitList) -> Result<FillEvent<'scope, MaybeUninit<T>, C>> where T: Copy {
-        self.fill(s, MaybeUninit::new(v), range, wait)
+        self.fill(scope, MaybeUninit::new(v), range, wait)
     }
 
     /// Extracts the value from `Buffer<MaybeUninit<T>>` to `Buffer<T>`
@@ -507,18 +507,15 @@ macro_rules! buffer {
     };
 
     (|$i:ident| $v:expr; $len:expr) => {
-        match $crate::buffer::Buffer::new_uninit($len, $crate::buffer::flags::MemAccess::READ_WRITE, false) {
-            Ok(mut __1_) => match __1_.map_mut_blocking(.., $crate::WaitList::None) {
-                Ok(mut __2_) => {
-                    for ($i, __3_) in __2_.iter_mut().enumerate() {
-                        __3_.write($v);
-                    }
-                    unsafe { Ok(__1_.assume_init()) }
-                },
-                Err(e) => Err(e)
-            },
-            Err(e) => Err(e)
-        }
+        (|| {
+            let mut __1_ = $crate::buffer::Buffer::new_uninit($len, $crate::buffer::flags::MemAccess::READ_WRITE, false)?;
+            let mut __2_ = __1_.map_mut_blocking(.., $crate::WaitList::None)?;
+            for ($i, __3_) in __2_.into_iter().enumerate() {
+                __3_.write($v);
+            }
+
+            unsafe { Ok::<_, $crate::core::Error>(__1_.assume_init()) }
+        })()
     };
 
     ($v:expr; $len:expr) => {{

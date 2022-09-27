@@ -71,6 +71,16 @@ pub struct MapGuard<'a, T, C: Context = Global> {
     phtm: PhantomData<&'a Buffer<T, C>>
 }
 
+impl<'a, T: 'a, C: Context> IntoIterator for MapGuard<'a, T, C> {
+    type Item = &'a T;
+    type IntoIter = MapIter<'a, T, C>;
+
+    #[inline(always)]
+    fn into_iter(self) -> Self::IntoIter {
+        MapIter::new(self)
+    }
+}
+
 impl<'a, T, C: Context> MapGuard<'a, T, C> {
     #[inline(always)]
     pub(super) fn new (ptr: MapPtr<T, &'a C>) -> Self {
@@ -96,16 +106,6 @@ impl<'a, T: Debug, C: Context> Debug for MapGuard<'_, T, C> {
     }
 }
 
-impl<'a, 'b: 'a, T, C: Context> IntoIterator for &'b MapGuard<'a, T, C> {
-    type Item = &'b T;
-    type IntoIter = core::slice::Iter<'b, T>;
-
-    #[inline(always)]
-    fn into_iter(self) -> Self::IntoIter {
-        self.deref().iter()
-    }
-}
-
 /// Guard for a read-write map of a [`Buffer`]
 pub struct MapMutGuard<'a, T, C: Context = Global> {
     ptr: MapPtr<T, &'a C>,
@@ -116,6 +116,22 @@ impl<'a, T, C: Context> MapMutGuard<'a, T, C> {
     #[inline(always)]
     pub(super) fn new (ptr: MapPtr<T, &'a C>) -> Self {
         Self { ptr, phtm: PhantomData }
+    }
+
+    /// Converts a [`MapMutGuard`] into a [`MapGuard`].
+    #[inline(always)]
+    pub fn into_read (self) -> MapGuard<'a, T, C> {
+        MapGuard { ptr: self.ptr, phtm: PhantomData }
+    }
+}
+
+impl<'a, T: 'a, C: Context> IntoIterator for MapMutGuard<'a, T, C> {
+    type Item = &'a mut T;
+    type IntoIter = MapMutIter<'a, T, C>;
+
+    #[inline(always)]
+    fn into_iter(self) -> Self::IntoIter {
+        MapMutIter::new(self)
     }
 }
 
@@ -139,19 +155,59 @@ impl<'a, T, C: Context> DerefMut for MapMutGuard<'a, T, C> {
     }
 }
 
-impl<'a, 'b: 'a, T, C: Context> IntoIterator for &'b mut MapMutGuard<'a, T, C> {
-    type Item = &'b mut T;
-    type IntoIter = core::slice::IterMut<'b, T>;
-
-    #[inline(always)]
-    fn into_iter(self) -> Self::IntoIter {
-        self.deref_mut().iter_mut()
-    }
-}
-
 impl<'a, T: Debug, C: Context> Debug for MapMutGuard<'_, T, C> {
     #[inline(always)]
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.deref().fmt(f)
+    }
+}
+
+pub struct MapIter<'a, T, C: Context = Global> {
+    #[allow(unused)]
+    guard: MapGuard<'a, T, C>,
+    inner: std::slice::Iter<'a, T>
+}
+
+impl<'a, T, C: Context> MapIter<'a, T, C> {
+    #[inline(always)]
+    fn new (guard: MapGuard<'a, T, C>) -> Self {
+        let inner = unsafe {
+            (&mut *guard.ptr.ptr).iter()
+        };
+        Self { guard, inner }
+    }
+}
+
+impl<'a, T: 'a, C: Context> Iterator for MapIter<'a, T, C> {
+    type Item = &'a T;
+
+    #[inline(always)]
+    fn next(&mut self) -> Option<Self::Item> {
+        self.inner.next()
+    }
+}
+
+pub struct MapMutIter<'a, T, C: Context = Global> {
+    #[allow(unused)]
+    guard: MapMutGuard<'a, T, C>,
+    inner: std::slice::IterMut<'a, T>
+}
+
+impl<'a, T, C: Context> MapMutIter<'a, T, C> {
+    #[inline(always)]
+    fn new (guard: MapMutGuard<'a, T, C>) -> Self {
+        let inner = unsafe {
+            (&mut *guard.ptr.ptr).iter_mut()
+        };
+        Self { guard, inner }
+    }
+}
+
+impl<'a, T: 'a, C: Context> Iterator for MapMutIter<'a, T, C> {
+    type Item = &'a mut T;
+
+    #[inline(always)]
+    fn next(&mut self) -> Option<Self::Item> {
+        self.inner.next()
     }
 }

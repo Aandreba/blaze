@@ -181,22 +181,28 @@ impl<T: Copy, C: Context> RectBuffer2D<T, C> {
         return unsafe { Ok(dst.assume_init()) }
     }
 
-    pub fn write_blocking (&mut self, offset: [usize; 2], src: (&[T], usize), wait: WaitList) -> Result<()> {
+    pub fn write_blocking (&mut self, offset_dst: [usize; 2], src: (&[T], usize), offset_src: [usize; 2], wait: WaitList) -> Result<()> {
+        if src.0.len() % src.1 != 0 {
+            return Err(Error::new(ErrorKind::InvalidValue, "Source size is not exact"))
+        }
+
         let (buffer_row_pitch, buffer_slice_pitch) = self.row_and_slice_pitch();
         let host_row_pitch = src.1 * core::mem::size_of::<T>();
-        let buffer_origin = [offset_src[0] * core::mem::size_of::<T>(), offset_src[1], 0];
-        let host_origin = [offset_dst[0] * core::mem::size_of::<T>(), offset_dst[1], 0];
+        let buffer_origin = [offset_dst[0] * core::mem::size_of::<T>(), offset_dst[1], 0];
+        let host_origin = [offset_src[0] * core::mem::size_of::<T>(), offset_src[1], 0];
+        let region = [host_row_pitch, src.0.len() / src.1, 1];
 
+        let queue = self.context().next_queue().clone();
         let supplier = |queue| unsafe {
             self.write_rect_from_ptr_in(
                 buffer_origin, host_origin, region,
-                buffer_row_pitch, buffer_slice_pitch,
-                host_row_pitch, host_slice_pitch,
-                src, queue, wait
+                Some(buffer_row_pitch), Some(buffer_slice_pitch),
+                Some(host_row_pitch), Some(0),
+                src.0.as_ptr().cast(), queue, wait
             )
         };
 
-        return self.context().next_queue().enqueue_noop(supplier)?.join()
+        return queue.enqueue_noop(supplier)?.join()
     }
 }
 
