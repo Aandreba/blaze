@@ -7,8 +7,9 @@ use blaze_proc::docfg;
 
 #[deprecated(since = "0.1.0", note = "use `RectBuffer2D` instead")]
 pub type BufferRect2D<T, C = Global> = RectBuffer2D<T, C>;
-pub type ReadRectEvent<'a, T, C = Global> = Event<ReadRect<'a, T, C>>;
+pub type ReadEvent<'a, T, C = Global> = Event<ReadRect<'a, T, C>>;
 pub type WriteEvent<'a, T, C = Global> = PhantomEvent<(&'a mut RectBuffer2D<T, C>, &'a [T])>;
+pub type CopyEvent<'a, T, C = Global> = PhantomEvent<(&'a mut RectBuffer2D<T, C>, &'a RectBuffer2D<T, C>)>;
 
 /// Buffer that conatins a 2D rectangle.
 pub struct RectBuffer2D<T, C: Context = Global> {
@@ -115,7 +116,7 @@ impl<T, C: Context> RectBuffer2D<T, C> {
 
     #[inline(always)]
     pub fn height (&self) -> Result<usize> {
-        self.len()
+        Ok(self.slice_pitch()? / self.row_pitch())
     }
 
     #[inline(always)]
@@ -139,7 +140,7 @@ use crate::{WaitList, memobj::IntoRange2D};
 
 #[docfg(feature = "cl1_1")]
 impl<T: Copy, C: Context> RectBuffer2D<T, C> {
-    pub fn read<'scope, 'env, R: IntoRange2D> (&'env self, scope: &'scope Scope<'scope, 'env, C>, range: R, wait: WaitList) -> Result<ReadRectEvent<'scope, T, C>> {
+    pub fn read<'scope, 'env, R: IntoRange2D> (&'env self, scope: &'scope Scope<'scope, 'env, C>, range: R, wait: WaitList) -> Result<ReadEvent<'scope, T, C>> {
         let (buffer_row_pitch, buffer_slice_pitch) = self.row_and_slice_pitch()?;
         let range = range.into_range(self.width(), self.height()?)?;
 
@@ -183,7 +184,7 @@ impl<T: Copy, C: Context> RectBuffer2D<T, C> {
         return unsafe { Ok(dst.assume_init()) }
     }
 
-    pub fn write_blocking (&mut self, offset_dst: impl Into<Option<[usize; 2]>>, src: (&[T], usize), offset_src: impl Into<Option<[usize; 2]>>, wait: WaitList) -> Result<()> {
+    pub fn write<'scope, 'env> (&'env mut self, scope: &'scope Scope<'scope, 'env, C>, offset_dst: impl Into<Option<[usize; 2]>>, src: (&'env [T], usize), offset_src: impl Into<Option<[usize; 2]>>, region: impl Into<Option<[usize; 2]>>, wait: WaitList) -> Result<WriteEvent<'scope, T, C>> {
         if src.0.len() % src.1 != 0 {
             return Err(Error::new(ErrorKind::InvalidValue, "Source size is not exact"))
         }
@@ -196,7 +197,42 @@ impl<T: Copy, C: Context> RectBuffer2D<T, C> {
 
         let buffer_origin = [offset_dst[0] * core::mem::size_of::<T>(), offset_dst[1], 0];
         let host_origin = [offset_src[0] * core::mem::size_of::<T>(), offset_src[1], 0];
-        let region = [host_row_pitch - host_origin[0], (src.0.len() / src.1) - host_origin[1], 1];
+
+        let region = match region.into() {
+            Some(region) => [region[0] * core::mem::size_of::<T>(), region[1], 1],
+            None => [host_row_pitch - host_origin[0], (src.0.len() / src.1) - host_origin[1], 1]
+        };
+
+        let supplier = |queue| unsafe {
+            self.write_rect_from_ptr_in(
+                buffer_origin, host_origin, region,
+                Some(buffer_row_pitch), Some(buffer_slice_pitch),
+                Some(host_row_pitch), Some(0),
+                src.0.as_ptr().cast(), queue, wait
+            )
+        };
+
+        return scope.enqueue_phantom(supplier)
+    }
+
+    pub fn write_blocking (&mut self, offset_dst: impl Into<Option<[usize; 2]>>, src: (&[T], usize), offset_src: impl Into<Option<[usize; 2]>>, region: impl Into<Option<[usize; 2]>>, wait: WaitList) -> Result<()> {
+        if src.0.len() % src.1 != 0 {
+            return Err(Error::new(ErrorKind::InvalidValue, "Source size is not exact"))
+        }
+    
+        let offset_dst = offset_dst.into().unwrap_or([0;2]);
+        let offset_src = offset_src.into().unwrap_or([0;2]);
+
+        let (buffer_row_pitch, buffer_slice_pitch) = self.row_and_slice_pitch()?;
+        let host_row_pitch = src.1 * core::mem::size_of::<T>();
+
+        let buffer_origin = [offset_dst[0] * core::mem::size_of::<T>(), offset_dst[1], 0];
+        let host_origin = [offset_src[0] * core::mem::size_of::<T>(), offset_src[1], 0];
+
+        let region = match region.into() {
+            Some(region) => [region[0] * core::mem::size_of::<T>(), region[1], 1],
+            None => [host_row_pitch - host_origin[0], (src.0.len() / src.1) - host_origin[1], 1]
+        };
 
         let queue = self.context().next_queue().clone();
         let supplier = |queue| unsafe {
@@ -211,31 +247,68 @@ impl<T: Copy, C: Context> RectBuffer2D<T, C> {
         return queue.enqueue_noop(supplier)?.join()
     }
 
-    pub fn write<'scope, 'env> (&'env mut self, scope: &'scope Scope<'scope, 'env, C>, offset_dst: impl Into<Option<[usize; 2]>>, src: (&'env [T], usize), offset_src: impl Into<Option<[usize; 2]>>, wait: WaitList) -> Result<WriteEvent<'scope, T, C>> {
-        if src.0.len() % src.1 != 0 {
-            return Err(Error::new(ErrorKind::InvalidValue, "Source size is not exact"))
-        }
-    
+    pub fn copy_from<'scope, 'env> (&'env mut self, scope: &'scope Scope<'scope, 'env, C>, offset_dst: impl Into<Option<[usize; 2]>>, src: &'env Self, offset_src: impl Into<Option<[usize; 2]>>, region: impl Into<Option<[usize; 2]>>, wait: WaitList) -> Result<CopyEvent<'scope, T, C>> {
         let offset_dst = offset_dst.into().unwrap_or([0;2]);
         let offset_src = offset_src.into().unwrap_or([0;2]);
 
-        let (buffer_row_pitch, buffer_slice_pitch) = self.row_and_slice_pitch()?;
-        let host_row_pitch = src.1 * core::mem::size_of::<T>();
+        let (dst_row_pitch, dst_slice_pitch) = self.row_and_slice_pitch()?;
+        let src_row_pitch = src.row_pitch();
 
-        let buffer_origin = [offset_dst[0] * core::mem::size_of::<T>(), offset_dst[1], 0];
-        let host_origin = [offset_src[0] * core::mem::size_of::<T>(), offset_src[1], 0];
-        let region = [host_row_pitch - host_origin[0], (src.0.len() / src.1) - host_origin[1], 1];
+        let dst_origin = [offset_dst[0] * core::mem::size_of::<T>(), offset_dst[1], 0];
+        let src_origin = [offset_src[0] * core::mem::size_of::<T>(), offset_src[1], 0];
+
+        let region = match region.into() {
+            Some(region) => [region[0] * core::mem::size_of::<T>(), region[1], 1],
+            None => [src_row_pitch - src_origin[0], src.height()? - src_origin[1], 1]
+        };
 
         let supplier = |queue| unsafe {
-            self.write_rect_from_ptr_in(
-                buffer_origin, host_origin, region,
-                Some(buffer_row_pitch), Some(buffer_slice_pitch),
-                Some(host_row_pitch), Some(0),
-                src.0.as_ptr().cast(), queue, wait
+            self.copy_from_rect_raw_in(
+                dst_origin, src_origin, region,
+                Some(dst_row_pitch), Some(dst_slice_pitch),
+                Some(src_row_pitch), Some(0),
+                &src, queue, wait
             )
         };
 
-        return scope.enqueue_phantom(supplier)
+        return scope.enqueue_phantom(supplier);
+    }
+
+    pub fn copy_from_blocking (&mut self, offset_dst: impl Into<Option<[usize; 2]>>, src: &Self, offset_src: impl Into<Option<[usize; 2]>>, region: impl Into<Option<[usize; 2]>>, wait: WaitList) -> Result<()> {
+        let offset_dst = offset_dst.into().unwrap_or([0;2]);
+        let offset_src = offset_src.into().unwrap_or([0;2]);
+
+        let (dst_row_pitch, dst_slice_pitch) = self.row_and_slice_pitch()?;
+        let src_row_pitch = src.row_pitch();
+
+        let dst_origin = [offset_dst[0] * core::mem::size_of::<T>(), offset_dst[1], 0];
+        let src_origin = [offset_src[0] * core::mem::size_of::<T>(), offset_src[1], 0];
+
+        let region = match region.into() {
+            Some(region) => [region[0] * core::mem::size_of::<T>(), region[1], 1],
+            None => [src_row_pitch - src_origin[0], src.height()? - src_origin[1], 1]
+        };
+
+        let supplier = |queue| unsafe {
+            self.copy_from_rect_raw_in(
+                dst_origin, src_origin, region,
+                Some(dst_row_pitch), Some(dst_slice_pitch),
+                Some(src_row_pitch), Some(0),
+                &src, queue, wait
+            )
+        };
+
+        return src.context().next_queue().enqueue_noop(supplier)?.join();
+    }
+
+    #[inline(always)]
+    pub fn copy_to<'scope, 'env> (&'env self, scope: &'scope Scope<'scope, 'env, C>, offset_src: impl Into<Option<[usize; 2]>>, dst: &'env mut Self, offset_dst: impl Into<Option<[usize; 2]>>, region: impl Into<Option<[usize; 2]>>, wait: WaitList) -> Result<CopyEvent<'scope, T, C>> {
+        dst.copy_from(scope, offset_dst, self, offset_src, region, wait)
+    }
+
+    #[inline(always)]
+    pub fn copy_to_blocking (&self, offset_src: impl Into<Option<[usize; 2]>>, dst: &mut Self, offset_dst: impl Into<Option<[usize; 2]>>, region: impl Into<Option<[usize; 2]>>, wait: WaitList) -> Result<()> {
+        dst.copy_from_blocking(offset_dst, self, offset_src, region, wait)
     }
 }
 

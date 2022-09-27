@@ -176,6 +176,27 @@ impl RawBuffer {
         return Ok(RawEvent::from_id(event).unwrap())
     }
 
+    #[docfg(feature = "cl1_1")]
+    pub unsafe fn copy_from_rect_raw_in (
+        &mut self, dst_origin: [usize; 3], src_origin: [usize; 3], region: [usize; 3], 
+        dst_row_pitch: Option<usize>, dst_slice_pitch: Option<usize>, 
+        src_row_pitch: Option<usize>, src_slice_pitch: Option<usize>, 
+        src: &RawBuffer, queue: &RawCommandQueue, wait: WaitList
+    ) -> Result<RawEvent> {
+        let (num_events_in_wait_list, event_wait_list) = wait_list(wait)?;
+        let mut evt = core::ptr::null_mut();
+        tri! {
+            clEnqueueCopyBufferRect(
+                queue.id(), src.id(), self.id(),
+                src_origin.as_ptr(), dst_origin.as_ptr(), region.as_ptr(),
+                src_row_pitch.unwrap_or_default(), src_slice_pitch.unwrap_or_default(),
+                dst_row_pitch.unwrap_or_default(), dst_slice_pitch.unwrap_or_default(),
+                num_events_in_wait_list, event_wait_list, addr_of_mut!(evt)
+            )
+        }
+        Ok(RawEvent::from_id(evt).unwrap())
+    }
+
     #[docfg(feature = "cl1_2")]
     #[inline]
     pub unsafe fn fill_raw_in<T> (&mut self, v: T, range: BufferRange, queue: &RawCommandQueue, wait: WaitList) -> Result<RawEvent> {

@@ -49,10 +49,22 @@ cfg_if::cfg_if! {
             let mut buf = rect_buf()?; 
             let host = Rect2D::new(&[10, 11, 12, 13], 2);
             
-            buf.write_blocking(None, host.as_parts(), [0, 1], None)?;
-            scope(|s| buf.write(s, [1, 1], host.as_parts(), None, None).map(|_| ()))?;
+            buf.write_blocking(None, host.as_parts(), [0, 1], None, None)?;
+            scope(|s| buf.write(s, [1, 1], host.as_parts(), None, None, None).map(|_| ()))?;
 
             assert_eq!(buf.map_blocking(.., None)?.deref(), &[12, 13, 3, 4, 10, 11, 7, 12, 13]);
+            Ok(())
+        }
+
+        #[test]
+        fn copy_rect () -> Result<()> {
+            let mut buf = rect_buf()?; 
+            let buf2 = RectBuffer2D::new(&[10, 11, 12, 13, 14, 15], 2, MemAccess::default(), false)?;
+
+            println!("{buf:?}, {buf2:?}");
+            buf.copy_from_blocking(None, &buf2, None, None, None)?;
+            println!("{buf:?}");
+
             Ok(())
         }
 
