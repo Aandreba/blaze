@@ -1,6 +1,7 @@
-use std::{ptr::{NonNull, addr_of}, num::NonZeroUsize, mem::{MaybeUninit, ManuallyDrop}, alloc::{Allocator, Global, Layout}, ops::{Index, IndexMut}, fmt::Debug};
+use std::{ptr::{NonNull, addr_of}, num::NonZeroUsize, mem::{MaybeUninit, ManuallyDrop}, alloc::{Allocator, Global, Layout, LayoutError, AllocError}, ops::{Index, IndexMut, Deref}, fmt::Debug};
 use blaze_proc::docfg;
 
+pub type RectBox2D<T, A = Global> = Box<Rect2D<T>, A>;
 #[docfg(feature = "svm")]
 pub type SvmRect2D<T, C = crate::prelude::Global> = RectBox2D<T, crate::svm::Svm<C>>;
 
@@ -11,21 +12,168 @@ pub struct Rect2D<T> {
 }
 
 impl<T> Rect2D<T> {
-    pub fn from_slice (v: &[T], width: usize) -> &Self {
-        todo!()
+    #[inline(always)]
+    pub fn new (v: &[T], width: usize) -> Box<Self> where T: Copy {
+        Self::new_in(v, width, std::alloc::Global)
+    }
+    
+    #[inline(always)]
+    pub fn new_uninit (width: usize, height: usize) -> RectBox2D<MaybeUninit<T>> {
+        Self::new_uninit_in(width, height, std::alloc::Global)
     }
 
+    #[inline(always)]
+    pub fn new_in<A: Allocator> (v: &[T], width: usize, alloc: A) -> Box<Self, A> where T: Copy {
+        Self::try_new_in(v, width, alloc).unwrap()
+    }
     
+    #[inline(always)]
+    pub fn new_uninit_in<A: Allocator> (width: usize, height: usize, alloc: A) -> RectBox2D<MaybeUninit<T>, A> {
+        Self::try_new_uninit_in(width, height, alloc).unwrap()
+    }
+
+    #[inline(always)]
+    pub fn try_new (v: &[T], width: usize) -> Result<Box<Self>, AllocError> where T: Copy {
+        Self::try_new_in(v, width, std::alloc::Global)
+    }
+
+    #[inline(always)]
+    pub fn try_new_uninit (width: usize, height: usize) -> Result<RectBox2D<MaybeUninit<T>>, AllocError> {
+        Self::try_new_uninit_in(width, height, std::alloc::Global)
+    }
+
+    pub fn try_new_in<A: Allocator> (v: &[T], width: usize, alloc: A) -> Result<Box<Self, A>, AllocError> where T: Copy {
+        let width = NonZeroUsize::new(width).ok_or(AllocError)?;
+        let array_layout = Layout::for_value(v);
+        let width_layout = Layout::new::<NonZeroUsize>();
+
+        let padding = width_layout.padding_needed_for(array_layout.align());
+        let delta = width_layout.size() + padding;
+        
+        let size = delta + array_layout.size();
+        let align = array_layout.align().max(width_layout.align());
+        let layout = Layout::from_size_align(size, align).map_err(|_| AllocError)?;
+
+        let ptr = alloc.allocate(layout)?.as_ptr();
+
+        unsafe {
+            (ptr as *mut NonZeroUsize).write(width);
+            core::ptr::copy_nonoverlapping(v.as_ptr(), ptr.cast::<u8>().add(delta).cast::<T>(), v.len());
+
+            let raw = core::ptr::from_raw_parts_mut::<Rect2D<T>>(ptr as *mut (), v.len());
+            return Ok(Box::from_raw_in(raw, alloc));
+        }
+    }
+
+    pub fn try_new_uninit_in<A: Allocator> (width: usize, height: usize, alloc: A) -> Result<RectBox2D<MaybeUninit<T>, A>, AllocError> {
+        let len = width.checked_mul(height).ok_or(AllocError)?;
+        let array_layout = Layout::array::<T>(len).map_err(|_| AllocError)?;
+        let width_layout = Layout::new::<NonZeroUsize>();
+        let padding = width_layout.padding_needed_for(array_layout.align());
+        
+        let size = width_layout.size() + padding + array_layout.size();
+        let align = array_layout.align().max(width_layout.align());
+        let layout = Layout::from_size_align(size, align).map_err(|_| AllocError)?;
+
+        let ptr = alloc.allocate(layout)?;
+        let raw = core::ptr::from_raw_parts_mut::<Rect2D<MaybeUninit<T>>>(ptr.as_ptr() as *mut (), len);
+        return unsafe {
+            Ok(Box::from_raw_in(raw, alloc))
+        }
+    }
 }
 
-/// A 2D rectangle stored in host memory in [row-major order](https://en.wikipedia.org/wiki/Row-_and_column-major_order)
-pub struct RectBox2D<T, A: Allocator = Global> {
-    ptr: NonNull<T>,
-    width: NonZeroUsize,
-    height: NonZeroUsize,
-    alloc: A
+impl<T> Rect2D<MaybeUninit<T>> {
+    #[inline(always)]
+    pub unsafe fn assume_init<A: Allocator> (self: Box<Self, A>) -> RectBox2D<T, A> {
+        let (ptr, alloc) = Box::into_raw_with_allocator(self);
+        return Box::from_raw_in(ptr as *mut Rect2D<T>, alloc)
+    }
 }
 
+impl<T> Rect2D<T> {
+    #[inline(always)]
+    pub const fn width (&self) -> usize {
+        self.width.get()
+    }
+
+    #[inline(always)]
+    pub const fn height (&self) -> usize {
+        #[cfg(debug_assertions)]
+        if self.len() % self.width() != 0 { panic!("non-exact size") }
+        self.len() / self.width()
+    } 
+
+    #[inline(always)]
+    pub const fn len (&self) -> usize {
+        core::ptr::metadata(self)
+    }
+
+    #[inline(always)]
+    pub const fn as_parts (&self) -> (&[T], usize) {
+        (&self.inner, self.width.get())
+    }
+
+    #[inline]
+    pub fn get (&self, index: usize) -> Option<&[T]> {
+        if index >= self.height() { return None }
+        return unsafe { Some(self.get_unchecked(index)) }
+    }
+
+    #[inline]
+    pub fn get_mut (&mut self, index: usize) -> Option<&mut [T]> {
+        if index >= self.height() { return None }
+        return unsafe { Some(self.get_mut_unchecked(index)) }
+    }
+
+    #[inline(always)]
+    pub unsafe fn get_unchecked (&self, index: usize) -> &[T] {
+        core::slice::from_raw_parts(self.inner.as_ptr().add(index * self.width()), self.width())
+    }
+
+    #[inline(always)]
+    pub unsafe fn get_mut_unchecked (&mut self, index: usize) -> &mut [T] {
+        core::slice::from_raw_parts_mut(self.inner.as_mut_ptr().add(index * self.width()), self.width())
+    }
+
+    #[inline(always)]
+    pub const fn as_slice (&self) -> &[T] {
+        &self.inner
+    }
+
+    #[inline(always)]
+    pub fn as_mut_slice (&mut self) -> &mut [T] {
+        &mut self.inner
+    }
+
+    #[inline(always)]
+    pub const fn as_ptr (&self) -> *const T {
+        self.inner.as_ptr()
+    }
+
+    #[inline(always)]
+    pub fn as_mut_ptr (&mut self) -> *mut T {
+        self.inner.as_mut_ptr()
+    }
+}
+
+impl<T> Index<usize> for Rect2D<T> {
+    type Output = [T];
+
+    #[inline(always)]
+    fn index(&self, index: usize) -> &Self::Output {
+        self.get(index).expect("index out of range")
+    }
+}
+
+impl<T> IndexMut<usize> for Rect2D<T> {
+    #[inline(always)]
+    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+        self.get_mut(index).expect("index out of range")
+    }
+}
+
+/*
 impl<T> RectBox2D<T> {
     #[inline(always)]
     pub fn new (v: &[T], width: usize) -> Option<Self> where T: Copy {
@@ -699,4 +847,4 @@ impl<'a, T: Debug, A: Allocator> Debug for Col<'a, T, A> {
     }
 }
 
-impl<'a, T, A: Allocator> Copy for Col<'a, T, A> {}
+impl<'a, T, A: Allocator> Copy for Col<'a, T, A> {}*/

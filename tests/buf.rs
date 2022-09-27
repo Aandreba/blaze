@@ -1,4 +1,7 @@
+use std::ops::Deref;
+
 use blaze_rs::{prelude::*, buffer};
+use buffer::rect::Rect2D;
 
 #[global_context]
 static CONTEXT : SimpleContext = SimpleContext::default();
@@ -38,6 +41,18 @@ cfg_if::cfg_if! {
             assert_eq!(blocking.as_slice(), &[4, 5, 6, 7, 8, 9]);
             assert_eq!(scope.as_slice(), &[2, 3, 5, 6]);
 
+            Ok(())
+        }
+
+        #[test]
+        fn write_rect () -> Result<()> {
+            let mut buf = rect_buf()?; 
+            let host = Rect2D::new(&[10, 11, 12, 13], 2);
+            
+            buf.write_blocking(None, host.as_parts(), [0, 1], None)?;
+            scope(|s| buf.write(s, [1, 1], host.as_parts(), None, None).map(|_| ()))?;
+
+            assert_eq!(buf.map_blocking(.., None)?.deref(), &[12, 13, 3, 4, 10, 11, 7, 12, 13]);
             Ok(())
         }
 

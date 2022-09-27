@@ -1,13 +1,14 @@
 flat_mod!(host);
 
 use std::{ptr::NonNull, ops::{Deref, DerefMut}, num::NonZeroUsize, mem::MaybeUninit, fmt::Debug, marker::PhantomData};
-use crate::{prelude::*, event::Consumer};
+use crate::{prelude::*, event::{Consumer, ext::PhantomEvent}};
 use super::{Buffer, flags::{MemFlags, MemAccess, HostPtr}};
 use blaze_proc::docfg;
 
 #[deprecated(since = "0.1.0", note = "use `RectBuffer2D` instead")]
 pub type BufferRect2D<T, C = Global> = RectBuffer2D<T, C>;
 pub type ReadRectEvent<'a, T, C = Global> = Event<ReadRect<'a, T, C>>;
+pub type WriteEvent<'a, T, C = Global> = PhantomEvent<(&'a mut RectBuffer2D<T, C>, &'a [T])>;
 
 /// Buffer that conatins a 2D rectangle.
 pub struct RectBuffer2D<T, C: Context = Global> {
@@ -50,7 +51,7 @@ impl<T, C: Context> RectBuffer2D<T, C> {
 
     /// Creates new rectangular buffer
     #[inline]
-    pub fn from_rect_in (ctx: C, v: &RectBox2D<T>, access: MemAccess, alloc: bool) -> Result<Self> where T: Copy {
+    pub fn from_rect_in (ctx: C, v: &Rect2D<T>, access: MemAccess, alloc: bool) -> Result<Self> where T: Copy {
         let host = MemFlags::new(access, HostPtr::new(alloc, true));
         unsafe { Self::create_in(ctx, v.width(), v.height(), host, NonNull::new(v.as_ptr() as *mut _)) }
     }
@@ -140,9 +141,8 @@ impl<T: Copy, C: Context> RectBuffer2D<T, C> {
         let range = range.into_range(self.width(), self.height())?;
 
         let [buffer_origin, region] = range.raw_parts_buffer::<T>();
-        let mut dst = RectBox2D::<T>::new_uninit(range.width(), range.height())
-            .ok_or_else(|| Error::from_type(ErrorKind::InvalidBufferSize)
-        )?;
+        let mut dst = Rect2D::<T>::try_new_uninit(range.width(), range.height())
+            .map_err(|e| Error::new(ErrorKind::OutOfHostMemory, e))?;
 
         let supplier = |queue| unsafe {
             self.read_rect_to_ptr_in(
@@ -164,9 +164,8 @@ impl<T: Copy, C: Context> RectBuffer2D<T, C> {
         let range = range.into_range(self.width(), self.height())?;
 
         let [buffer_origin, region] = range.raw_parts_buffer::<T>();
-        let mut dst = RectBox2D::<T>::new_uninit(range.width(), range.height())
-            .ok_or_else(|| Error::from_type(ErrorKind::InvalidBufferSize)
-        )?;
+        let mut dst = Rect2D::<T>::try_new_uninit(range.width(), range.height())
+            .map_err(|e| Error::new(ErrorKind::OutOfHostMemory, e))?;
 
         let supplier = |queue| unsafe {
             self.read_rect_to_ptr_in(
@@ -181,16 +180,20 @@ impl<T: Copy, C: Context> RectBuffer2D<T, C> {
         return unsafe { Ok(dst.assume_init()) }
     }
 
-    pub fn write_blocking (&mut self, offset_dst: [usize; 2], src: (&[T], usize), offset_src: [usize; 2], wait: WaitList) -> Result<()> {
+    pub fn write_blocking (&mut self, offset_dst: impl Into<Option<[usize; 2]>>, src: (&[T], usize), offset_src: impl Into<Option<[usize; 2]>>, wait: WaitList) -> Result<()> {
         if src.0.len() % src.1 != 0 {
             return Err(Error::new(ErrorKind::InvalidValue, "Source size is not exact"))
         }
+    
+        let offset_dst = offset_dst.into().unwrap_or([0;2]);
+        let offset_src = offset_src.into().unwrap_or([0;2]);
 
         let (buffer_row_pitch, buffer_slice_pitch) = self.row_and_slice_pitch();
         let host_row_pitch = src.1 * core::mem::size_of::<T>();
+
         let buffer_origin = [offset_dst[0] * core::mem::size_of::<T>(), offset_dst[1], 0];
         let host_origin = [offset_src[0] * core::mem::size_of::<T>(), offset_src[1], 0];
-        let region = [host_row_pitch, src.0.len() / src.1, 1];
+        let region = [host_row_pitch - host_origin[0], (src.0.len() / src.1) - host_origin[1], 1];
 
         let queue = self.context().next_queue().clone();
         let supplier = |queue| unsafe {
@@ -203,6 +206,33 @@ impl<T: Copy, C: Context> RectBuffer2D<T, C> {
         };
 
         return queue.enqueue_noop(supplier)?.join()
+    }
+
+    pub fn write<'scope, 'env> (&'env mut self, scope: &'scope Scope<'scope, 'env, C>, offset_dst: impl Into<Option<[usize; 2]>>, src: (&'env [T], usize), offset_src: impl Into<Option<[usize; 2]>>, wait: WaitList) -> Result<WriteEvent<'scope, T, C>> {
+        if src.0.len() % src.1 != 0 {
+            return Err(Error::new(ErrorKind::InvalidValue, "Source size is not exact"))
+        }
+    
+        let offset_dst = offset_dst.into().unwrap_or([0;2]);
+        let offset_src = offset_src.into().unwrap_or([0;2]);
+
+        let (buffer_row_pitch, buffer_slice_pitch) = self.row_and_slice_pitch();
+        let host_row_pitch = src.1 * core::mem::size_of::<T>();
+
+        let buffer_origin = [offset_dst[0] * core::mem::size_of::<T>(), offset_dst[1], 0];
+        let host_origin = [offset_src[0] * core::mem::size_of::<T>(), offset_src[1], 0];
+        let region = [host_row_pitch - host_origin[0], (src.0.len() / src.1) - host_origin[1], 1];
+
+        let supplier = |queue| unsafe {
+            self.write_rect_from_ptr_in(
+                buffer_origin, host_origin, region,
+                Some(buffer_row_pitch), Some(buffer_slice_pitch),
+                Some(host_row_pitch), Some(0),
+                src.0.as_ptr().cast(), queue, wait
+            )
+        };
+
+        return scope.enqueue_phantom(supplier)
     }
 }
 
