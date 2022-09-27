@@ -103,6 +103,12 @@ impl<T, C: Context> Buffer<T, C> {
         })
     }
 
+    /// Number of elements inside the buffer
+    #[inline(always)]
+    pub fn len (&self) -> Result<usize> {
+        self.size().map(|x| x / core::mem::size_of::<T>())
+    }
+
     /// Returns a reference to the [`Buffer`]'s underlying [`Context`].
     #[inline(always)]
     pub fn context (&self) -> &C {

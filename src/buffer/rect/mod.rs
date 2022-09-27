@@ -13,8 +13,7 @@ pub type WriteEvent<'a, T, C = Global> = PhantomEvent<(&'a mut RectBuffer2D<T, C
 /// Buffer that conatins a 2D rectangle.
 pub struct RectBuffer2D<T, C: Context = Global> {
     inner: Buffer<T, C>,
-    width: NonZeroUsize,
-    height: NonZeroUsize
+    row_pitch: NonZeroUsize
 }
 
 impl<T> RectBuffer2D<T> {
@@ -41,6 +40,8 @@ impl<T> RectBuffer2D<T> {
 }
 
 impl<T, C: Context> RectBuffer2D<T, C> {
+    const NON_ZERO_SIZE : Option<NonZeroUsize> = NonZeroUsize::new(core::mem::size_of::<T>());
+
     /// Creates a new rectangular buffer, in the specified context, from the specified values in [row-major order](https://en.wikipedia.org/wiki/Row-_and_column-major_order).
     #[inline]
     pub fn new_in (ctx: C, v: &[T], width: usize, access: MemAccess, alloc: bool) -> Result<Self> where T: Copy {
@@ -68,9 +69,12 @@ impl<T, C: Context> RectBuffer2D<T, C> {
             Some(0) | None => Err(Error::new(ErrorKind::InvalidBufferSize, "overflow multiplying 'rows' and 'cols'")),
             Some(len) => {
                 let inner = Buffer::create_in(ctx, len, flags, host_ptr)?;
-                let rows = NonZeroUsize::new_unchecked(width);
-                let cols = NonZeroUsize::new_unchecked(height);
-                Ok(Self { inner, width: rows, height: cols, })
+                let size = Self::NON_ZERO_SIZE.ok_or_else(|| Error::new(ErrorKind::InvalidValue, "zero-sized types are not allowed in buffers"))?;
+                let row_pitch = NonZeroUsize::new_unchecked(width)
+                    .checked_mul(size)
+                    .ok_or_else(|| Error::new(ErrorKind::InvalidBufferSize, "overflow calculating buffer size"))?;
+
+                Ok(Self { inner, row_pitch })
             }
         }
     }
@@ -92,7 +96,7 @@ impl<T, C: Context> RectBuffer2D<T, C> {
 
     #[inline(always)]
     pub unsafe fn transmute<U: Copy> (self) -> RectBuffer2D<U, C> {
-        RectBuffer2D::<U, C> { inner: self.inner.transmute(), width: self.width, height: self.height }
+        RectBuffer2D::<U, C> { inner: self.inner.transmute(), row_pitch: self.row_pitch }
     }
 }
 
@@ -103,31 +107,30 @@ impl<T: Copy, C: Context> RectBuffer2D<MaybeUninit<T>, C> {
     }
 }
 
-impl<T: Copy, C: Context> RectBuffer2D<T, C> {
+impl<T, C: Context> RectBuffer2D<T, C> {
     #[inline(always)]
     pub fn width (&self) -> usize {
-        self.width.get()
+        self.row_pitch() / core::mem::size_of::<T>()
     }
 
     #[inline(always)]
-    pub fn height (&self) -> usize {
-        self.height.get()
+    pub fn height (&self) -> Result<usize> {
+        self.len()
     }
 
     #[inline(always)]
     pub fn row_pitch (&self) -> usize {
-        self.width() * core::mem::size_of::<T>()
+        self.row_pitch.get()
     }
 
     #[inline(always)]
-    pub fn slice_pitch (&self) -> usize {
-        self.height() * self.row_pitch()
+    pub fn slice_pitch (&self) -> Result<usize> {
+        self.size()
     }
 
     #[inline(always)]
-    pub fn row_and_slice_pitch (&self) -> (usize, usize) {
-        let row = self.row_pitch();
-        (row, self.height() * row)
+    pub fn row_and_slice_pitch (&self) -> Result<(usize, usize)> {
+        Ok((self.row_pitch(), self.slice_pitch()?))
     }
 }
 
@@ -137,8 +140,8 @@ use crate::{WaitList, memobj::IntoRange2D};
 #[docfg(feature = "cl1_1")]
 impl<T: Copy, C: Context> RectBuffer2D<T, C> {
     pub fn read<'scope, 'env, R: IntoRange2D> (&'env self, scope: &'scope Scope<'scope, 'env, C>, range: R, wait: WaitList) -> Result<ReadRectEvent<'scope, T, C>> {
-        let (buffer_row_pitch, buffer_slice_pitch) = self.row_and_slice_pitch();
-        let range = range.into_range(self.width(), self.height())?;
+        let (buffer_row_pitch, buffer_slice_pitch) = self.row_and_slice_pitch()?;
+        let range = range.into_range(self.width(), self.height()?)?;
 
         let [buffer_origin, region] = range.raw_parts_buffer::<T>();
         let mut dst = Rect2D::<T>::try_new_uninit(range.width(), range.height())
@@ -160,8 +163,8 @@ impl<T: Copy, C: Context> RectBuffer2D<T, C> {
     }
     
     pub fn read_blocking<R: IntoRange2D> (&self, range: R, wait: WaitList) -> Result<RectBox2D<T>> {
-        let (buffer_row_pitch, buffer_slice_pitch) = self.row_and_slice_pitch();
-        let range = range.into_range(self.width(), self.height())?;
+        let (buffer_row_pitch, buffer_slice_pitch) = self.row_and_slice_pitch()?;
+        let range = range.into_range(self.width(), self.height()?)?;
 
         let [buffer_origin, region] = range.raw_parts_buffer::<T>();
         let mut dst = Rect2D::<T>::try_new_uninit(range.width(), range.height())
@@ -188,7 +191,7 @@ impl<T: Copy, C: Context> RectBuffer2D<T, C> {
         let offset_dst = offset_dst.into().unwrap_or([0;2]);
         let offset_src = offset_src.into().unwrap_or([0;2]);
 
-        let (buffer_row_pitch, buffer_slice_pitch) = self.row_and_slice_pitch();
+        let (buffer_row_pitch, buffer_slice_pitch) = self.row_and_slice_pitch()?;
         let host_row_pitch = src.1 * core::mem::size_of::<T>();
 
         let buffer_origin = [offset_dst[0] * core::mem::size_of::<T>(), offset_dst[1], 0];
@@ -216,7 +219,7 @@ impl<T: Copy, C: Context> RectBuffer2D<T, C> {
         let offset_dst = offset_dst.into().unwrap_or([0;2]);
         let offset_src = offset_src.into().unwrap_or([0;2]);
 
-        let (buffer_row_pitch, buffer_slice_pitch) = self.row_and_slice_pitch();
+        let (buffer_row_pitch, buffer_slice_pitch) = self.row_and_slice_pitch()?;
         let host_row_pitch = src.1 * core::mem::size_of::<T>();
 
         let buffer_origin = [offset_dst[0] * core::mem::size_of::<T>(), offset_dst[1], 0];
@@ -255,8 +258,7 @@ impl<T, C: Context> DerefMut for RectBuffer2D<T, C> {
 impl<T: PartialEq, C: Context> PartialEq for RectBuffer2D<T, C> {
     #[inline]
     fn eq(&self, other: &Self) -> bool {
-        self.width == other.width && 
-        self.height == other.height &&
+        self.row_pitch == other.row_pitch &&
         self.inner == other.inner
     }
 }
@@ -265,7 +267,7 @@ impl<T: Debug, C: Context> Debug for RectBuffer2D<T, C> {
     #[inline]
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let map = Buffer::map_blocking(&self, .., None).map_err(|_| std::fmt::Error)?;
-        f.debug_list().entries(map.chunks(self.width.get())).finish()
+        f.debug_list().entries(map.chunks(self.width())).finish()
     }
 }
 
