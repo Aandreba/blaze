@@ -2,7 +2,7 @@ use super::*;
 use std::{mem::MaybeUninit, ptr::NonNull, ffi::c_void};
 use opencl_sys::*;
 use blaze_proc::docfg;
-use crate::{context::RawContext};
+use crate::{context::RawContext, prelude::{RawEvent, RawMemObject}, WaitList, wait_list};
 use std::ptr::addr_of_mut;
 
 #[derive(Debug, PartialEq, Eq, Hash)]
