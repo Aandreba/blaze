@@ -6,6 +6,7 @@ use blaze_proc::docfg;
 use crate::{core::{*, device::DeviceType}, prelude::device::Version};
 use super::ContextProperties;
 
+/// A raw OpenCL context
 #[derive(Debug, PartialEq, Eq, Hash)]
 #[repr(transparent)]
 pub struct RawContext (NonNull<c_void>);
@@ -59,7 +60,9 @@ impl RawContext {
             return Err(Error::from(err));
         }
 
-        let this = Self::from_id(id).unwrap();
+        let this = unsafe {
+            Self::from_id(id).unwrap()
+        };
 
         #[cfg(feature = "cl3")]
         this.on_destruct(move || drop(user_data))?;
@@ -83,7 +86,9 @@ impl RawContext {
             return Err(Error::from(err));
         }
 
-        Ok(Self::from_id(id).unwrap())
+        unsafe {
+            Ok(Self::from_id(id).unwrap())
+        }
     }
 
     #[inline(always)]
@@ -92,7 +97,7 @@ impl RawContext {
     }
 
     #[inline(always)]
-    pub const fn from_id (v: cl_context) -> Option<Self> {
+    pub const unsafe fn from_id (v: cl_context) -> Option<Self> {
         NonNull::new(v).map(Self)
     }
 
@@ -194,7 +199,7 @@ impl RawContext {
         for i in 0..len {
             let v = match ImageFormat::from_raw(values[i]) {
                 Ok(x) => x,
-                Err(e) => return Err(Error::new(ErrorType::InvalidImageFormatDescriptor, format!("{e:?}")))
+                Err(e) => return Err(Error::new(ErrorKind::InvalidImageFormatDescriptor, format!("{e:?}")))
             };
 
             result.push(v)

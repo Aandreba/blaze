@@ -2,6 +2,7 @@ use derive_syn_parse::Parse;
 use proc_macro2::{TokenStream, Ident};
 use quote::{quote, format_ident, ToTokens};
 use syn::{Visibility, Token, Generics, parse_quote, Abi, punctuated::Punctuated, Attribute, Expr};
+
 use crate::utils::to_pascal_case;
 
 macro_rules! peek_and_parse {
@@ -48,7 +49,7 @@ pub fn blaze_c (ident: Ident, generics: Generics, blaze: Blaze, content: Expr) -
     }).collect::<Vec<_>>();
 
     let kernel_structs = kernels.iter()
-        .map(|x| create_kernel(&vis, &ident, &generics, &program_generics, &phantom_generics, &phantom_fill, x));
+        .map(|x| create_kernel(&ident, &generics, &program_generics, x));
 
     let kernel_defs = kernels.iter().map(|x| {
         let name = &x.ident;
@@ -67,13 +68,13 @@ pub fn blaze_c (ident: Ident, generics: Generics, blaze: Blaze, content: Expr) -
 
         impl #glob_imp #ident #glob_ty #glob_wher {
             #[inline(always)]
-            #vis fn new<'a> (options: impl Into<Option<&'a str>>) -> ::blaze_rs::core::Result<Self> {
+            #vis fn new (options: Option<&str>) -> ::blaze_rs::core::Result<Self> {
                 Self::new_in(::blaze_rs::context::Global, options)
             }
         }
 
         impl #prog_imp #ident #prog_ty #prog_wher {
-            #vis fn new_in<'a> (ctx: C, options: impl Into<Option<&'a str>>) -> ::blaze_rs::core::Result<Self> {
+            #vis fn new_in (ctx: C, options: Option<&str>) -> ::blaze_rs::core::Result<Self> {
                 let __blaze_ctx__ = ctx;
                 let (__blaze_inner__, __blaze_kernels__) = ::blaze_rs::core::RawProgram::from_source_in(&__blaze_ctx__, #content, options)?;
 
@@ -81,14 +82,15 @@ pub fn blaze_c (ident: Ident, generics: Generics, blaze: Blaze, content: Expr) -
                 for __blaze_kernel__ in __blaze_kernels__.into_iter() {
                     match __blaze_kernel__.name()?.as_str() {
                         #(#kernel_extern_names => #kernel_names = unsafe { Some(__blaze_kernel__.clone()) }),*,
-                        __other => return Err(::blaze_rs::core::Error::new(::blaze_rs::core::ErrorType::InvalidKernel, format!("unknown kernel '{}'", __other)))
+                        _ => {}
+                        //__other => return Err(::blaze_rs::core::Error::new(::blaze_rs::core::ErrorKind::InvalidKernel, format!("unknown kernel '{}'", __other)))
                     }
                 }
 
                 #(
                     let #kernel_names = match #kernel_names {
                         Some(__x) => ::std::sync::Mutex::new(__x),
-                        None => return Err(::blaze_rs::core::Error::new(::blaze_rs::core::ErrorType::InvalidKernel, concat!("kernel '", stringify!(#kernel_names), "' not found")))
+                        None => return Err(::blaze_rs::core::Error::new(::blaze_rs::core::ErrorKind::InvalidKernel, concat!("kernel '", stringify!(#kernel_names), "' not found")))
                     };
                 )*
 
@@ -114,43 +116,53 @@ pub fn blaze_c (ident: Ident, generics: Generics, blaze: Blaze, content: Expr) -
     }
 }
 
-fn create_kernel (parent_vis: &Visibility, parent: &Ident, impl_generics: &Generics, parent_generics: &Generics, phantom_generics: &Option<TokenStream>, phantom_fill: &Option<TokenStream>, kernel: &Kernel) -> TokenStream {
+fn create_kernel (parent: &Ident, impl_generics: &Generics, parent_generics: &Generics, kernel: &Kernel) -> TokenStream {
     let Kernel { vis, ident, args, .. } = kernel;
-    let mut generics = Generics::default();
+    let mut generics = parse_quote! { <'__scope__, '__env__: '__scope__> };
     let (parent_imp, parent_ty, parent_wher) = parent_generics.split_for_impl();
 
-    let vis = match vis {
-        Visibility::Inherited => parent_vis,
-        other => other
-    };
+    let name = args.iter().map(|x| x.name.clone()).collect::<Vec<_>>();
+    let new = args.iter().map(|x| x.ty(&mut generics, true)).collect::<Vec<_>>();
+    assert_eq!(name.len(), new.len());
+    //panic!("{name:?}: {new:?}");
 
-    let big_name = format_ident!("{}", to_pascal_case(&ident.to_string()));
-    let define = args.iter().filter_map(|x| define_arg(x, &mut generics)).collect::<Vec<_>>();
-    let new = args.iter().map(new_arg);
-    let names = args.iter().filter_map(|x| if x.ty.is_define() { Some(&x.name) } else { None }).collect::<Vec<_>>();
-    let pointer_names = args.iter().filter_map(|x| if x.ty.is_pointer() { Some(&x.name) } else { None });
-    let set = args.iter().enumerate().map(|(i, x)| set_arg(x, u32::try_from(i).unwrap()));
-    let (r#impl, _, _) = generics.split_for_impl();
-    let type_list = generics.type_params().map(|x| x.ident.clone()).collect::<Vec<_>>();
-
-    let mut fn_generics : Generics = parse_quote! { #r#impl };
-    fn_generics.params.push(parse_quote! { const N: usize });
-    let (fn_impl, _, _) = fn_generics.split_for_impl();
-
+    let pointer_names = args.iter().filter_map(|x| if x.ty.is_pointer() { Some(&x.name) } else { None }).collect::<Vec<_>>();
+    let set = args.iter().enumerate().map(|(i, x)| set_arg(x, u32::try_from(i).unwrap())).collect::<Vec<_>>();
     generics.params.extend(impl_generics.params.iter().cloned());
-    let (r#impl, r#type, r#where) = generics.split_for_impl();
+
+    let blocking_ident = format_ident!("{ident}_blocking");
+    let mut blocking_generics : Generics = parse_quote! { <const N: usize> };
+    let blocking_new = args.iter().map(|x| x.ty(&mut blocking_generics, false)).collect::<Vec<_>>();();
+    blocking_generics.params.extend(impl_generics.params.iter().cloned());
+    let (blocking_impl, _, blocking_where) = blocking_generics.split_for_impl();
+
+    let event_generics = generics.clone();
+    let event_new = new.iter().map(|x| {
+        let mut x = x.clone();
+        if let syn::Type::Reference(ref mut rf) = x {
+            if rf.lifetime == Some(parse_quote! { '__env__ }) {
+                rf.lifetime = Some(parse_quote! { '__scope__ });    
+            }   
+        }
+        return x
+    });
+    let (_, event_type, _) = event_generics.split_for_impl();
+    let event_name = format_ident!("{}Event", to_pascal_case(&ident.to_string()));
+
+
+    generics.params.push(parse_quote! { const N: usize });
+    let (r#impl, _, r#where) = generics.split_for_impl();
 
     quote! {
-        #vis struct #big_name #r#type {
-            #[doc(hidden)]
-            __blaze_inner__: ::blaze_rs::event::RawEvent,
-            #phantom_generics
-            #(#define),*
-        }
+        #vis type #event_name #event_type = ::blaze_rs::event::consumer::PhantomEvent<(#(#event_new),*)>;
 
         impl #parent_imp #parent #parent_ty #parent_wher {
-            #vis unsafe fn #ident #fn_impl (&self, #(#new,)* global_work_dims: [usize; N], local_work_dims: impl Into<Option<[usize; N]>>, wait: impl Into<::blaze_rs::event::WaitList>) -> ::blaze_rs::core::Result<#big_name #r#type> #r#where {
-                let mut wait = wait.into();
+            #vis unsafe fn #ident #r#impl (&self, scope: &'__scope__ ::blaze_rs::context::Scope<'__scope__, '__env__, C>, #(#name: #new,)* global_work_dims: [usize; N], local_work_dims: impl Into<Option<[usize; N]>>, wait: ::blaze_rs::WaitList) -> ::blaze_rs::prelude::Result<#event_name #event_type> #r#where {
+                let mut wait = match wait {
+                    ::blaze_rs::WaitList::Some(x) => x.to_vec(),
+                    ::blaze_rs::WaitList::None => ::std::vec::Vec::new()
+                };
+
                 let mut __blaze_kernel__ = match self.#ident.lock() {
                     Ok(x) => x,
                     Err(e) => e.into_inner()
@@ -158,57 +170,42 @@ fn create_kernel (parent_vis: &Visibility, parent: &Ident, impl_generics: &Gener
 
                 #(#set);*;
 
-                let __blaze_inner__ = __blaze_kernel__.enqueue_with_context(&self.__blaze_ctx__, global_work_dims, local_work_dims, wait)?;
+                let __blaze_inner__ = __blaze_kernel__.enqueue_phantom_with_scope(&scope, global_work_dims, local_work_dims, Some(&wait))?;
                 drop(__blaze_kernel__);
 
                 #(
-                    ::blaze_rs::buffer::KernelPointer::complete(::core::ops::Deref::deref(&#pointer_names), &__blaze_inner__)?;
+                    ::blaze_rs::buffer::KernelPointer::complete(#pointer_names, &__blaze_inner__)?;
                 )*
 
-                Ok(#big_name {
-                    __blaze_inner__,
-                    #phantom_fill
-                    #(#names),*
-                })
+                return Ok(__blaze_inner__)
+            }
+
+            #vis unsafe fn #blocking_ident #blocking_impl (&self, #(#name: #blocking_new,)* global_work_dims: [usize; N], local_work_dims: impl Into<Option<[usize; N]>>, wait: ::blaze_rs::WaitList) -> ::blaze_rs::prelude::Result<()> #blocking_where {
+                let mut wait = match wait {
+                    ::blaze_rs::WaitList::Some(x) => x.to_vec(),
+                    ::blaze_rs::WaitList::None => ::std::vec::Vec::new()
+                };
+
+                let mut __blaze_kernel__ = match self.#ident.lock() {
+                    Ok(x) => x,
+                    Err(e) => e.into_inner()
+                };
+
+                #(#set);*;
+
+                let __blaze_inner__ = unsafe {
+                    __blaze_kernel__.enqueue_unchecked(::blaze_rs::context::Context::next_queue(&self.__blaze_ctx__), global_work_dims, local_work_dims, Some(&wait))?
+                };
+
+                drop(__blaze_kernel__);
+
+                #(
+                    ::blaze_rs::buffer::KernelPointer::complete(#pointer_names, &__blaze_inner__)?;
+                )*
+
+                return __blaze_inner__.join_by_ref();
             }
         }
-
-        impl #r#impl ::blaze_rs::event::Event for #big_name #r#type #r#where {
-            type Output = (#(#type_list),*);
-
-            #[inline(always)]
-            fn as_raw (&self) -> &::blaze_rs::event::RawEvent {
-                &self.__blaze_inner__
-            }
-
-            #[inline(always)]
-            fn consume (self, err: Option<::blaze_rs::prelude::Error>) -> ::blaze_rs::prelude::Result<Self::Output> {
-                if let Some(err) = err { return Err(err) }; 
-                Ok((#(self.#names),*))
-            }
-        }
-    }
-}
-
-fn define_arg (arg: &Argument, generics: &mut Generics) -> Option<TokenStream> {
-    if arg.ty.is_define() {
-        let Argument { name, .. } = arg;
-        let ty = arg.ty(Some(generics));
-
-        return Some(quote! {
-            #name: #ty
-        })
-    }
-
-    None
-}
-
-fn new_arg (arg: &Argument) -> TokenStream {
-    let Argument { name, .. } = arg;
-    let ty = arg.ty(None);
-
-    return quote! {
-        #name: #ty
     }
 }
 
@@ -217,11 +214,11 @@ fn set_arg (arg: &Argument, idx: u32) -> TokenStream {
 
     match arg.ty {
         Type::Pointer(_, _) => quote! {
-            ::blaze_rs::buffer::KernelPointer::set_arg(::core::ops::Deref::deref(&#name), &mut __blaze_kernel__, &mut wait, #idx)?
+            ::blaze_rs::buffer::KernelPointer::set_arg(#name, &mut __blaze_kernel__, &mut wait, #idx)?
         },
 
-        Type::Image2d => quote! { __blaze_kernel__.set_argument(#idx, ::blaze_rs::image::DynImage2D::id_ref(::core::ops::Deref::deref(&#name)))? },
-        _ => quote! { __blaze_kernel__.set_argument(#idx, &#name)? }
+        Type::Image2d => quote! { __blaze_kernel__.set_argument(#idx, ::blaze_rs::image::DynImage2D::id_ref(#name))? },
+        _ => quote! { __blaze_kernel__.set_argument(#idx, #name)? }
     }
 }
 

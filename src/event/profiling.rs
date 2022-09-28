@@ -3,6 +3,7 @@ use opencl_sys::*;
 use super::RawEvent;
 use crate::prelude::*;
 
+/// Struct containing the various profiling information of an event.
 #[derive(Debug, Clone, Copy)]
 #[non_exhaustive]
 pub struct ProfilingInfo<T> {

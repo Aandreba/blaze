@@ -56,12 +56,14 @@ impl ToTokens for Error {
                 }
             }
             
-            impl From<i32> for #ident {
+            impl TryFrom<i32> for #ident {
+                type Error = i32;
+
                 #[inline(always)]
-                fn from(value: i32) -> Self {
-                    match value {
-                        Self::MIN..=Self::MAX | #(#rust_errors)|* => unsafe { core::mem::transmute(value) },
-                        _ => panic!("invalid error code: {}", value)
+                fn try_from(value: i32) -> ::core::result::Result<Self, Self::Error> {
+                    return match value {
+                        Self::MIN..=Self::MAX | #(#rust_errors)|* => Ok(unsafe { core::mem::transmute(value) }),
+                        other => Err(value) 
                     }
                 }
             }

@@ -47,7 +47,7 @@ impl<P: RawPixel, C: Context> Image2D<P, C> {
     pub fn from_file_in (ctx: C, path: impl AsRef<Path>, access: MemAccess, alloc: bool) -> Result<Self> where P: FromDynImage {
         let reader = match Reader::open(path) {
             Ok(x) => x,
-            Err(e) => return Err(Error::new(ErrorType::InvalidValue, e))
+            Err(e) => return Err(Error::new(ErrorKind::InvalidValue, e))
         };
 
         Self::from_reader_in(ctx, reader, access, alloc)
@@ -58,7 +58,7 @@ impl<P: RawPixel, C: Context> Image2D<P, C> {
     pub fn from_reader_in<R: BufRead + Seek> (ctx: C, reader: Reader<R>, access: MemAccess, alloc: bool) -> Result<Self> where P: FromDynImage {
         let decode = match reader.decode() {
             Ok(x) => x,
-            Err(e) => return Err(Error::new(ErrorType::InvalidValue, e))
+            Err(e) => return Err(Error::new(ErrorKind::InvalidValue, e))
         };
 
         let buffer = P::from_dyn_image(decode);

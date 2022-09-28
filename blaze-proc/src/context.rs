@@ -18,13 +18,13 @@ pub fn global_context (input: ItemStatic) -> TokenStream {
 
         #[doc(hidden)]
         #[no_mangle]
-        extern "Rust" fn __blaze__global__queues () -> &'static [::blaze_rs::core::RawCommandQueue] {
+        extern "Rust" fn __blaze__global__queues () -> &'static [::blaze_rs::context::CommandQueue] {
             ::blaze_rs::context::Context::queues(::blaze_rs::once_cell::sync::Lazy::force(&#ident))
         }
 
         #[doc(hidden)]
         #[no_mangle]
-        extern "Rust" fn __blaze__global__next_queue () -> &'static ::blaze_rs::core::RawCommandQueue {
+        extern "Rust" fn __blaze__global__next_queue () -> &'static ::blaze_rs::context::CommandQueue {
             ::blaze_rs::context::Context::next_queue(::blaze_rs::once_cell::sync::Lazy::force(&#ident))
         }
     }
