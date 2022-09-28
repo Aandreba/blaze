@@ -1,5 +1,5 @@
 use proc_macro2::{Ident};
-use syn::{parse::Parse, LitInt, TypePath, token::{Mut, Star}, bracketed, parse_quote_spanned, spanned::Spanned, Token, GenericParam, WherePredicate, custom_keyword, parse_quote};
+use syn::{parse::Parse, LitInt, TypePath, token::{Mut, Star}, bracketed, parse_quote_spanned, spanned::Spanned, Token, GenericParam, custom_keyword, parse_quote};
 
 custom_keyword!(image2d);
 
@@ -20,6 +20,7 @@ impl Type {
         }
     }
 
+    #[allow(unused)]
     #[inline(always)]
     pub fn is_define (&self) -> ::std::primitive::bool {
         match self {
@@ -28,35 +29,25 @@ impl Type {
         }
     }
 
-    pub fn rustify (&self, mutability: bool, name: &Ident) -> (Option<(GenericParam, WherePredicate)>, syn::Type) {
+    pub fn rustify (&self, mutability: bool, name: &Ident) -> (bool, Option<GenericParam>, syn::Type) {
         match self {
             Type::Array(ty, len) => {
-                let (gen, ty) = ty.rustify(mutability, name);
+                let (_, gen, ty) = ty.rustify(mutability, name);
                 let v = parse_quote_spanned! { ty.span() => [#ty; #len] };
-                (gen, v)
+                (false, gen, v)
             },
 
-            Type::Path(ty) => (None, syn::Type::Path(ty.clone())),
+            Type::Path(ty) => (false, None, syn::Type::Path(ty.clone())),
 
             Type::Pointer(mutability, ty) => {
                 let ty = ty.rustify_ptr();
-                let wher = parse_quote_spanned! { ty.span() => <#name as ::core::ops::Deref>::Target: ::blaze_rs::buffer::KernelPointer<#ty> };
-                let param = match mutability {
-                    true => parse_quote_spanned! { ty.span() => #name: ::core::ops::DerefMut },
-                    false => parse_quote_spanned! { ty.span() => #name: ::core::ops::Deref }
-                };
-
-                (Some((param, wher)), parse_quote_spanned! { name.span() => #name })
+                let param = parse_quote! { #name: ::blaze_rs::buffer::KernelPointer<#ty> };
+                (*mutability, Some(param), parse_quote_spanned! { name.span() => #name })
             },
 
             Type::Image2d => {
-                let wher = parse_quote! { <#name as ::core::ops::Deref>::Target: ::blaze_rs::image::DynImage2D };
-                let param = match mutability {
-                    true => parse_quote! { #name: ::core::ops::DerefMut },
-                    false => parse_quote! { #name: ::core::ops::Deref }
-                };
-
-                (Some((param, wher)), parse_quote_spanned! { name.span() => #name })
+                let param = parse_quote! { #name: ::blaze_rs::image::DynImage2D };
+                (false, Some(param), parse_quote_spanned! { name.span() => #name })
             },
         }
     }

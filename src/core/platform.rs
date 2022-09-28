@@ -1,6 +1,6 @@
 use core::{mem::MaybeUninit};
 use std::{ptr::NonNull, ffi::c_void};
-use opencl_sys::{cl_platform_id, clGetPlatformInfo, cl_platform_info, CL_PLATFORM_PROFILE, CL_PLATFORM_VERSION, CL_PLATFORM_NAME, CL_PLATFORM_VENDOR, CL_PLATFORM_EXTENSIONS, cl_uchar, clGetPlatformIDs};
+use opencl_sys::*;
 use blaze_proc::docfg;
 use super::*;
 
@@ -20,7 +20,7 @@ lazy_static! {
 
 /// OpenCL platform
 #[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct RawPlatform (NonNull<c_void>);
 
 impl RawPlatform {
@@ -35,7 +35,7 @@ impl RawPlatform {
     }
 
     #[inline(always)]
-    pub const fn from_id (id: cl_platform_id) -> Option<Self> {
+    pub const unsafe fn from_id (id: cl_platform_id) -> Option<Self> {
         NonNull::new(id).map(Self)
     }
 
@@ -105,6 +105,16 @@ impl RawPlatform {
         unsafe {
             tri!(clGetPlatformInfo(self.id(), ty, core::mem::size_of::<T>(), value.as_mut_ptr().cast(), core::ptr::null_mut()));
             Ok(value.assume_init())
+        }
+    }
+}
+
+#[docfg(feature = "cl1_2")]
+impl Drop for RawPlatform {
+    #[inline(always)]
+    fn drop(&mut self) {
+        unsafe {
+            tri_panic!(clUnloadPlatformCompiler(self.id()));
         }
     }
 }

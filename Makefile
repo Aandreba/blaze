@@ -16,5 +16,11 @@ test:
 	$(foreach x, $(features), cargo test --features strict,$(x);)
 	cargo test --all-features
 
+miri:
+	RUST_BACKTRACE=1 MIRIFLAGS="-Zmiri-disable-isolation" cargo miri test --no-default-features
+	$(foreach x, $(features), RUST_BACKTRACE=1 MIRIFLAGS="-Zmiri-disable-isolation" cargo miri test --features $(x);)
+	$(foreach x, $(features), RUST_BACKTRACE=1 MIRIFLAGS="-Zmiri-disable-isolation" cargo miri test --features strict,$(x);)
+	RUST_BACKTRACE=1 MIRIFLAGS="-Zmiri-disable-isolation" cargo miri test --all-features
+
 doc:
 	cargo rustdoc --open --all-features -- --cfg docsrs

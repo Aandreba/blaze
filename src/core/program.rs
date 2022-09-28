@@ -1,5 +1,5 @@
 use core::{mem::MaybeUninit, num::NonZeroUsize};
-use std::{borrow::Cow, ptr::{NonNull, addr_of_mut}, ffi::{c_void}};
+use std::{borrow::Cow, ptr::{NonNull, addr_of_mut}, ffi::{c_void}, ops::Deref};
 use box_iter::BoxIntoIter;
 use opencl_sys::*;
 use blaze_proc::docfg;
@@ -13,12 +13,37 @@ pub struct RawProgram (NonNull<c_void>);
 
 impl RawProgram {
     #[inline(always)]
-    pub fn from_source<'a> (source: impl AsRef<str>, options: impl Into<Option<&'a str>>) -> Result<(Self, Box<[RawKernel]>)> {
-        Self::from_source_in(&Global, source, options)
+    pub fn from_source (source: impl AsRef<str>, options: Option<&str>) -> Result<(Self, Box<[RawKernel]>)> {
+        Self::from_source_in(Global::get(), source, options)
     }
 
-    #[inline]
-    pub fn from_source_in<'a, C: Context> (ctx: &C, source: impl AsRef<str>, options: impl Into<Option<&'a str>>) -> Result<(Self, Box<[RawKernel]>)> {
+    #[inline(always)]
+    pub fn from_binary (source: &[u8]) -> Result<(Self, Box<[RawKernel]>)> {
+        Self::from_binary_in(Global::get(), source)
+    }
+
+    #[docfg(feature = "cl2_1")]
+    #[inline(always)]
+    pub fn from_il (source: &[u8], options: Option<&str>) -> Result<(Self, Box<[RawKernel]>)> {
+        Self::from_il_in(Global::get(), source, options)
+    }
+
+    pub fn from_source_in<C: Context> (ctx: &C, source: impl AsRef<str>, options: Option<&str>) -> Result<(Self, Box<[RawKernel]>)> {
+        let options : Option<Cow<'static, str>> = match options {
+            Some(x) => {
+                let mut x = x.to_string();
+                #[cfg(feature = "cl1_2")]
+                x.push_str(" -cl-kernel-arg-info");
+                x.push('\0');
+                Some(Cow::Owned(x))
+            },
+
+            #[cfg(feature = "cl1_2")]
+            None => Some(Cow::Borrowed("-cl-kernel-arg-info\0")),
+            #[cfg(not(feature = "cl1_2"))]
+            None => None
+        };
+
         let source = source.as_ref();
         let len = [source.len()].as_ptr();
         let strings = [source.as_ptr().cast()].as_ptr();
@@ -33,9 +58,62 @@ impl RawProgram {
         }
 
         let this = NonNull::new(id).map(Self).unwrap();
+        this.build(options.as_deref(), ctx)?;
+
+        let kernels = this.kernels()?.into_iter().map(|id| unsafe { RawKernel::from_id(id).unwrap() }).collect::<Box<[_]>>();
+        Ok((this, kernels))
+    }
+
+    pub fn from_binary_in<C: Context> (ctx: &C, source: &[u8]) -> Result<(Self, Box<[RawKernel]>)> {
+        let devices = ctx.as_raw().devices()?;
+        let (num_devices, device_list) = (u32::try_from(devices.len()).unwrap(), devices.as_ptr().cast::<cl_device_id>());
+
+        let lengths = vec![source.len(); devices.len()];
+        let binaries = vec![source.as_ptr(); devices.len()];
+
+        let mut binary_status = vec![CL_SUCCESS; devices.len()];
+        let mut err = 0;
+
+        let id = unsafe {
+            clCreateProgramWithBinary(ctx.as_raw().id(), num_devices, device_list, lengths.as_ptr(), binaries.as_ptr(), binary_status.as_mut_ptr(), addr_of_mut!(err))
+        };
+
+        match ErrorCode::from(err) {
+            ErrorCode::Unknown(CL_SUCCESS) => {},
+            ErrorCode::Kind(ErrorKind::InvalidValue) => {
+                for status in binary_status.into_iter().map(ErrorCode::from) {
+                    if status != ErrorCode::Unknown(CL_SUCCESS) {
+                        return Err(Error::from(status))
+                    }
+                }
+
+                return Err(Error::from(ErrorKind::InvalidValue))
+            },
+            other => return Err(Error::from(other))
+        }
+
+        let this = NonNull::new(id).map(Self).unwrap();
+        this.build(None, ctx)?;
+
+        let kernels = this.kernels()?.into_iter().map(|id| unsafe { RawKernel::from_id(id).unwrap() }).collect::<Box<[_]>>();
+        Ok((this, kernels))
+    }
+
+    #[docfg(feature = "cl2_1")]
+    pub fn from_il_in<C: Context> (ctx: &C, source: &[u8], options: Option<&str>) -> Result<(Self, Box<[RawKernel]>)> {
+        let mut err = 0;
+        let id = unsafe {
+            clCreateProgramWithIL(ctx.as_raw().id(), source.as_ptr().cast(), source.len(), &mut err)
+        };
+
+        if err != 0 {
+            return Err(Error::from(err))
+        }
+
+        let this = NonNull::new(id).map(Self).unwrap();
         this.build(options.into(), ctx)?;
 
-        let kernels = this.kernels()?.into_iter().map(|id| RawKernel::from_id(id).unwrap()).collect::<Box<[_]>>();
+        let kernels = this.kernels()?.into_iter().map(|id| unsafe { RawKernel::from_id(id).unwrap() }).collect::<Box<[_]>>();
         Ok((this, kernels))
     }
 
@@ -77,7 +155,7 @@ impl RawProgram {
 
         let options = match options.into() {
             Some(x) => {
-                let v = std::ffi::CString::new(x).map_err(|e| Error::new(ErrorType::InvalidBuildOptions, e))?;
+                let v = std::ffi::CString::new(x).map_err(|e| Error::new(ErrorKind::InvalidBuildOptions, e))?;
                 Some(v)
             },
             None => None
@@ -163,29 +241,32 @@ impl RawProgram {
         todo!()
     }
 
-    fn build<C: Context> (&self, options: Option<&str>, ctx: &C) -> Result<()> {
-        let options : Option<Cow<'static, str>> = match options {
-            Some(x) => {
-                let mut x = x.to_string();
-                #[cfg(feature = "cl1_2")]
-                x.push_str(" -cl-kernel-arg-info");
-                x.push('\0');
-                Some(Cow::Owned(x))
-            },
-
-            #[cfg(feature = "cl1_2")]
-            None => Some(Cow::Borrowed("-cl-kernel-arg-info\0")),
-            #[cfg(not(feature = "cl1_2"))]
-            None => None
+    #[allow(unused)]
+    #[cfg(feature = "cl1_2")]
+    fn compile<C: Context> (&self, headers: Option<(&[&std::ffi::CStr], &[RawProgram])>, options: Option<&str>, ctx: &C) -> Result<()> {        
+        let options = match options {
+            Some(x) => x.as_ptr(),
+            None => core::ptr::null()
         };
 
+        let (num_input_headers, input_headers, header_include_names) = match headers {
+            Some((names, programs)) => {
+                if names.len() != programs.len() { return Err(Error::new(ErrorKind::InvalidValue, "incorrect number of headers")) }
+                (u32::try_from(names.len()).unwrap(), programs.as_ptr().cast::<cl_program>(), names.as_ptr().cast::<*const std::os::raw::c_char>())
+            },
+            None => (0, core::ptr::null(), core::ptr::null())
+        };
+        
+        let build_result = unsafe {
+            clCompileProgram(self.id(), 0, core::ptr::null(), options.cast(), num_input_headers, input_headers, header_include_names, None, core::ptr::null_mut())
+        };
+
+        return self.build_error(build_result, ctx)
+    }
+
+    fn build<C: Context> (&self, options: Option<&str>, ctx: &C) -> Result<()> {
         let ops = match options {
             Some(x) => x.as_ptr(),
-            #[cfg(all(debug_assertions, feature = "cl1_2"))]
-            None => unreachable!(),
-            #[cfg(all(not(debug_assertions), feature = "cl1_2"))]
-            None => unsafe { core::hint::unreachable_unchecked() },
-            #[cfg(not(feature = "cl1_2"))]
             None => core::ptr::null()
         };
 
@@ -193,13 +274,17 @@ impl RawProgram {
             clBuildProgram(self.id(), 0, core::ptr::null(), ops.cast(), None, core::ptr::null_mut())
         };
 
+        return self.build_error(build_result, ctx)
+    }
+
+    fn build_error<C: Context> (&self, build_result: i32, ctx: &C) -> Result<()> {
         if build_result == 0 {
             return Ok(());
         }
 
-        let build_result = ErrorType::from(build_result);
+        let build_result = ErrorCode::from(build_result);
 
-        for device in ctx.queues().into_iter().map(RawCommandQueue::device) {
+        for device in ctx.queues().into_iter().map(Deref::deref).map(RawCommandQueue::device) {
             let device = device?;
             
             let mut len = 0;
@@ -207,7 +292,7 @@ impl RawProgram {
                 tri!(clGetProgramBuildInfo(self.id(), device.id(), CL_PROGRAM_BUILD_LOG, 0, core::ptr::null_mut(), &mut len))
             };
 
-            if len == 0 { continue }
+            if len <= 1 { continue }
 
             let mut result = Box::<[u8]>::new_uninit_slice(len);
             unsafe {
@@ -215,7 +300,7 @@ impl RawProgram {
             };
 
             let result = unsafe { result.assume_init() };
-            return Err(Error::new(build_result, String::from_utf8_lossy(&result)));
+            return Err(Error::new(build_result, String::from_utf8_lossy(&result[..result.len()]).into_owned()));
         }
 
         Err(build_result.into())

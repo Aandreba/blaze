@@ -2,8 +2,8 @@ flat_mod!(flags, utils);
 pub mod atomics;
 
 use std::{alloc::{Layout, Allocator, GlobalAlloc}, ptr::{NonNull, addr_of_mut}, ffi::c_void};
-use opencl_sys::{clSVMAlloc, clSVMFree, clEnqueueSVMFree, clEnqueueSVMMap, CL_TRUE, CL_MAP_READ, CL_MAP_WRITE, cl_map_flags, CL_FALSE, clEnqueueSVMUnmap};
-use crate::{context::{Context, Global}, event::{RawEvent, WaitList}, core::Result, prelude::{Error, ErrorType, device::SvmCapability}, buffer::flags::MemAccess};
+use opencl_sys::*;
+use crate::{WaitList, context::{Context, Global}, event::{RawEvent}, core::Result, prelude::{Error, ErrorKind, device::SvmCapability}, buffer::flags::MemAccess, wait_list};
 
 #[derive(Clone, Copy)]
 pub struct Svm<C: Context = Global> {
@@ -55,21 +55,19 @@ impl<C: Context> Svm<C> {
     pub unsafe fn alloc_with_flags (&self, flags: SvmFlags, layout: Layout) -> Result<*mut u8> {
         #[cfg(debug_assertions)]
         if self.coarse && flags.utils.is_some() {
-            return Err(Error::new(ErrorType::InvalidValue, "SVM allocator marked as coarse-grained, but added fine-grained flags"));
+            return Err(Error::new(ErrorKind::InvalidValue, "SVM allocator marked as coarse-grained, but added fine-grained flags"));
         }
 
         let align = u32::try_from(layout.align()).unwrap();
-        let ptr = clSVMAlloc(self.ctx.id(), flags.to_bits(), layout.size(), align);
+        let ptr = clSVMAlloc(self.ctx.as_raw().id(), flags.to_bits(), layout.size(), align);
 
-        if self.coarse { self.map_blocking::<WaitList, {CL_MAP_READ | CL_MAP_WRITE}>(ptr, layout.size(), WaitList::EMPTY)?; }
+        if self.coarse { self.map_blocking::<{CL_MAP_READ | CL_MAP_WRITE}>(ptr, layout.size(), None)?; }
         Ok(ptr.cast())
     }
 
     #[inline(always)]
-    pub(crate) unsafe fn map<W: Into<WaitList>, const MASK: cl_map_flags> (&self, ptr: *mut c_void, size: usize, wait: W) -> Result<RawEvent> {
-        let wait : WaitList = wait.into();
-        let (num_events_in_wait_list, event_wait_list) = wait.raw_parts();
-
+    pub(crate) unsafe fn map<const MASK: cl_map_flags> (&self, ptr: *mut c_void, size: usize, wait: WaitList) -> Result<RawEvent> {
+        let (num_events_in_wait_list, event_wait_list) = wait_list(wait)?;
         let mut evt = core::ptr::null_mut();
         tri!(clEnqueueSVMMap(self.ctx.next_queue().id(), CL_FALSE, MASK, ptr, size, num_events_in_wait_list, event_wait_list, addr_of_mut!(evt)));
 
@@ -77,18 +75,14 @@ impl<C: Context> Svm<C> {
     }
 
     #[inline(always)]
-    pub(crate) unsafe fn map_blocking<W: Into<WaitList>, const MASK: cl_map_flags> (&self, ptr: *mut c_void, size: usize, wait: W) -> Result<()> {
-        let wait : WaitList = wait.into();
-        let (num_events_in_wait_list, event_wait_list) = wait.raw_parts();
-
+    pub(crate) unsafe fn map_blocking<const MASK: cl_map_flags> (&self, ptr: *mut c_void, size: usize, wait: WaitList) -> Result<()> {
+        let (num_events_in_wait_list, event_wait_list) = wait_list(wait)?;
         tri!(clEnqueueSVMMap(self.ctx.next_queue().id(), CL_TRUE, MASK, ptr, size, num_events_in_wait_list, event_wait_list, core::ptr::null_mut()));
         Ok(())
     }
 
-    pub(crate) unsafe fn unmap (&self, ptr: *mut c_void, wait: impl Into<WaitList>) -> Result<RawEvent> {
-        let wait : WaitList = wait.into();
-        let (num_events_in_wait_list, event_wait_list) = wait.raw_parts();
-
+    pub(crate) unsafe fn unmap (&self, ptr: *mut c_void, wait: WaitList) -> Result<RawEvent> {
+        let (num_events_in_wait_list, event_wait_list) = wait_list(wait)?;
         let mut evt = core::ptr::null_mut();
         tri!(clEnqueueSVMUnmap(self.ctx.next_queue().id(), ptr, num_events_in_wait_list, event_wait_list, addr_of_mut!(evt)));
         
@@ -97,20 +91,7 @@ impl<C: Context> Svm<C> {
 
     #[inline(always)]
     pub unsafe fn free (&self, ptr: *mut u8) {
-        clSVMFree(self.ctx.id(), ptr.cast())
-    }
-
-    #[inline(always)]
-    pub unsafe fn enqueue_free (&self, ptrs: &[*const c_void], wait: impl Into<WaitList>) -> Result<RawEvent> {
-        let len = u32::try_from(ptrs.len()).expect("Too many pointers");
-        
-        let wait : WaitList = wait.into();
-        let (num_events_in_wait_list, event_wait_list) = wait.raw_parts();
-
-        let mut event = core::ptr::null_mut();
-        tri!(clEnqueueSVMFree(self.ctx.next_queue().id(), len, ptrs.as_ptr(), None, core::ptr::null_mut(), num_events_in_wait_list, event_wait_list, addr_of_mut!(event)));
-
-        Ok(RawEvent::from_id(event).unwrap())
+        clSVMFree(self.ctx.as_raw().id(), ptr.cast())
     }
 }
 
