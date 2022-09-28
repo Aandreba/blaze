@@ -54,7 +54,12 @@ impl RawMemObject {
     pub fn associated_memobject (&self) -> Result<Option<RawMemObject>> {
         let v = self.get_info::<cl_mem>(opencl_sys::CL_MEM_ASSOCIATED_MEMOBJECT)?;
         unsafe {
-            Ok(Self::from_id(v))
+            if let Some(id) = Self::from_id(v) {
+                id.retain()?;
+                return Ok(Some(id));
+            }
+
+            return Ok(None)
         }
     }
 

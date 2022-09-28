@@ -1,15 +1,61 @@
 use std::{marker::PhantomData, ptr::{NonNull}, ops::{Deref, DerefMut}, fmt::Debug, mem::{MaybeUninit, transmute}};
 use blaze_proc::docfg;
-use crate::{context::{Context, Global, Scope, local_scope}, prelude::{Event}, event::consumer::{Consumer, PhantomEvent}, WaitList, memobj::MapPtr};
+use crate::{context::{Context, Global, Scope, local_scope}, prelude::{Event}, WaitList, memobj::MapPtr};
 use crate::core::*;
 use crate::buffer::{flags::{MemFlags, HostPtr, MemAccess}, RawBuffer};
-use super::{IntoRange, BufferRange, MapGuard, BufferMapEvent, BufferMap, BufferMapMutEvent, MapMutGuard, BufferMapMut};
+use super::{IntoRange, BufferRange, map::*};
+use blaze_proc::join_various_blocking;
+use crate::blaze_rs;
+use events::*;
 
-pub type ReadEvent<'a, T, C = Global> = Event<BufferRead<'a, T, C>>;
-pub type ReadIntoEvent<'a, T, C = Global> = PhantomEvent<(&'a Buffer<T, C>, &'a mut [T])>;
-pub type WriteEvent<'a, T, C = Global> = PhantomEvent<(&'a mut Buffer<T, C>, &'a [T])>;
-pub type CopyEvent<'a, T, C = Global> = PhantomEvent<(&'a Buffer<T, C>, &'a mut Buffer<T, C>)>;
-pub type FillEvent<'a, T, C = Global> = PhantomEvent<(&'a mut Buffer<T, C>, T)>;
+pub mod events {
+    use std::{marker::*, fmt::Debug};
+    use crate::{prelude::*, event::{Consumer}};
+    use blaze_proc::docfg;
+    
+    /// Consumer for [`ReadIntoEvent`]
+    pub type BufferReadInto<'a, T, C = Global> = PhantomData<(&'a Buffer<T, C>, &'a mut [T])>;
+    /// Consumer for [`WriteEvent`]
+    pub type BufferWrite<'a, T, C = Global> = PhantomData<(&'a mut Buffer<T, C>, &'a [T])>;
+    /// Consumer for [`CopyEvent`]
+    pub type BufferCopy<'a, T, C = Global> = PhantomData<(&'a mut Buffer<T, C>, &'a Buffer<T, C>)>;
+    /// Consumer for [`FillEvent`]
+    #[docfg(feature = "cl1_2")]
+    pub type BufferFill<'a, T, C = Global> = PhantomData<(&'a mut Buffer<T, C>, T)>;
+
+    /// Event for [`Buffer::read`]
+    pub type ReadEvent<'a, T, C = Global> = Event<BufferRead<'a, T, C>>;
+    /// Event for [`Buffer::read_into`]
+    pub type ReadIntoEvent<'a, T, C = Global> = Event<BufferReadInto<'a, T, C>>;
+    /// Event for [`Buffer::write`]
+    pub type WriteEvent<'a, T, C = Global> = Event<BufferWrite<'a, T, C>>;
+    /// Event for [`Buffer::copy_from`] and [`Buffer::copy_to`]
+    pub type CopyEvent<'a, T, C = Global> = Event<BufferCopy<'a, T, C>>;
+    #[docfg(feature = "cl1_2")]
+    /// Event for [`Buffer::fill`]
+    pub type FillEvent<'a, T, C = Global> = Event<BufferFill<'a, T, C>>;
+
+    /// Consumer for [`ReadEvent`]
+    pub struct BufferRead<'a, T: Copy, C: Context = Global> (pub(super) Vec<T>, pub(super) PhantomData<&'a Buffer<T, C>>);
+
+    impl<'a, T: Copy> Consumer for BufferRead<'a, T> {
+        type Output = Vec<T>;
+        
+        #[inline(always)]
+        fn consume (mut self) -> Result<Vec<T>> {
+            unsafe { self.0.set_len(self.0.capacity()); }
+            Ok(self.0)
+        }
+    }
+
+    impl<'a, T: Copy> Debug for BufferRead<'a, T> {
+        #[inline(always)]
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.debug_struct("BufferRead").finish_non_exhaustive()
+        }
+    }
+}
+
 
 #[doc = include_str!("../../docs/src/buffer/README.md")]
 pub struct Buffer<T, C: Context = Global> {
@@ -118,14 +164,14 @@ impl<T, C: Context> Buffer<T, C> {
     /// Creates a shared slice of this buffer.
     #[docfg(feature = "cl1_1")]
     #[inline(always)]
-    pub fn slice<R: IntoRange> (&self, range: R) -> Result<super::Buf<'_, T, C>> where C: Clone {
+    pub fn slice<R: IntoRange> (&self, range: R) -> Result<super::Buf<'_, T, C>> {
         super::Buf::new(self, range)
     }
 
     /// Creates a mutable slice of this buffer.
     #[docfg(feature = "cl1_1")]
     #[inline(always)]
-    pub fn slice_mut<R: IntoRange> (&mut self, range: R) -> Result<super::BufMut<'_, T, C>> where C: Clone {
+    pub fn slice_mut<R: IntoRange> (&mut self, range: R) -> Result<super::BufMut<'_, T, C>> {
         super::BufMut::new(self, range)
     }
 
@@ -138,6 +184,71 @@ impl<T, C: Context> Buffer<T, C> {
         Buffer { inner: self.inner, ctx: self.ctx, phtm: PhantomData }
     }
 
+    /// Converts `Buffer<T,C>` into `Buffer<MaybeUninit<T>,C>`
+    #[inline(always)]
+    pub fn into_uninit (self) -> Buffer<MaybeUninit<T>, C> {
+        unsafe { self.transmute() }
+    }
+
+    /// Converts `&Buffer<T,C>` to `&Buffer<MaybeUninit<T>,C>`
+    #[inline(always)]
+    pub const fn as_uninit (&self) -> &Buffer<MaybeUninit<T>, C> {
+        unsafe { transmute(self) }
+    }
+
+    /// Converts `&mut Buffer<T,C>` to `&mut Buffer<MaybeUninit<T>,C>`
+    #[inline(always)]
+    pub fn as_mut_uninit (&mut self) -> &mut Buffer<MaybeUninit<T>, C> {
+        unsafe { transmute(self) }
+    }
+
+    pub fn try_clone (&self, wait: WaitList) -> Result<Self> where T: Clone, C: Clone {
+        let len = self.len()?;
+        let flags = self.flags()?;
+        let mut result = Self::new_uninit_in(self.ctx.clone(), len, flags.access, flags.host.is_alloc())?;
+        
+        local_scope(self.context(), |s| {
+            let (this, mut other): (MapGuard<_, _>, MapMutGuard<_, _>) = join_various_blocking!(
+                self.map(s, .., wait)?,
+                result.map_mut(s, .., wait)?
+            )?;
+    
+            other.iter_mut()
+                .zip(this.iter().cloned())
+                .for_each(|(this, other)| {this.write(other);});
+
+            Ok(())
+        })?;
+        
+        return unsafe {
+            Ok(result.assume_init())
+        }
+    }
+
+    #[docfg(feature = "futures")]
+    pub async fn try_clone_async<'a> (&self, wait: WaitList<'a>) -> Result<Self> where T: Clone, C: Clone {
+        let len = self.len()?;
+        let flags = self.flags()?;
+        let mut result = Self::new_uninit_in(self.ctx.clone(), len, flags.access, flags.host.is_alloc())?;
+        
+        crate::scope_async!(self.context(), |s| async {
+            let (this, mut other): (MapGuard<_, _>, MapMutGuard<_, _>) = futures::try_join!(
+                self.map(s, .., wait)?.join_async()?,
+                result.map_mut(s, .., wait)?.join_async()?
+            )?;
+
+            other.iter_mut()
+                .zip(this.iter().cloned())
+                .for_each(|(this, other)| {this.write(other);});
+
+            Ok(())
+        }).await?;
+        
+        return unsafe {
+            Ok(result.assume_init())
+        }
+    }
+
     /// Checks if the buffer pointer is the same in both buffers.
     #[inline(always)]
     pub fn eq_buffer (&self, other: &Buffer<T, C>) -> bool {
@@ -148,9 +259,32 @@ impl<T, C: Context> Buffer<T, C> {
 impl<T, C: Context> Buffer<MaybeUninit<T>, C> {
     /// Convenience method for writing to an unitialized buffer. See [`write`](Buffer::write).
     #[inline(always)]
-    pub fn write_init<'scope, 'env> (&'env mut self, scope: &'scope Scope<'scope, 'env, C>, offset: usize, src: &'env [T], wait: WaitList) -> Result<WriteEvent<'scope, MaybeUninit<T>, C>> where T: Copy {
+    pub fn write_init<'scope, 'env, O: Into<Option<usize>>> (&'env mut self, scope: &'scope Scope<'scope, 'env, C>, offset: O, src: &'env [T], wait: WaitList) -> Result<WriteEvent<'scope, MaybeUninit<T>, C>> where T: Copy {
         let src = unsafe { transmute::<&'env [T], &'env [MaybeUninit<T>]>(src) };
         self.write(scope, offset, src, wait)
+    }
+
+    /// Convenience method for writing to an unitialized buffer. See [`write_blocking`](Buffer::write_blocking).
+    #[inline(always)]
+    pub fn write_init_blocking (&mut self, offset: impl Into<Option<usize>>, src: &[T], wait: WaitList) -> Result<()> where T: Copy {
+        let src = unsafe { transmute::<&[T], &[MaybeUninit<T>]>(src) };
+        self.write_blocking(offset, src, wait)
+    }
+
+    /// Convenience method for copying to an unitialized buffer. See [`copy_from`](Buffer::copy_from).
+    #[inline(always)]
+    pub fn copy_from_init<'scope, 'env, Dst: Into<Option<usize>>, Src: Into<Option<usize>>, Size: Into<Option<usize>>> (&'env mut self, scope: &'scope Scope<'scope, 'env, C>, dst_offset: Dst, src: &'env Buffer<T, C>, src_offset: Src, size: Size, wait: WaitList) -> Result<CopyEvent<'scope, MaybeUninit<T>, C>> where T: Copy {
+        unsafe {
+            self.copy_from(scope, dst_offset, transmute(src), src_offset, size, wait)
+        }
+    }
+
+    /// Convenience method for copying to an unitialized buffer. See [`copy_from_blocking`](Buffer::copy_from_blocking).
+    #[inline(always)]
+    pub fn copy_from_init_blocking (&mut self, dst_offset: impl Into<Option<usize>>, src: &Buffer<T, C>, src_offset: impl Into<Option<usize>>, size: impl Into<Option<usize>>, wait: WaitList) -> Result<()> where T: Copy {
+        unsafe {
+            self.copy_from_blocking(dst_offset, transmute(src), src_offset, size, wait)
+        }
     }
 
     /// Convenience method for filling an unitialized buffer. See [`fill`](Buffer::fill).
@@ -158,6 +292,13 @@ impl<T, C: Context> Buffer<MaybeUninit<T>, C> {
     #[inline(always)]
     pub fn fill_init<'scope, 'env, R: IntoRange> (&'env mut self, scope: &'scope Scope<'scope, 'env, C>, v: T, range: R, wait: WaitList) -> Result<FillEvent<'scope, MaybeUninit<T>, C>> where T: Copy {
         self.fill(scope, MaybeUninit::new(v), range, wait)
+    }
+
+    /// Convenience method for filling an unitialized buffer. See [`fill_blocking`](Buffer::fill_blocking).
+    #[docfg(feature = "cl1_2")]
+    #[inline(always)]
+    pub fn fill_init_blocking (&mut self, v: T, range: impl IntoRange, wait: WaitList) -> Result<()> where T: Copy {
+        self.fill_blocking(MaybeUninit::new(v), range, wait)
     }
 
     /// Extracts the value from `Buffer<MaybeUninit<T>>` to `Buffer<T>`
@@ -207,8 +348,8 @@ impl<T: Copy, C: Context> Buffer<T, C> {
 
     /// Reads the contents of the buffer into `dst`.
     #[inline]
-    pub fn read_into<'scope, 'env, R: IntoRange> (&'env self, s: &'scope Scope<'scope, 'env, C>, offset: usize, dst: &'env mut [T], wait: WaitList) -> Result<ReadIntoEvent<'scope, T, C>> {
-        let range = BufferRange::from_parts::<T>(offset, dst.len())?;
+    pub fn read_into<'scope, 'env, O: Into<Option<usize>>> (&'env self, s: &'scope Scope<'scope, 'env, C>, offset: O, dst: &'env mut [T], wait: WaitList) -> Result<ReadIntoEvent<'scope, T, C>> {
+        let range = BufferRange::from_parts::<T>(offset.into().unwrap_or_default(), dst.len())?;
         let supplier = |queue| unsafe {
             self.inner.read_to_ptr_in(range, dst.as_mut_ptr().cast(), queue, wait)
         };
@@ -218,8 +359,8 @@ impl<T: Copy, C: Context> Buffer<T, C> {
 
     /// Reads the contents of the buffer into `dst`, blocking the current thread until the operation has completed.
     #[inline]
-    pub fn read_into_blocking<R: IntoRange> (&self, offset: usize, dst: &mut [T], wait: WaitList) -> Result<()> {
-        let range = BufferRange::from_parts::<T>(offset, dst.len())?;
+    pub fn read_into_blocking (&self, offset: impl Into<Option<usize>>, dst: &mut [T], wait: WaitList) -> Result<()> {
+        let range = BufferRange::from_parts::<T>(offset.into().unwrap_or_default(), dst.len())?;
         let supplier = |queue| unsafe {
             self.inner.read_to_ptr_in(range, dst.as_mut_ptr().cast(), queue, wait)
         };
@@ -229,8 +370,8 @@ impl<T: Copy, C: Context> Buffer<T, C> {
 
     /// Writes the contents of `src` into the buffer
     #[inline]
-    pub fn write<'scope, 'env> (&'env mut self, scope: &'scope Scope<'scope, 'env, C>, offset: usize, src: &'env [T], wait: WaitList) -> Result<WriteEvent<'scope, T, C>> {
-        let range = BufferRange::from_parts::<T>(offset, src.len()).unwrap();
+    pub fn write<'scope, 'env, O: Into<Option<usize>>> (&'env mut self, scope: &'scope Scope<'scope, 'env, C>, offset: O, src: &'env [T], wait: WaitList) -> Result<WriteEvent<'scope, T, C>> {
+        let range = BufferRange::from_parts::<T>(offset.into().unwrap_or_default(), src.len()).unwrap();
         let supplier = |queue| unsafe {
             self.inner.write_from_ptr_in(range, src.as_ptr().cast(), queue, wait)
         };
@@ -240,8 +381,8 @@ impl<T: Copy, C: Context> Buffer<T, C> {
 
     /// Writes the contents of `src` into the buffer, blocking the current thread until the operation has completed.
     #[inline]
-    pub fn write_blocking (&mut self, offset: usize, src: &[T], wait: WaitList) -> Result<()> {
-        let range = BufferRange::from_parts::<T>(offset, src.len()).unwrap();
+    pub fn write_blocking (&mut self, offset: impl Into<Option<usize>>, src: &[T], wait: WaitList) -> Result<()> {
+        let range = BufferRange::from_parts::<T>(offset.into().unwrap_or_default(), src.len()).unwrap();
         let supplier = |queue| unsafe {
             self.inner.write_from_ptr_in(range, src.as_ptr().cast(), queue, wait)
         };
@@ -251,10 +392,14 @@ impl<T: Copy, C: Context> Buffer<T, C> {
 
     /// Copies the contents from `self` to `dst`
     #[inline]
-    pub fn copy_to<'scope, 'env> (&'env self, s: &'scope Scope<'scope, 'env, C>, src_offset: usize, dst: &'env mut Self, dst_offset: usize, size: usize, wait: WaitList) -> Result<CopyEvent<'scope, T, C>> {
-        let src_offset = src_offset.checked_mul(core::mem::size_of::<T>()).unwrap();
-        let dst_offset = dst_offset.checked_mul(core::mem::size_of::<T>()).unwrap();
-        let size = size.checked_mul(core::mem::size_of::<T>()).unwrap();
+    pub fn copy_to<'scope, 'env, Src: Into<Option<usize>>, Dst: Into<Option<usize>>, Size: Into<Option<usize>>> (&'env self, s: &'scope Scope<'scope, 'env, C>, src_offset: Src, dst: &'env mut Self, dst_offset: Dst, size: Size, wait: WaitList) -> Result<CopyEvent<'scope, T, C>> {
+        let src_offset = src_offset.into().unwrap_or_default().checked_mul(core::mem::size_of::<T>()).ok_or_else(|| Error::from_type(ErrorKind::InvalidValue))?;
+        let dst_offset = dst_offset.into().unwrap_or_default().checked_mul(core::mem::size_of::<T>()).ok_or_else(|| Error::from_type(ErrorKind::InvalidValue))?;
+        let size = match size.into() {
+            Some(x) => x.checked_mul(core::mem::size_of::<T>()).ok_or_else(|| Error::from_type(ErrorKind::InvalidValue))?,
+            None => self.size()? - src_offset
+        };
+
         let supplier = |queue| unsafe {
             dst.copy_from_in(dst_offset, &self, src_offset, size, queue, wait)
         };
@@ -264,10 +409,14 @@ impl<T: Copy, C: Context> Buffer<T, C> {
 
     /// Copies the contents from `self` to `dst`, blocking the current thread until the operation has completed.
     #[inline]
-    pub fn copy_to_blocking (&self, src_offset: usize, dst: &mut Self, dst_offset: usize, size: usize, wait: WaitList) -> Result<()> {
-        let src_offset = src_offset.checked_mul(core::mem::size_of::<T>()).unwrap();
-        let dst_offset = dst_offset.checked_mul(core::mem::size_of::<T>()).unwrap();
-        let size = size.checked_mul(core::mem::size_of::<T>()).unwrap();
+    pub fn copy_to_blocking (&self, src_offset: impl Into<Option<usize>>, dst: &mut Self, dst_offset: impl Into<Option<usize>>, size: impl Into<Option<usize>>, wait: WaitList) -> Result<()> {
+        let src_offset = src_offset.into().unwrap_or_default().checked_mul(core::mem::size_of::<T>()).ok_or_else(|| Error::from_type(ErrorKind::InvalidValue))?;
+        let dst_offset = dst_offset.into().unwrap_or_default().checked_mul(core::mem::size_of::<T>()).ok_or_else(|| Error::from_type(ErrorKind::InvalidValue))?;
+        let size = match size.into() {
+            Some(x) => x.checked_mul(core::mem::size_of::<T>()).ok_or_else(|| Error::from_type(ErrorKind::InvalidValue))?,
+            None => self.size()? - src_offset
+        };
+
         let supplier = |queue| unsafe {
             dst.copy_from_in(dst_offset, &self, src_offset, size, queue, wait)
         };
@@ -277,13 +426,13 @@ impl<T: Copy, C: Context> Buffer<T, C> {
 
     /// Copies the contents from `src` to `self`
     #[inline(always)]
-    pub fn copy_from<'scope, 'env> (&'env mut self, s: &'scope Scope<'scope, 'env, C>, dst_offset: usize, src: &'env Self, src_offset: usize, size: usize, wait: WaitList) -> Result<CopyEvent<'scope, T, C>> {
+    pub fn copy_from<'scope, 'env, Dst: Into<Option<usize>>, Src: Into<Option<usize>>, Size: Into<Option<usize>>> (&'env mut self, s: &'scope Scope<'scope, 'env, C>, dst_offset: Dst, src: &'env Self, src_offset: Src, size: Size, wait: WaitList) -> Result<CopyEvent<'scope, T, C>> {
         src.copy_to(s, src_offset, self, dst_offset, size, wait)
     }
 
     /// Copies the contents from `src` to `self`, blocking the current thread until the operation has completed.
     #[inline(always)]
-    pub fn copy_from_blocking (&mut self, dst_offset: usize, src: &Self, src_offset: usize, size: usize, wait: WaitList) -> Result<()> {
+    pub fn copy_from_blocking (&mut self, dst_offset: impl Into<Option<usize>>, src: &Self, src_offset: impl Into<Option<usize>>, size: impl Into<Option<usize>>, wait: WaitList) -> Result<()> {
         src.copy_to_blocking(src_offset, self, dst_offset, size, wait)
     }
 
@@ -402,6 +551,31 @@ impl<T, C: Context> DerefMut for Buffer<T, C> {
     }
 }
 
+impl<T: Clone, C: Context + Clone> Clone for Buffer<T, C> {
+    #[inline(always)]
+    fn clone(&self) -> Self {
+        self.try_clone(None).unwrap()
+    }
+
+    fn clone_from(&mut self, source: &Self) where Self: ~const std::marker::Destruct {
+        let len = self.len().unwrap();
+        assert_eq!(len, source.len().unwrap());
+
+        local_scope(source.context(), |s| {
+            let (this, mut other) = join_various_blocking!(
+                source.map(s, .., None)?,
+                self.map_mut(s, .., None)?
+            )?;
+    
+            other.iter_mut()
+                .zip(this.iter().cloned())
+                .for_each(|(other, this)| *other = this);
+
+            Ok(())
+        }).unwrap();
+    }
+}
+
 impl<T: PartialEq, C: Context> PartialEq for Buffer<T, C> {
     fn eq(&self, other: &Self) -> bool {
         if self.eq_buffer(other) {
@@ -427,25 +601,6 @@ impl<T: Debug, C: Context> Debug for Buffer<T, C> {
 }
 
 impl<T: Eq, C: Context> Eq for Buffer<T, C> {}
-
-pub struct BufferRead<'a, T: Copy, C: Context = Global> (Vec<T>, PhantomData<&'a Buffer<T, C>>);
-
-impl<'a, T: Copy> Consumer for BufferRead<'a, T> {
-    type Output = Vec<T>;
-    
-    #[inline(always)]
-    fn consume (mut self) -> Result<Vec<T>> {
-        unsafe { self.0.set_len(self.0.capacity()); }
-        Ok(self.0)
-    }
-}
-
-impl<'a, T: Copy> Debug for BufferRead<'a, T> {
-    #[inline(always)]
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("BufferRead").finish_non_exhaustive()
-    }
-}
 
 /// Creates a buffer with sensible defaults.
 /// 

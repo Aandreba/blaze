@@ -28,6 +28,17 @@ fn write () -> Result<()> {
     Ok(())
 }
 
+#[cfg(feature = "cl1_1")]
+#[test]
+fn slice () -> Result<()> {
+    let buf = buffer![1, 2, 3, 4, 5]?;
+    let slice = buf.slice(1..)?;
+    let slice2 = slice.slice(..2)?;
+
+    println!("{buf:?}, {slice:?}, {slice2:?}");
+    Ok(())
+}
+
 /* RECT */
 cfg_if::cfg_if! {
     if #[cfg(feature = "cl1_1")] {
@@ -58,13 +69,14 @@ cfg_if::cfg_if! {
 
         #[test]
         fn copy_rect () -> Result<()> {
-            let mut buf = rect_buf()?; 
-            let buf2 = RectBuffer2D::new(&[10, 11, 12, 13, 14, 15], 2, MemAccess::default(), false)?;
+            let mut buf = rect_buf()?; // 3 x 3
+            let buf2 = RectBuffer2D::new(&[10, 11, 12, 13, 14, 15], 2, MemAccess::default(), false)?; // 2 x 3
 
             println!("{buf:?}, {buf2:?}");
-            buf.copy_from_blocking(None, &buf2, None, None, None)?;
-            println!("{buf:?}");
+            //buf.copy_from_blocking(None, &buf2, None, None, None)?;
+            scope(|s| buf.copy_from(s, [1, 1], &buf2, [0, 1], None, None).map(|_| ()))?;
 
+            println!("{buf:?}");
             Ok(())
         }
 

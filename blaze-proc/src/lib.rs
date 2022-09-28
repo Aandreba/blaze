@@ -57,11 +57,11 @@ pub fn join_various_blocking (items: proc_macro::TokenStream) -> proc_macro::Tok
     let idx = (0..item.len()).map(syn::Index::from).collect::<Vec<_>>();
 
     quote! {{
-        let v = (#(::blaze_rs::event::Event::into_parts(#item)),*);
+        let v = (#(blaze_rs::event::Event::into_parts(#item)),*);
         let (raw, consumer) = ([#(v.#idx.0),*], (#(v.#idx.1),*));
-        ::blaze_rs::event::RawEvent::join_all_by_ref(&raw).and_then(|_| {
+        blaze_rs::event::RawEvent::join_all_by_ref(&raw).and_then(|_| {
             Ok((
-                #(::blaze_rs::event::Consumer::consume(consumer.#idx)?),*
+                #(blaze_rs::event::Consumer::consume(consumer.#idx)?),*
             ))
         })
     }}.into()

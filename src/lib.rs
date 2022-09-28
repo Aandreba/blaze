@@ -60,6 +60,8 @@ macro_rules! tri_panic {
     }};
 }
 
+mod blaze_rs { pub use crate::*; }
+
 pub mod prelude {
     pub use crate::core::*;
     pub use crate::macros::*;

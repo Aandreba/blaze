@@ -1,4 +1,4 @@
-use std::{ptr::{NonNull, addr_of}, num::NonZeroUsize, mem::{MaybeUninit, ManuallyDrop}, alloc::{Allocator, Global, Layout, LayoutError, AllocError}, ops::{Index, IndexMut, Deref}, fmt::Debug};
+use std::{num::NonZeroUsize, mem::{MaybeUninit}, alloc::{Allocator, Global, Layout, AllocError}, ops::{Index, IndexMut}};
 use blaze_proc::docfg;
 
 pub type RectBox2D<T, A = Global> = Box<Rect2D<T>, A>;

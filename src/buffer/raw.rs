@@ -35,6 +35,11 @@ impl RawBuffer {
     }
 
     #[inline(always)]
+    pub const unsafe fn from_mem (mem: RawMemObject) -> Self {
+        Self(mem)
+    }
+    
+    #[inline(always)]
     pub const unsafe fn from_id_unchecked (id: cl_mem) -> Self {
         Self(RawMemObject::from_id_unchecked(id))
     }
