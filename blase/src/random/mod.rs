@@ -19,8 +19,8 @@ extern "C" {
     fn random_int (n: usize, seed: *mut u64, out: *mut MaybeUninit<i32>, origin: i32, delta: i32);
     fn random_long (n: usize, seed: *mut u64, out: *mut MaybeUninit<i64>, origin: i64, delta: i64);
 
-    #[cfg(feature = "half")]
-    fn random_half (n: usize, seed: *mut u64, out: *mut MaybeUninit<::half::f16>, origin: ::half::f16, delta: ::half::f16);
+    //#[cfg(feature = "half")]
+    //fn random_half (n: usize, seed: *mut u64, out: *mut MaybeUninit<::half::f16>, origin: ::half::f16, delta: ::half::f16);
     fn random_float (n: usize, seed: *mut u64, out: *mut MaybeUninit<f32>, origin: f32, delta: f32);
     #[cfg(feature = "double")]
     fn random_double (n: usize, seed: *mut u64, out: *mut MaybeUninit<f64>, origin: f64, delta: f64);

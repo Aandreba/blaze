@@ -28,7 +28,7 @@ impl BlaseContext {
             return Ok(Self { max_wgs })
         }
 
-        Err(Error::new(ErrorType::InvalidValue, "No queues found"))
+        Err(Error::new(ErrorKind::InvalidValue, "No queues found"))
     }
 }
 

@@ -5,6 +5,8 @@
 #![cfg_attr(debug_assertions, feature(backtrace, backtrace_frames))]
 #![doc = include_str!("../docs/src/intro.md")]
 
+use event::RawEvent;
+
 macro_rules! flat_mod {
     ($($i:ident),+) => {
         $(
@@ -145,6 +147,12 @@ pub fn wait_list (v: WaitList) -> core::Result<(u32, *const opencl_sys::cl_event
         },
         None => Ok((0, ::core::ptr::null()))
     }
+}
+
+/// Creates a [`WaitList`] from a reference to a single [`RawEvent`]
+#[inline(always)]
+pub fn wait_list_from_ref (evt: &RawEvent) -> WaitList {
+    return Some(::core::slice::from_ref(evt))
 }
 
 /// A list of events to be awaited.

@@ -117,6 +117,16 @@ impl<C: Consumer> Event<C> {
         &self.inner
     }
 
+    /// Maps the current event consumer to a new one
+    #[inline(always)]
+    pub fn map_consumer<'a, N: 'a + Consumer, F: FnOnce(C) -> N> (this: Self, f: F) -> Event<N> where C: 'a {
+        Event { 
+            inner: this.inner,
+            consumer: f(this.consumer),
+            send: this.send
+        }
+    }
+
     /// Makes the current event abortable.
     /// When aborted, the event will not be unqueued from the OpenCL queue, rather the Blaze event will return early with a result of `Ok(None)`.
     /// If the event isn't aborted before it's completion, it will return `Ok(Some(value))` in case of success, and `Err(error)` if it fails. 
@@ -217,6 +227,12 @@ impl<C: Consumer> Event<C> {
             send: self.send
         }
     }
+
+    #[inline(always)]
+    pub fn then<N: Consumer, F: FnOnce(C::Incomplete, RawEvent) -> Result<Event<N>>> (self, f: F) -> Result<Event<N>> where C: IncompleteConsumer {
+        let (raw, consumer) = self.into_parts();
+        return f(consumer.consume_incomplete()?, raw)
+    } 
 
     #[inline(always)]
     pub(super) fn consume (self) -> Result<C::Output> {

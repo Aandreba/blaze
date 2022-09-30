@@ -10,7 +10,7 @@ pub mod consumer {
     pub use super::abort::Abort;
 }
 
-pub use consumer::Consumer;
+pub use consumer::{Consumer, IncompleteConsumer};
 
 #[cfg(feature = "cl1_1")]
 flat_mod!(flag);

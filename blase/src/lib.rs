@@ -1,5 +1,5 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
-#![feature(nonzero_min_max, exclusive_range_pattern, is_sorted, int_roundings, int_log, new_uninit)]
+#![feature(nonzero_min_max, unboxed_closures, fn_traits, exclusive_range_pattern, is_sorted, int_roundings, int_log, new_uninit)]
 
 macro_rules! flat_mod {
     ($($i:ident),+) => {
@@ -20,7 +20,7 @@ macro_rules! lazy_static {
 
 flat_mod!(r#trait, ctx);
 pub mod vec;
-pub mod random;
+//pub mod random;
 pub mod utils;
 
 pub(crate) fn include_prog<T: Real> (src: &str) -> String {

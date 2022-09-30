@@ -36,6 +36,21 @@ kernel void scal_down_inv (const usize n, const real alpha, global const real* x
     }
 }
 
+kernel void eq (const usize n, const global real* lhs, const global real* rhs, global volatile uint* res) {
+    if (get_local_id(0) == 0)
+       *res = 1;
+    work_group_barrier(CLK_LOCAL_MEM_FENCE);
+
+    if (atomic_load(&res) == 1) {
+        for (usize i = get_global_id(0); i < n; i += get_global_size(0)) {            
+            if (lhs[i] != rhs[i]) {
+                atomic_store(&res, 0);
+                break;
+            }
+        }
+    }
+}
+
 kernel void cmp (const usize n, const global real* lhs, const global real* rhs, global volatile uint* res) {
     for (usize i = get_global_id(0); i < n; i += get_global_size(0)) {
         uint j = i / 32;
@@ -98,14 +113,20 @@ kernel void partial_ord (const usize n, const global real* lhs, const global rea
         const real left = lhs[i];
         const real right = rhs[i];
 
-        if (left == right) {
-            res[i] = 0;
-        } else if (left < right) {
+        if (left < right) {
             res[i] = -1;
         } else if (left > right) {
             res[i] = 1;
-        } else {
-            res[i] = ORD_NONE;
+        }
+
+        #if ISFLOAT
+            else if (left != right) {
+                res[i] = ORD_NONE;
+            }
+        #endif
+
+        else {
+            res[i] = 0;
         }
     }
 }

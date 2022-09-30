@@ -2,7 +2,7 @@
 
 use blaze_proc::docfg;
 use num_traits::Num;
-use crate::vec::VectorProgram;
+use crate::vec::program::VectorProgram;
 
 #[cfg(feature = "half")]
 static half : once_cell::sync::Lazy<VectorProgram<::half::f16>> = once_cell::sync::Lazy::new(|| VectorProgram::new(None).unwrap());

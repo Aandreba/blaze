@@ -133,35 +133,54 @@ fn create_kernel (parent: &Ident, impl_generics: &Generics, parent_generics: &Ge
 
     let pointer_names = args.iter().filter_map(|x| if x.ty.is_pointer() { Some(&x.name) } else { None }).collect::<Vec<_>>();
     let set = args.iter().enumerate().map(|(i, x)| set_arg(x, u32::try_from(i).unwrap())).collect::<Vec<_>>();
-    generics.params.extend(impl_generics.params.iter().cloned());
+    //generics.params.extend(impl_generics.params.iter().cloned());
 
     let blocking_ident = format_ident!("{ident}_blocking");
     let mut blocking_generics : Generics = parse_quote! { <const N: usize> };
     let blocking_new = args.iter().map(|x| x.ty(&mut blocking_generics, false)).collect::<Vec<_>>();();
-    blocking_generics.params.extend(impl_generics.params.iter().cloned());
     let (blocking_impl, _, blocking_where) = blocking_generics.split_for_impl();
 
-    let event_generics = generics.clone();
-    let event_new = new.iter().map(|x| {
-        let mut x = x.clone();
-        if let syn::Type::Reference(ref mut rf) = x {
-            if rf.lifetime == Some(parse_quote! { '__env__ }) {
-                rf.lifetime = Some(parse_quote! { '__scope__ });    
-            }   
-        }
-        return x
-    });
-    let (_, event_type, _) = event_generics.split_for_impl();
-    let event_name = format_ident!("{}Event", to_pascal_case(&ident.to_string()));
+    // Remove `'scope` lifetime
+    let event_params = generics.params
+        .iter()
+        .take(1)
+        .chain(generics.params.iter().skip(2))
+        .cloned()
+        .collect::<Punctuated<_, Token![,]>>();
+    let mut event_generics = Generics::default();
+    event_generics.params = event_params;
+    event_generics.where_clause = generics.where_clause.clone();
 
+    event_generics.params.extend(impl_generics.params.iter().cloned());
+    let event_new = new.iter()
+        .map(|x| {
+            let mut x = x.clone();
+            if let syn::Type::Reference(ref mut rf) = x {
+                if rf.lifetime == Some(parse_quote! { '__env__ }) {
+                    rf.lifetime = Some(parse_quote! { '__scope__ });    
+                }   
+            }
+            return x
+        })
+        .chain(impl_generics.type_params().map(|x| {
+            let mut x = x.clone();
+            x.colon_token = None;
+            x.bounds.clear();
+            return parse_quote! { #x }
+        }))
+        .collect::<Vec<_>>();
+    let (_, event_type, _) = event_generics.split_for_impl();
+    let pascal_name = to_pascal_case(&ident.to_string());
+    let consumer_name = format_ident!("{pascal_name}");
+    let event_name = format_ident!("{pascal_name}Event");
 
     generics.params.push(parse_quote! { const N: usize });
     let (r#impl, _, r#where) = generics.split_for_impl();
 
     quote! {
-        #vis type #event_name #event_type = ::blaze_rs::event::consumer::PhantomEvent<(#(#event_new),*)>;
+        #vis type #consumer_name #event_type = ::core::marker::PhantomData<(#(#event_new),*)>;
+        #vis type #event_name #event_type = ::blaze_rs::event::Event<#consumer_name #event_type>;
 
-        #(#attrs)*
         impl #parent_imp #parent #parent_ty #parent_wher {
             #vis unsafe fn #ident #r#impl (&self, scope: &'__scope__ ::blaze_rs::context::Scope<'__scope__, '__env__, C>, #(#name: #new,)* global_work_dims: [usize; N], local_work_dims: impl Into<Option<[usize; N]>>, wait: ::blaze_rs::WaitList) -> ::blaze_rs::prelude::Result<#event_name #event_type> #r#where {
                 let mut wait = match wait {

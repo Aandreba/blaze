@@ -1,4 +1,4 @@
-#![feature(bench_black_box, is_sorted, sort_floats)]
+/*#![feature(bench_black_box, is_sorted, sort_floats)]
 
 use std::{time::Duration, fs::File, io::Write};
 use blase::{random::{Random}, vec::EucVec};
@@ -71,3 +71,4 @@ fn gpu_test (v: &EucVec<Number>) -> u128 {
 
     result.as_nanos() / EPOCHS
 }
+*/

@@ -9,8 +9,8 @@ use crate::blaze_rs;
 use events::*;
 
 pub mod events {
-    use std::{marker::*, fmt::Debug};
-    use crate::{prelude::*, event::{Consumer}};
+    use std::{marker::*, fmt::Debug, mem::{MaybeUninit, transmute}};
+    use crate::{prelude::*, event::{Consumer, consumer::IncompleteConsumer}};
     use blaze_proc::docfg;
     
     /// Consumer for [`ReadIntoEvent`]
@@ -45,6 +45,18 @@ pub mod events {
         fn consume (mut self) -> Result<Vec<T>> {
             unsafe { self.0.set_len(self.0.capacity()); }
             Ok(self.0)
+        }
+    }
+
+    impl<'a, T: Copy> IncompleteConsumer for BufferRead<'a, T> {
+        type Incomplete = Vec<MaybeUninit<T>>;
+        
+        #[inline(always)]
+        fn consume_incomplete (mut self) -> Result<Self::Incomplete> {
+            unsafe { 
+                self.0.set_len(self.0.capacity());
+                return Ok(transmute(self.0))
+            }
         }
     }
 
@@ -311,6 +323,19 @@ impl<T, C: Context> Buffer<MaybeUninit<T>, C> {
 }
 
 impl<T: Copy, C: Context> Buffer<T, C> {
+    /// Reads the contents of the buffer at the specified index, blocking the current thread until the operation has completed.
+    pub fn get_blocking (&self, idx: usize, wait: WaitList) -> Result<T> {
+        let mut result = MaybeUninit::<T>::uninit();
+        let supplier = |queue| unsafe {
+            self.inner.read_to_ptr_in(BufferRange::new(idx * core::mem::size_of::<T>(), core::mem::size_of::<T>()), result.as_mut_ptr().cast(), queue, wait)
+        };
+
+        unsafe {
+            self.ctx.next_queue().enqueue_noop(supplier)?.join()?;
+            return Ok(result.assume_init())
+        }
+    }
+    
     /// Reads the contents of the buffer.
     pub fn read<'scope, 'env, R: IntoRange> (&'env self, scope: &'scope Scope<'scope, 'env, C>, range: R, wait: WaitList) -> Result<ReadEvent<'scope, T>> {
         let range = range.into_range::<T>(&self.inner)?;

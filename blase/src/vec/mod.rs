@@ -1,15 +1,17 @@
-pub mod arith;
-pub mod sum;
-pub mod dot;
-pub mod cmp;
-pub mod ord;
-pub mod sort;
+// pub mod dot;
+// pub mod sum;
+// pub mod cmp;
+// pub mod ord;
+// pub mod sort;
 
-use std::{mem::MaybeUninit, ops::{Deref, DerefMut}, fmt::Debug};
-use blaze_rs::{prelude::*, buffer::KernelPointer};
-use crate::{Real};
-use self::arith::*;
-pub use program::VectorProgram;
+flat_mod!(utils);
+
+use std::{mem::{MaybeUninit, transmute}, ops::*, fmt::Debug, cmp::Ordering};
+use bitvec::prelude::BitBox;
+use blaze_rs::{prelude::*, buffer::{KernelPointer, self}, WaitList, wait_list_from_ref};
+use crate::{Real, work_group_size, utils::{change_lifetime_mut, change_lifetime}};
+use self::events::{BinaryEvent, LaneEqEvent, LaneEq, LaneCmpEvent, LaneTotalCmpEvent};
+use blaze_proc::docfg;
 
 pub mod program {
     use blaze_proc::blaze;
@@ -20,33 +22,35 @@ pub mod program {
     #[link = generate_vec_program::<T>()]
     pub extern "C" {
         // Vertical ops
-        fn add (n: usize, lhs: *const T, rhs: *const T, out: *mut MaybeUninit<T>);
-        fn sub (n: usize, lhs: *const T, rhs: *const T, out: *mut MaybeUninit<T>);
-        fn scal (n: usize, alpha: T, rhs: *const T, out: *mut MaybeUninit<T>);
-        fn scal_down (n: usize, lhs: *const T, alpha: T, out: *mut MaybeUninit<T>);
-        fn scal_down_inv (n: usize, alpha: T, rhs: *const T, out: *mut MaybeUninit<T>);
+        pub(super) fn add (n: usize, lhs: *const T, rhs: *const T, out: *mut MaybeUninit<T>);
+        pub(super) fn sub (n: usize, lhs: *const T, rhs: *const T, out: *mut MaybeUninit<T>);
+        pub(super) fn scal (n: usize, alpha: T, rhs: *const T, out: *mut MaybeUninit<T>);
+        pub(super) fn scal_down (n: usize, lhs: *const T, alpha: T, out: *mut MaybeUninit<T>);
+        pub(super) fn scal_down_inv (n: usize, alpha: T, rhs: *const T, out: *mut MaybeUninit<T>);
+        #[link_name = "eq"]
+        pub(super) fn vec_eq (n: usize, lhs: *const T, rhs: *const T, out: *mut bool);
         #[link_name = "cmp"]
-        fn vec_cmp_eq (n: usize, lhs: *const T, rhs: *const T, out: *mut MaybeUninit<u32>);
+        pub(super) fn vec_cmp_eq (n: usize, lhs: *const T, rhs: *const T, out: *mut MaybeUninit<u32>);
         #[link_name = "ord"]
-        fn vec_cmp_ord (n: usize, lhs: *const T, rhs: *const T, out: *mut MaybeUninit<i8>);
+        pub(super) fn vec_cmp_ord (n: usize, lhs: *const T, rhs: *const T, out: *mut MaybeUninit<i8>);
         #[link_name = "partial_ord"]
-        fn vec_cmp_partial_ord (n: usize, lhs: *const T, rhs: *const T, out: *mut MaybeUninit<i8>);
+        pub(super) fn vec_cmp_partial_ord (n: usize, lhs: *const T, rhs: *const T, out: *mut MaybeUninit<i8>);
 
         // Horizontal ops
         #[link_name = "Xasum"]
-        fn xasum (n: i32, x: *const T, output: *mut MaybeUninit<T>);
+        pub(super) fn xasum (n: i32, x: *const T, output: *mut MaybeUninit<T>);
         #[link_name = "XasumEpilogue"]
-        fn xasum_epilogue (input: *const MaybeUninit<T>, asum: *mut MaybeUninit<T>);
+        pub(super) fn xasum_epilogue (input: *const MaybeUninit<T>, asum: *mut MaybeUninit<T>);
         #[link_name = "Xdot"]
-        fn xdot (n: i32, x: *const T, y: *const T, output: *mut MaybeUninit<T>);
+        pub(super) fn xdot (n: i32, x: *const T, y: *const T, output: *mut MaybeUninit<T>);
         
         // Sort
         #[link_name = "Sort_BitonicMergesortStart"]
-        fn sort_start (desc: bool, in_array: *const T, out_array: *mut MaybeUninit<T>);
+        pub(super) fn sort_start (desc: bool, in_array: *const T, out_array: *mut MaybeUninit<T>);
         #[link_name = "Sort_BitonicMergesortLocal"]
-        fn sort_local (desc: bool, data: *mut MaybeUninit<T>, size: usize, blocksize: usize, stride: usize);
+        pub(super) fn sort_local (desc: bool, data: *mut MaybeUninit<T>, size: usize, blocksize: usize, stride: usize);
         #[link_name = "Sort_BitonicMergesortGlobal"]
-        fn sort_global (desc: bool, data: *mut MaybeUninit<T>, size: usize, blocksize: usize, stride: usize);
+        pub(super) fn sort_global (desc: bool, data: *mut MaybeUninit<T>, size: usize, blocksize: usize, stride: usize);
     }
 
     fn generate_vec_program<T: Real> () -> String {
@@ -67,6 +71,35 @@ pub mod program {
             include_str!("../opencl/sort.cl"),
         )
     }
+}
+
+mod events {
+    use blaze_rs::{event::{Consumer, consumer::Map}, buffer::events::{BufferRead}};
+    use super::*;
+
+    pub struct LaneEq<'a> {
+        pub(super) len: usize,
+        pub(super) read: BufferRead<'a, u32>
+    }
+
+    impl<'a> Consumer for LaneEq<'a> {
+        type Output = (BitBox<u32>, usize);
+
+        #[inline(always)]
+        fn consume (self) -> Result<Self::Output> {
+            let result = self.read.consume()?;
+            Ok((BitBox::from_boxed_slice(result.into_boxed_slice()), self.len))
+        }
+    }
+
+    pub type LaneCmp<'a> = Map<Vec<i8>, BufferRead<'a, i8>, fn(Vec<i8>) -> Vec<Option<Ordering>>>;
+    pub type LaneTotalCmp<'a> = Map<Vec<i8>, BufferRead<'a, i8>, fn(Vec<i8>) -> Vec<Ordering>>;
+
+    /// Event for binary operations
+    pub type BinaryEvent<'a, T> = Event<Binary<'a, T>>;
+    pub type LaneEqEvent<'a> = Event<LaneEq<'a>>;
+    pub type LaneCmpEvent<'a> = Event<LaneCmp<'a>>;
+    pub type LaneTotalCmpEvent<'a> = Event<LaneTotalCmp<'a>>;
 }
 
 /// Euclidian vector
@@ -100,144 +133,232 @@ impl<T: Copy> EucVec<T> {
     pub fn into_buffer (self) -> Buffer<T> {
         self.inner
     }
-}
 
-// ADDITION
-impl<T: Real> EucVec<T> {
-    /// Returns an events that resolves to the addition of `self` and `other`.
     #[inline(always)]
-    pub fn add<RHS: Deref<Target = Self>> (&self, other: RHS, wait: impl Into<WaitList>) -> Result<Addition<T, &'_ Self, RHS>> {
-        Self::add_by_deref(self, other, wait)
-    }
-
-    /// Returns an events that resolves to the addition of `self` and `other`, without checking their sizes.
-    /// # Safety
-    /// This function is only safe is the lengths of `self` and `other` are equal.
-    #[inline(always)]
-    pub unsafe fn add_unchecked<RHS: Deref<Target = Self>> (&self, other: RHS, wait: impl Into<WaitList>) -> Result<Addition<T, &'_ Self, RHS>> {
-        Self::add_unchecked_by_deref(self, other, wait)
-    }
-
-    /// Returns an events that resolves to the addition of `this` and `other`.
-    #[inline]
-    pub fn add_by_deref<LHS: Deref<Target = Self>, RHS: Deref<Target = Self>> (this: LHS, other: RHS, wait: impl Into<WaitList>) -> Result<Addition<T, LHS, RHS>> {
-        let len = this.len()?;
-        if len != other.len()? {
-            return Err(Error::new(ErrorType::InvalidBufferSize, "Vectors must be of the same length"));
-        }
-
-        unsafe {
-            Addition::new_custom(this, other, len, wait)
-        }
-    }
-
-    /// Returns an events that resolves to the addition of `this` and `other`, without checking their sizes.
-    /// # Safety
-    /// This function is only safe is the lengths of `this` and `other` are equal.
-    #[inline(always)]
-    pub unsafe fn add_unchecked_by_deref<LHS: Deref<Target = Self>, RHS: Deref<Target = Self>> (this: LHS, other: RHS, wait: impl Into<WaitList>) -> Result<Addition<T, LHS, RHS>> {
-        let len = this.len()?;
-        Addition::new_custom(this, other, len, wait)
-    }
-}
-
-// SUBTRACTION
-impl<T: Real> EucVec<T> {
-    /// Returns an events that resolves to the subtraction of `self` and `other`.
-    #[inline(always)]
-    pub fn sub<RHS: Deref<Target = Self>> (&self, other: RHS, wait: impl Into<WaitList>) -> Result<Subtraction<T, &'_ Self, RHS>> {
-        Self::sub_by_deref(self, other, wait)
-    }
-
-    /// Returns an events that resolves to the subtraction of `self` and `other`, without checking their sizes.
-    /// # Safety
-    /// This function is only safe is the lengths of `self` and `other` are equal.
-    #[inline(always)]
-    pub unsafe fn sub_unchecked<RHS: Deref<Target = Self>> (&self, other: RHS, wait: impl Into<WaitList>) -> Result<Subtraction<T, &'_ Self, RHS>> {
-        Self::sub_unchecked_by_deref(self, other, wait)
-    }
-
-    /// Returns an events that resolves to the addition of `this` and `other`.
-    #[inline]
-    pub fn sub_by_deref<LHS: Deref<Target = Self>, RHS: Deref<Target = Self>> (this: LHS, other: RHS, wait: impl Into<WaitList>) -> Result<Subtraction<T, LHS, RHS>> {
-        let len = this.len()?;
-        if len != other.len()? {
-            return Err(Error::new(ErrorType::InvalidBufferSize, "Vectors must be of the same length"));
-        }
-
-        unsafe{
-            Subtraction::new_custom(this, other, len, wait)
-        }
-    }
-
-    /// Returns an events that resolves to the addition of `this` and `other`, without checking their sizes.
-    /// # Safety
-    /// This function is only safe is the lengths of `this` and `other` are equal.
-    #[inline(always)]
-    pub unsafe fn sub_unchecked_by_deref<LHS: Deref<Target = Self>, RHS: Deref<Target = Self>> (this: LHS, other: RHS, wait: impl Into<WaitList>) -> Result<Subtraction<T, LHS, RHS>> {
-        let len = this.len()?;
-        Subtraction::new_custom(this, other, len, wait)
-    }
-}
-
-// MULTIPLICATION
-impl<T: Real> EucVec<T> {
-    /// Returns an events that resolves to the multiplication of `self` by `alpha`.
-    #[inline(always)]
-    pub fn mul (&self, alpha: T, wait: impl Into<WaitList>) -> Result<Scale<T, &'_ Self>> {
-        Self::mul_by_deref(alpha, self, wait)
-    }
-
-    /// Returns an events that resolves to the multiplication of `this` by `alpha`.
-    #[inline]
-    pub fn mul_by_deref<RHS: Deref<Target = Self>> (alpha: T, this: RHS, wait: impl Into<WaitList>) -> Result<Scale<T, RHS>> {
-        let len = this.len()?;
-        unsafe{
-            Scale::new_custom(alpha, this, len, wait)
-        }
-    }
-}
-
-// DIVISION
-impl<T: Real> EucVec<T> {
-    /// Returns an events that resolves to the division of `self` by `alpha`.
-    #[inline(always)]
-    pub fn div (&self, alpha: T, wait: impl Into<WaitList>) -> Result<Division<T, &'_ Self>> {
-        Self::div_by_deref(self, alpha, wait)
-    }
-
-    /// Returns an events that resolves to the division of `this` by `alpha`.
-    #[inline(always)]
-    pub fn div_by_deref<LHS: Deref<Target = Self>> (this: LHS, alpha: T, wait: impl Into<WaitList>) -> Result<Division<T, LHS>> {
-        let len = this.len()?;
-        unsafe {
-            Division::new_custom(this, alpha, len, wait)
-        }
-    }
-
-    /// Returns an events that resolves to the division of `alpha` by `self`.
-    #[inline(always)]
-    pub fn div_inv (&self, alpha: T, wait: impl Into<WaitList>) -> Result<InvDivision<T, &'_ Self>> {
-        Self::div_inv_by_deref(alpha, self, wait)
-    }
-
-    /// Returns an events that resolves to the division of `alpha` by `this`.
-    #[inline(always)]
-    pub fn div_inv_by_deref<RHS: Deref<Target = Self>> (alpha: T, this: RHS, wait: impl Into<WaitList>) -> Result<InvDivision<T, RHS>> {
-        let len = this.len()?;
-        unsafe {
-            InvDivision::new_custom(alpha, this, len, wait)
-        }
+    pub unsafe fn transmute<U: Copy> (self) -> EucVec<U> {
+        EucVec { inner: self.inner.transmute() }
     }
 }
 
 impl<T: Copy> EucVec<MaybeUninit<T>> {
-    /// Extracts the value from `EucVec<MaybeUninit<T>>` to `EucVec<T>`
-    /// # Safety
-    /// This function has the same safety as [`MaybeUninit`](std::mem::MaybeUninit)'s `assume_init`
     #[inline(always)]
     pub unsafe fn assume_init (self) -> EucVec<T> {
-        EucVec { inner: self.inner.assume_init() }
+        self.transmute()
+    }
+}
+
+impl<T: Real> EucVec<T> {
+    #[inline(always)]
+    pub fn add<'scope, 'env> (&'env self, scope: &'scope Scope<'scope, 'env>, other: &'env Self, wait: WaitList) -> Result<BinaryEvent<'scope, T>> {
+        let len = self.len()?;
+        if len != other.len()? {
+            return Err(Error::new(ErrorKind::InvalidBufferSize, "vectors of diferent sizes provided"))
+        }
+
+        let mut result = EucVec::<T>::new_uninit(len, false)?;
+        unsafe {
+            let event = T::vec_program().add(scope, len, self, other, change_lifetime_mut(&mut result), [work_group_size(len)], None, wait)?;
+            return Ok(Event::map_consumer(event, |_| Binary::new(result)));
+        }
+    }
+
+    #[inline(always)]
+    pub fn add_blocking (&self, other: &Self, wait: WaitList) -> Result<Self> {
+        let len = self.len()?;
+        if len != other.len()? {
+            return Err(Error::new(ErrorKind::InvalidBufferSize, "vectors of diferent sizes provided"))
+        }
+
+        let mut result = EucVec::new_uninit(len, false)?;
+        unsafe {
+            T::vec_program().add_blocking(len, self, other, &mut result, [work_group_size(len)], None, wait)?;
+            return Ok(result.assume_init());
+        }
+    }
+
+    #[inline(always)]
+    pub fn sub<'scope, 'env> (&'env self, scope: &'scope Scope<'scope, 'env>, other: &'env Self, wait: WaitList) -> Result<BinaryEvent<'scope, T>> {
+        let len = self.len()?;
+        if len != other.len()? {
+            return Err(Error::new(ErrorKind::InvalidBufferSize, "vectors of diferent sizes provided"))
+        }
+
+        let mut result = EucVec::<T>::new_uninit(len, false)?;
+        unsafe {
+            let event = T::vec_program().sub(scope, len, self, other, change_lifetime_mut(&mut result), [work_group_size(len)], None, wait)?;
+            return Ok(Event::map_consumer(event, |_| Binary::new(result)));
+        }
+    }
+
+    #[inline(always)]
+    pub fn sub_blocking (&self, other: &Self, wait: WaitList) -> Result<Self> {
+        let len = self.len()?;
+        if len != other.len()? {
+            return Err(Error::new(ErrorKind::InvalidBufferSize, "vectors of diferent sizes provided"))
+        }
+
+        let mut result = EucVec::new_uninit(len, false)?;
+        unsafe {
+            T::vec_program().sub_blocking(len, self, other, &mut result, [work_group_size(len)], None, wait)?;
+            return Ok(result.assume_init());
+        }
+    }
+
+    #[inline(always)]
+    pub fn upscale<'scope, 'env> (&'env self, scope: &'scope Scope<'scope, 'env>, other: T, wait: WaitList) -> Result<BinaryEvent<'scope, T>> {
+        let len = self.len()?;
+        let mut result = EucVec::<T>::new_uninit(len, false)?;
+
+        unsafe {
+            let event = T::vec_program().scal(scope, len, other, self, change_lifetime_mut(&mut result), [work_group_size(len)], None, wait)?;
+            return Ok(Event::map_consumer(event, |_| Binary::new(result)));
+        }
+    }
+
+    #[inline(always)]
+    pub fn upscale_blocking (&self, other: T, wait: WaitList) -> Result<Self> {
+        let len = self.len()?;
+        let mut result = EucVec::new_uninit(len, false)?;
+        unsafe {
+            T::vec_program().scal_blocking(len, other, self, &mut result, [work_group_size(len)], None, wait)?;
+            return Ok(result.assume_init());
+        }
+    }
+
+    #[inline(always)]
+    pub fn downscale<'scope, 'env> (&'env self, scope: &'scope Scope<'scope, 'env>, other: T, wait: WaitList) -> Result<BinaryEvent<'scope, T>> {
+        let len = self.len()?;
+        let mut result = EucVec::<T>::new_uninit(len, false)?;
+
+        unsafe {
+            let event = T::vec_program().scal_down(scope, len, self, other, change_lifetime_mut(&mut result), [work_group_size(len)], None, wait)?;
+            return Ok(Event::map_consumer(event, |_| Binary::new(result)));
+        }
+    }
+
+    #[inline(always)]
+    pub fn downscale_blocking (&self, other: T, wait: WaitList) -> Result<Self> {
+        let len = self.len()?;
+        let mut result = EucVec::new_uninit(len, false)?;
+        unsafe {
+            T::vec_program().scal_down_blocking(len, self, other, &mut result, [work_group_size(len)], None, wait)?;
+            return Ok(result.assume_init());
+        }
+    }
+
+    #[inline(always)]
+    pub fn downscale_inv<'scope, 'env> (&'env self, scope: &'scope Scope<'scope, 'env>, other: T, wait: WaitList) -> Result<BinaryEvent<'scope, T>> {
+        let len = self.len()?;
+        let mut result = EucVec::<T>::new_uninit(len, false)?;
+
+        unsafe {
+            let event = T::vec_program().scal_down_inv(scope, len, other, self, change_lifetime_mut(&mut result), [work_group_size(len)], None, wait)?;
+            return Ok(Event::map_consumer(event, |_| Binary::new(result)));
+        }
+    }
+
+    #[inline(always)]
+    pub fn downscale_inv_blocking (&self, other: T, wait: WaitList) -> Result<Self> {
+        let len = self.len()?;
+        let mut result = EucVec::new_uninit(len, false)?;
+        unsafe {
+            T::vec_program().scal_down_inv_blocking(len, other, self, &mut result, [work_group_size(len)], None, wait)?;
+            return Ok(result.assume_init());
+        }
+    }
+}
+
+// Compare and ordering
+impl<T: Real> EucVec<T> {
+    pub fn eq_blocking (&self, other: &Self, wait: WaitList) -> Result<bool> {
+        let len = self.len()?;
+        let mut result = blaze_rs::buffer![true]?;
+        
+        unsafe {
+            T::vec_program().vec_eq_blocking(len, self, other, &mut result, [work_group_size(len)], None, wait)?;
+            return result.read_blocking(range, None);
+        }
+        
+        todo!()
+    }
+
+    pub fn lane_eq<'scope, 'env> (&'env self, scope: &'scope Scope<'scope, 'env>, other: &'env Self, wait: WaitList) -> Result<LaneEqEvent<'scope>> {
+        let len = self.len()?;
+        let result_len = len.div_ceil(u32::BITS as usize);
+        let mut result = Buffer::<u32>::new_uninit(result_len, MemAccess::WRITE_ONLY, false)?;
+        
+        unsafe {
+            let evt = T::vec_program().vec_cmp_eq(scope, len, self, other, change_lifetime_mut(&mut result), [work_group_size(len)], None, wait)?;
+            let result = change_lifetime(&result.assume_init()).read(scope, .., wait_list_from_ref(&evt))?;
+            return Ok(Event::map_consumer(result, |read| LaneEq { len, read }));
+        }
+    }
+
+    pub fn lane_eq_blocking (&self, other: &Self, wait: WaitList) -> Result<(BitBox<u32>, usize)> {
+        let len = self.len()?;
+        let result_len = len.div_ceil(u32::BITS as usize);
+        let mut result = Buffer::<u32>::new_uninit(result_len, MemAccess::WRITE_ONLY, false)?;
+        
+        unsafe {
+            T::vec_program().vec_cmp_eq_blocking(len, self, other, &mut result, [work_group_size(len)], None, wait)?;
+            let result = result.assume_init().read_blocking(.., None)?;
+            let bbox = BitBox::from_boxed_slice(result.into_boxed_slice());
+            return Ok((bbox, len))
+        }
+    }
+
+    pub fn lane_cmp<'scope, 'env> (&'env self, scope: &'scope Scope<'scope, 'env>, other: &'env Self, wait: WaitList) -> Result<LaneCmpEvent<'scope>> {
+        debug_assert_eq!(std::alloc::Layout::new::<i8>(), std::alloc::Layout::new::<Option<Ordering>>());
+
+        let len = self.len()?;
+        let mut result = Buffer::<i8>::new_uninit(len, MemAccess::WRITE_ONLY, false)?;
+
+        unsafe {
+            let evt = T::vec_program().vec_cmp_partial_ord(scope, len, self, other, change_lifetime_mut(&mut result), [work_group_size(len)], None, wait)?;
+            let read = change_lifetime(&result.assume_init()).read(scope, .., wait_list_from_ref(&evt))?;
+            let map = read.map::<fn(Vec<i8>) -> Vec<Option<Ordering>>, Vec<Option<Ordering>>>(|x| core::mem::transmute::<Vec<i8>, Vec<Option<Ordering>>>(x));
+            return Ok(map)
+        }
+    }
+
+    pub fn lane_cmp_blocking (&self, other: &Self, wait: WaitList) -> Result<Vec<Option<Ordering>>> {
+        debug_assert_eq!(std::alloc::Layout::new::<i8>(), std::alloc::Layout::new::<Option<Ordering>>());
+
+        let len = self.len()?;
+        let mut result = Buffer::<i8>::new_uninit(len, MemAccess::WRITE_ONLY, false)?;
+
+        unsafe {
+            T::vec_program().vec_cmp_partial_ord_blocking(len, self, other, &mut result, [work_group_size(len)], None, wait)?;
+            let v = result.assume_init().read_blocking(.., None)?;
+            return Ok(transmute(v))
+        }
+    }
+
+    pub fn lane_total_cmp<'scope, 'env> (&'env self, scope: &'scope Scope<'scope, 'env>, other: &'env Self, wait: WaitList) -> Result<LaneTotalCmpEvent<'scope>> {
+        debug_assert_eq!(std::alloc::Layout::new::<i8>(), std::alloc::Layout::new::<Option<Ordering>>());
+
+        let len = self.len()?;
+        let mut result = Buffer::<i8>::new_uninit(len, MemAccess::WRITE_ONLY, false)?;
+
+        unsafe {
+            let evt = T::vec_program().vec_cmp_ord(scope, len, self, other, change_lifetime_mut(&mut result), [work_group_size(len)], None, wait)?;
+            let read = change_lifetime(&result.assume_init()).read(scope, .., wait_list_from_ref(&evt))?;
+            let map = read.map::<fn(Vec<i8>) -> Vec<Ordering>, Vec<Ordering>>(|x| core::mem::transmute::<Vec<i8>, Vec<Ordering>>(x));
+            return Ok(map)
+        }
+    }
+
+    pub fn lane_total_cmp_blocking (&self, other: &Self, wait: WaitList) -> Result<Vec<Ordering>> {
+        debug_assert_eq!(std::alloc::Layout::new::<i8>(), std::alloc::Layout::new::<Ordering>());
+
+        let len = self.len()?;
+        let mut result = Buffer::<i8>::new_uninit(len, MemAccess::WRITE_ONLY, false)?;
+
+        unsafe {
+            T::vec_program().vec_cmp_ord_blocking(len, self, other, &mut result, [work_group_size(len)], None, wait)?;
+            let v = result.assume_init().read_blocking(.., None)?;
+            return Ok(transmute(v))
+        }
     }
 }
 
@@ -250,23 +371,138 @@ impl<T: Copy> Deref for EucVec<T> {
     }
 }
 
-impl<T: Copy> DerefMut for EucVec<T> {
-    #[inline(always)]
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.inner
-    }
-}
-
-impl<T: Copy> Debug for EucVec<T> where Buffer<T>: Debug {
+impl<T: Debug + Copy> Debug for EucVec<T> {
     #[inline(always)]
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         Debug::fmt(&self.inner, f)
     }
 }
 
+impl<T: Real> PartialEq for EucVec<T> {
+    #[inline(always)]
+    fn eq(&self, other: &Self) -> bool {
+        let (result, len) = self.lane_eq_blocking(other, None).unwrap();
+        todo!()
+    }
+}
+
+macro_rules! impl_arith {
+    ($($tr:ident => $fn:ident as $impl:ident),+) => {
+        $(
+            impl<T: Real> $tr for &EucVec<T> {
+                type Output = EucVec<T>;
+            
+                #[inline(always)]
+                fn $impl(self, rhs: Self) -> Self::Output {
+                    self.$fn(rhs, None).unwrap()
+                }
+            }
+    
+            impl<T: Real> $tr<EucVec<T>> for &EucVec<T> {
+                type Output = EucVec<T>;
+            
+                #[inline(always)]
+                fn $impl(self, rhs: EucVec<T>) -> Self::Output {
+                    self.$fn(&rhs, None).unwrap()
+                }
+            }
+    
+            impl<T: Real> $tr for EucVec<T> {
+                type Output = EucVec<T>;
+            
+                #[inline(always)]
+                fn $impl(self, rhs: Self) -> Self::Output {
+                    self.$fn(&rhs, None).unwrap()
+                }
+            }
+    
+            impl<T: Real> $tr<&EucVec<T>> for EucVec<T> {
+                type Output = EucVec<T>;
+            
+                #[inline(always)]
+                fn $impl(self, rhs: &EucVec<T>) -> Self::Output {
+                    self.$fn(rhs, None).unwrap()
+                }
+            }
+        )+
+    };
+}
+
+macro_rules! impl_scale {
+    ($($tr:ident => ($fn:ident, $inv:ident) as $impl:ident),+) => {
+        $(
+            impl<T: Real> $tr<T> for &EucVec<T> {
+                type Output = EucVec<T>;
+            
+                #[inline(always)]
+                fn $impl(self, rhs: T) -> Self::Output {
+                    self.$fn(rhs, None).unwrap()
+                }
+            }
+
+            impl<T: Real> $tr<T> for EucVec<T> {
+                type Output = EucVec<T>;
+            
+                #[inline(always)]
+                fn $impl(self, rhs: T) -> Self::Output {
+                    self.$fn(rhs, None).unwrap()
+                }
+            }
+
+            impl_scale! { @all $tr => $inv as $impl }
+        )+
+    };
+
+    (@all $tr:ident => $fn:ident as $impl:ident) => {
+        impl_scale! { @(
+            u8, u16, u32, u64,
+            i8, i16, i32, i64,
+            #[docfg(feature = "half")]
+            ::half::f16,
+            f32, 
+            #[docfg(feature = "double")]
+            f64
+        ) => $tr => $fn as $impl }
+    };
+
+    (@($($(#[$meta:meta])* $t:ty),+) => $tr:ident => $fn:ident as $impl:ident) => {
+        $(
+            $(#[$meta])*
+            impl $tr<&EucVec<$t>> for $t {
+                type Output = EucVec<$t>;
+            
+                #[inline(always)]
+                fn $impl(self, rhs: &EucVec<$t>) -> Self::Output {
+                    rhs.$fn(self, None).unwrap()
+                }
+            }
+
+            $(#[$meta])*
+            impl $tr<EucVec<$t>> for $t {
+                type Output = EucVec<$t>;
+            
+                #[inline(always)]
+                fn $impl(self, rhs: EucVec<$t>) -> Self::Output {
+                    rhs.$fn(self, None).unwrap()
+                }
+            }
+        )+
+    }
+}
+
+impl_arith! {
+    Add => add_blocking as add,
+    Sub => sub_blocking as sub
+}
+
+impl_scale! {
+    Mul => (upscale_blocking, upscale_blocking) as mul,
+    Div => (downscale_blocking, downscale_inv_blocking) as div
+}
+
 unsafe impl<T: Copy + Sync> KernelPointer<T> for EucVec<T> {
     #[inline(always)]
-    unsafe fn set_arg (&self, kernel: &mut RawKernel, wait: &mut WaitList, idx: u32) -> Result<()> {
+    unsafe fn set_arg (&self, kernel: &mut RawKernel, wait: &mut Vec<RawEvent>, idx: u32) -> Result<()> {
         self.inner.set_arg(kernel, wait, idx)
     }
 

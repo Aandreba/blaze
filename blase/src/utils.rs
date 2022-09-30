@@ -1,22 +1,35 @@
-use std::ops::{Deref, DerefMut};
+use std::{marker::PhantomData};
+use blaze_rs::{event::Consumer};
 
-/// Call that implements [`Deref`] and [`DerefMut`] for `T`.
-/// Usefull when passing `T` to an event that requires a `Deref` or `DerefMut` of `T`, but also an owner of `T is required.
 #[repr(transparent)]
-pub struct DerefCell<T>(pub T);
+pub struct ValueConsumer<T, P: ?Sized> {
+    inner: T,
+    phtm: PhantomData<P>
+}
 
-impl<T> Deref for DerefCell<T> {
-    type Target = T;
-
+impl<T, P: ?Sized> ValueConsumer<T, P> {
     #[inline(always)]
-    fn deref(&self) -> &Self::Target {
-        &self.0
+    pub const fn new (inner: T, phtm: PhantomData<P>) -> Self {
+        Self { inner, phtm }
     }
 }
 
-impl<T> DerefMut for DerefCell<T> {
+impl<T, P: ?Sized> Consumer for ValueConsumer<T, P> {
+    type Output = T;
+
     #[inline(always)]
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
+    fn consume (self) -> blaze_rs::prelude::Result<Self::Output> {
+        Ok(self.inner)
     }
+}
+
+#[allow(unused)]
+#[inline(always)]
+pub(crate) const unsafe fn change_lifetime<'a, 'b, T: ?Sized> (v: &'a T) -> &'b T {
+    core::mem::transmute(v)
+}
+
+#[inline(always)]
+pub(crate) unsafe fn change_lifetime_mut<'a, 'b, T: ?Sized> (v: &'a mut T) -> &'b mut T {
+    core::mem::transmute(v)
 }

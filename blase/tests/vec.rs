@@ -1,19 +1,26 @@
-use blase::{vec::EucVec, random::Random};
-use blaze_proc::global_context;
-use blaze_rs::{prelude::{Result, SimpleContext, EMPTY, Event}};
+use blase::vec::EucVec;
+use blaze_proc::join_various_blocking;
+use blaze_rs::prelude::*;
 
 #[global_context]
 static CTX : SimpleContext = SimpleContext::default();
 
 #[test]
 fn add () -> Result<()> {
-    let alpha = EucVec::new(&[1, 2, 3, 4, 5], false)?;
-    let beta = (2 * alpha) / 3;
+    let alpha = EucVec::<f32>::new(&[1., 2., 3., 4., 5.], false)?;
+    let beta = EucVec::new(&[1., 1., 7., 4., f32::NAN], false)?;
 
-    println!("{beta:?}");
+    let v = scope(|s| {
+        let partial = alpha.lane_cmp(s, &beta, None)?;
+        let total = alpha.lane_total_cmp(s, &beta, None)?;
+        return join_various_blocking!(partial, total)
+    })?;
+
+    println!("{v:?}");
     Ok(())
 }
 
+/*
 #[test]
 fn sum () -> Result<()> {
     let mut rng = Random::new(None)?;
@@ -60,4 +67,4 @@ fn ord () -> Result<()>{
     println!("{ord:?}, {partial:?}");
 
     Ok(())
-}
+}*/

@@ -70,11 +70,11 @@ pub struct Error {
 impl Error {
     #[inline(always)]
     pub fn new<D: 'static + Display> (ty: impl Into<ErrorCode>, desc: D) -> Self {
-        Self::from_parts(ty, Some(Arc::new(desc)), Arc::new(Backtrace::capture()))
+        Self::from_parts(ty, Some(Arc::new(desc)), #[cfg(debug_assertions)] Arc::new(std::backtrace::Backtrace::capture()))
     }
 
     #[inline(always)]
-    pub fn from_parts (ty: impl Into<ErrorCode>, desc: Option<Arc<dyn Display>>, #[cfg(debug_assertions)] backtrace: Arc<Backtrace>) -> Self {
+    pub fn from_parts (ty: impl Into<ErrorCode>, desc: Option<Arc<dyn Display>>, #[cfg(debug_assertions)] backtrace: Arc<std::backtrace::Backtrace>) -> Self {
         Self { 
             ty: ty.into(),
             desc,
