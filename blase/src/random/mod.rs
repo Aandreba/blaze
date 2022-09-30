@@ -301,12 +301,6 @@ fn generate_program (src: &str) -> String {
         }
     }
 
-    println!(
-        "{}{}{src}",
-        EXTENSIONS,
-        define_usize()
-    );
-
     format!(
         "{}{}{src}",
         EXTENSIONS,

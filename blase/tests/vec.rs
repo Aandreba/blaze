@@ -1,4 +1,4 @@
-use blase::vec::EucVec;
+use blase::{vec::EucVec, random::Random};
 use blaze_rs::prelude::*;
 
 #[global_context]
@@ -6,14 +6,11 @@ static CTX : SimpleContext = SimpleContext::default();
 
 #[test]
 fn add () -> Result<()> {
-    let alpha = EucVec::<f32>::new(&[1., 2., 3., 4., 5.], false)?;
+    let mut random = Random::new(None)?;
+    let alpha = EucVec::from_buffer(random.next_f32_blocking(10, 0.0..1.0, true, false)?);
     let beta = EucVec::new(&[1., 2., 3., 4., 5.], false)?;
 
-    if alpha == beta {
-        println!("They're equal")
-    } else {
-        println!("They are not equal")
-    }
+    println!("{alpha:?} - {beta:?}");
 
     Ok(())
 }

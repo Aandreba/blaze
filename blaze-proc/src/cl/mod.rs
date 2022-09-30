@@ -16,10 +16,13 @@ macro_rules! peek_and_parse {
     }}
 }
 
-flat_mod!(ty, kern, access, arg);
+flat_mod!(ty, kern, arg);
 
-pub fn blaze_c (ident: Ident, generics: Generics, blaze: Blaze, content: Expr) -> TokenStream {
+pub fn blaze_c (prog_vis: Visibility, ident: Ident, generics: Generics, blaze: Blaze, content: Expr) -> TokenStream {
     let Blaze { vis, kernels, .. } = blaze;
+    let kernel_vis = vis;
+    let vis = prog_vis; 
+
     let phantom_generics = match generics.params.is_empty() {
         true => None,
         false => {
@@ -49,7 +52,7 @@ pub fn blaze_c (ident: Ident, generics: Generics, blaze: Blaze, content: Expr) -
     }).collect::<Vec<_>>();
 
     let kernel_structs = kernels.iter()
-        .map(|x| create_kernel(&ident, &generics, &program_generics, x));
+        .map(|x| create_kernel(&kernel_vis, &ident, &generics, &program_generics, x));
 
     let kernel_defs = kernels.iter().map(|x| {
         let name = &x.ident;
@@ -121,7 +124,7 @@ pub fn blaze_c (ident: Ident, generics: Generics, blaze: Blaze, content: Expr) -
     }
 }
 
-fn create_kernel (parent: &Ident, impl_generics: &Generics, parent_generics: &Generics, kernel: &Kernel) -> TokenStream {
+fn create_kernel (default_vis: &Visibility, parent: &Ident, impl_generics: &Generics, parent_generics: &Generics, kernel: &Kernel) -> TokenStream {
     let Kernel { attrs, vis, ident, args, .. } = kernel;
     let mut generics = parse_quote! { <'__scope__, '__env__: '__scope__> };
     let (parent_imp, parent_ty, parent_wher) = parent_generics.split_for_impl();
@@ -131,6 +134,11 @@ fn create_kernel (parent: &Ident, impl_generics: &Generics, parent_generics: &Ge
             let attrs = &attrs.attrs;
             Some(quote! { #(#attrs)* })
         }
+    };
+
+    let vis = match vis {
+        Visibility::Inherited => default_vis,
+        other => other
     };
 
     let name = args.iter().map(|x| x.name.clone()).collect::<Vec<_>>();

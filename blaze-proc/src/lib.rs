@@ -14,7 +14,7 @@ use derive_syn_parse::Parse;
 use error::Error;
 use proc_macro2::{TokenStream, Ident};
 use quote::{ToTokens, quote, format_ident};
-use syn::{parse_macro_input, ItemStatic, Meta, DeriveInput, Generics, punctuated::Punctuated};
+use syn::{parse_macro_input, ItemStatic, Meta, DeriveInput, Generics, punctuated::Punctuated, Visibility};
 
 use crate::cl::Blaze;
 
@@ -83,7 +83,7 @@ pub fn blaze (attrs: proc_macro::TokenStream, items: proc_macro::TokenStream) ->
     }
 
     if let Some(inner) = inner {
-        return cl::blaze_c(ident.ident, ident.generics, items, inner).into()
+        return cl::blaze_c(ident.vis, ident.ident, ident.generics, items, inner).into()
     }
 
     panic!("No source code specified");
@@ -103,6 +103,7 @@ pub fn docfg (attrs: proc_macro::TokenStream, items: proc_macro::TokenStream) ->
 
 #[derive(Parse)]
 struct BlazeIdent {
+    vis: Visibility,
     ident: Ident,
     generics: Generics
 }

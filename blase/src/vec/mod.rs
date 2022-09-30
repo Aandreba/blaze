@@ -18,41 +18,41 @@ pub mod program {
     use crate::{Real, include_prog, max_work_group_size};
     use std::mem::MaybeUninit;
 
-    #[blaze(VectorProgram<T: Real>)]
+    #[blaze(pub VectorProgram<T: Real>)]
     #[link = generate_vec_program::<T>()]
-    pub extern "C" {
+    pub(super) extern "C" {
         // Vertical ops
-        pub(super) fn add (n: usize, lhs: *const T, rhs: *const T, out: *mut MaybeUninit<T>);
-        pub(super) fn sub (n: usize, lhs: *const T, rhs: *const T, out: *mut MaybeUninit<T>);
-        pub(super) fn scal (n: usize, alpha: T, rhs: *const T, out: *mut MaybeUninit<T>);
-        pub(super) fn scal_down (n: usize, lhs: *const T, alpha: T, out: *mut MaybeUninit<T>);
-        pub(super) fn scal_down_inv (n: usize, alpha: T, rhs: *const T, out: *mut MaybeUninit<T>);
+        fn add (n: usize, lhs: *const T, rhs: *const T, out: *mut MaybeUninit<T>);
+        fn sub (n: usize, lhs: *const T, rhs: *const T, out: *mut MaybeUninit<T>);
+        fn scal (n: usize, alpha: T, rhs: *const T, out: *mut MaybeUninit<T>);
+        fn scal_down (n: usize, lhs: *const T, alpha: T, out: *mut MaybeUninit<T>);
+        fn scal_down_inv (n: usize, alpha: T, rhs: *const T, out: *mut MaybeUninit<T>);
         #[link_name = "eq"]
-        pub(super) fn vec_eq (n: usize, lhs: *const T, rhs: *const T, out: *mut u32);
+        fn vec_eq (n: usize, lhs: *const T, rhs: *const T, out: *mut u32);
         #[link_name = "total_eq"]
-        pub(super) fn vec_total_eq (n: usize, lhs: *const T, rhs: *const T, out: *mut u32);
+        fn vec_total_eq (n: usize, lhs: *const T, rhs: *const T, out: *mut u32);
         #[link_name = "cmp"]
-        pub(super) fn vec_cmp_eq (n: usize, lhs: *const T, rhs: *const T, out: *mut MaybeUninit<u32>);
+        fn vec_cmp_eq (n: usize, lhs: *const T, rhs: *const T, out: *mut MaybeUninit<u32>);
         #[link_name = "ord"]
-        pub(super) fn vec_cmp_ord (n: usize, lhs: *const T, rhs: *const T, out: *mut MaybeUninit<i8>);
+        fn vec_cmp_ord (n: usize, lhs: *const T, rhs: *const T, out: *mut MaybeUninit<i8>);
         #[link_name = "partial_ord"]
-        pub(super) fn vec_cmp_partial_ord (n: usize, lhs: *const T, rhs: *const T, out: *mut MaybeUninit<i8>);
+        fn vec_cmp_partial_ord (n: usize, lhs: *const T, rhs: *const T, out: *mut MaybeUninit<i8>);
 
         // Horizontal ops
         #[link_name = "Xasum"]
-        pub(super) fn xasum (n: i32, x: *const T, output: *mut MaybeUninit<T>);
+        fn xasum (n: i32, x: *const T, output: *mut MaybeUninit<T>);
         #[link_name = "XasumEpilogue"]
-        pub(super) fn xasum_epilogue (input: *const MaybeUninit<T>, asum: *mut MaybeUninit<T>);
+        fn xasum_epilogue (input: *const MaybeUninit<T>, asum: *mut MaybeUninit<T>);
         #[link_name = "Xdot"]
-        pub(super) fn xdot (n: i32, x: *const T, y: *const T, output: *mut MaybeUninit<T>);
+        fn xdot (n: i32, x: *const T, y: *const T, output: *mut MaybeUninit<T>);
         
         // Sort
         #[link_name = "Sort_BitonicMergesortStart"]
-        pub(super) fn sort_start (desc: bool, in_array: *const T, out_array: *mut MaybeUninit<T>);
+        fn sort_start (desc: bool, in_array: *const T, out_array: *mut MaybeUninit<T>);
         #[link_name = "Sort_BitonicMergesortLocal"]
-        pub(super) fn sort_local (desc: bool, data: *mut MaybeUninit<T>, size: usize, blocksize: usize, stride: usize);
+        fn sort_local (desc: bool, data: *mut MaybeUninit<T>, size: usize, blocksize: usize, stride: usize);
         #[link_name = "Sort_BitonicMergesortGlobal"]
-        pub(super) fn sort_global (desc: bool, data: *mut MaybeUninit<T>, size: usize, blocksize: usize, stride: usize);
+        fn sort_global (desc: bool, data: *mut MaybeUninit<T>, size: usize, blocksize: usize, stride: usize);
     }
 
     fn generate_vec_program<T: Real> () -> String {
@@ -468,6 +468,13 @@ impl<T: Real> EucVec<T> {
             let v = result.assume_init().read_blocking(.., None)?;
             return Ok(transmute(v))
         }
+    }
+}
+
+impl<T: Copy> From<Buffer<T>> for EucVec<T> {
+    #[inline(always)]
+    fn from(x: Buffer<T>) -> Self {
+        Self::from_buffer(x)
     }
 }
 

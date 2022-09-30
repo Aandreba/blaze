@@ -5,9 +5,11 @@ edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [features]
-default = ["double"]
 half = ["dep:half"]
 double = []
+
+[target.'cfg(not(macos))'.features]
+default = ["double"]
 
 [package.metadata.docs.rs]
 all-features = true

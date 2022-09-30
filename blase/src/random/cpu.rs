@@ -423,7 +423,7 @@ impl LocalRandom {
         let seed = unsafe { &mut *self.seed.get() };
         let next = (*seed * MULTIPLIER + ADDEND) & MASK;
         *seed = next;
-        return (*seed >> (48 - BITS)).0 as u32;
+        return (next >> (48 - BITS)).0 as u32;
     }
 }
 
