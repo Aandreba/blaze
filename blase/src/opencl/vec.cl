@@ -37,14 +37,54 @@ kernel void scal_down_inv (const usize n, const real alpha, global const real* x
 }
 
 kernel void eq (const usize n, const global real* lhs, const global real* rhs, global volatile uint* res) {
-    if (get_local_id(0) == 0)
-       *res = 1;
-    work_group_barrier(CLK_LOCAL_MEM_FENCE);
-
-    if (atomic_load(&res) == 1) {
+    if (atom_cmpxchg(res, 1, 1) == 1) {
         for (usize i = get_global_id(0); i < n; i += get_global_size(0)) {            
             if (lhs[i] != rhs[i]) {
-                atomic_store(&res, 0);
+                atomic_xchg(res, 0);
+                break;
+            }
+        }
+    }
+}
+
+kernel void total_eq (const usize n, const global real* lhs, const global real* rhs, global volatile uint* res) {
+    if (atom_cmpxchg(res, 1, 1) == 1) {
+        for (usize i = get_global_id(0); i < n; i += get_global_size(0)) {         
+            // Float total_cmp from rust
+            // https://doc.rust-lang.org/stable/std/primitive.f32.html#method.total_cmp
+            #if ISFLOAT
+                #if PRECISION == 16
+                    typedef short bits;
+                    typedef ushort ubits;
+                #elif PRECISION == 32
+                    typedef int bits;
+                    typedef uint ubits;
+                #elif PRECISION == 64
+                    typedef long bits;
+                    typedef ulong ubits;
+                #else
+                    #error "Unknown float type"
+                #endif
+
+                union { real a; bits b; } w;
+
+                // Get left bits
+                w.a = lhs[i];
+                bits left = w.b;
+
+                // Get right bits
+                w.a = rhs[i];
+                bits right = w.b;
+
+                left ^= (bits)((ubits)(left >> (PRECISION - 1)) >> 1);
+                right ^= (bits)((ubits)(right >> (PRECISION - 1)) >> 1);
+            #else
+                const real left = lhs[i];
+                const real right = rhs[i];
+            #endif
+
+            if (left != right) {
+                atomic_xchg(res, 0);
                 break;
             }
         }

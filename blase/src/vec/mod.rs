@@ -8,9 +8,9 @@ flat_mod!(utils);
 
 use std::{mem::{MaybeUninit, transmute}, ops::*, fmt::Debug, cmp::Ordering};
 use bitvec::prelude::BitBox;
-use blaze_rs::{prelude::*, buffer::{KernelPointer, self}, WaitList, wait_list_from_ref};
-use crate::{Real, work_group_size, utils::{change_lifetime_mut, change_lifetime}};
-use self::events::{BinaryEvent, LaneEqEvent, LaneEq, LaneCmpEvent, LaneTotalCmpEvent};
+use blaze_rs::{prelude::*, buffer::{KernelPointer}, WaitList, wait_list_from_ref, event::FlagEvent};
+use crate::{Real, work_group_size, utils::{change_lifetime_mut, change_lifetime}, vec::events::VecEq};
+use self::events::{BinaryEvent, LaneEqEvent, LaneEq, LaneCmpEvent, LaneTotalCmpEvent, EqEvent};
 use blaze_proc::docfg;
 
 pub mod program {
@@ -28,7 +28,9 @@ pub mod program {
         pub(super) fn scal_down (n: usize, lhs: *const T, alpha: T, out: *mut MaybeUninit<T>);
         pub(super) fn scal_down_inv (n: usize, alpha: T, rhs: *const T, out: *mut MaybeUninit<T>);
         #[link_name = "eq"]
-        pub(super) fn vec_eq (n: usize, lhs: *const T, rhs: *const T, out: *mut bool);
+        pub(super) fn vec_eq (n: usize, lhs: *const T, rhs: *const T, out: *mut u32);
+        #[link_name = "total_eq"]
+        pub(super) fn vec_total_eq (n: usize, lhs: *const T, rhs: *const T, out: *mut u32);
         #[link_name = "cmp"]
         pub(super) fn vec_cmp_eq (n: usize, lhs: *const T, rhs: *const T, out: *mut MaybeUninit<u32>);
         #[link_name = "ord"]
@@ -74,9 +76,28 @@ pub mod program {
 }
 
 mod events {
-    use blaze_rs::{event::{Consumer, consumer::Map}, buffer::events::{BufferRead}};
+    use blaze_rs::{event::{Consumer, consumer::Map}, buffer::events::{BufferRead, BufferGet}};
     use super::*;
 
+    #[derive(Debug)]
+    pub enum VecEq<'a> {
+        Host (bool),
+        Device (BufferGet<'a, u32>)
+    }
+
+    impl Consumer for VecEq<'_> {
+        type Output = bool;
+
+        #[inline(always)]
+        fn consume (self) -> Result<Self::Output> {
+            return match self {
+                Self::Host(x) => Ok(x),
+                Self::Device(x) => Ok(x.consume()? == 1)
+            }
+        }
+    }
+
+    #[derive(Debug)]
     pub struct LaneEq<'a> {
         pub(super) len: usize,
         pub(super) read: BufferRead<'a, u32>
@@ -97,6 +118,7 @@ mod events {
 
     /// Event for binary operations
     pub type BinaryEvent<'a, T> = Event<Binary<'a, T>>;
+    pub type EqEvent<'a> = Event<VecEq<'a>>;
     pub type LaneEqEvent<'a> = Event<LaneEq<'a>>;
     pub type LaneCmpEvent<'a> = Event<LaneCmp<'a>>;
     pub type LaneTotalCmpEvent<'a> = Event<LaneTotalCmp<'a>>;
@@ -270,20 +292,94 @@ impl<T: Real> EucVec<T> {
 
 // Compare and ordering
 impl<T: Real> EucVec<T> {
+    /// Compares if both vectors are equal, blocking the current thread until the operation has completed.
     pub fn eq_blocking (&self, other: &Self, wait: WaitList) -> Result<bool> {
+        if self.inner.eq_buffer(&other.inner) { return Ok(true) }
+
         let len = self.len()?;
-        let mut result = blaze_rs::buffer![true]?;
-        
+        if len != other.len()? { return Ok(false) }
+
+        let mut result = blaze_rs::buffer![1u32]?;
         unsafe {
             T::vec_program().vec_eq_blocking(len, self, other, &mut result, [work_group_size(len)], None, wait)?;
-            return result.read_blocking(range, None);
+            return Ok(result.get_blocking(0, None)? == 1);
+        }
+    }
+
+    /// Compares if both vectors are equal.
+    pub fn eq<'scope, 'env> (&'env self, scope: &'scope Scope<'scope, 'env>, other: &'env Self, wait: WaitList) -> Result<EqEvent<'scope>> {
+        macro_rules! completed {
+            () => {{
+                let flag = FlagEvent::new()?;
+                flag.try_mark(None)?;
+                flag.subscribe()
+            }};
         }
         
-        todo!()
+        if self.inner.eq_buffer(&other.inner) {
+            return Ok(Event::new(completed!(), VecEq::Host(true)))
+        }
+
+        let len = self.len()?;
+        if len != other.len()? {
+            return Ok(Event::new(completed!(), VecEq::Host(false)))
+        }
+
+        let mut result = blaze_rs::buffer![1u32]?;
+        unsafe {
+            let evt = T::vec_program().vec_eq(scope, len, self, other, change_lifetime_mut(&mut result), [work_group_size(len)], None, wait)?;
+            let get = change_lifetime(&result).get(scope, 0, wait_list_from_ref(&evt))?;
+            return Ok(Event::map_consumer(get, VecEq::Device))
+        }
+    }
+
+    /// Compares if both vectors are equal, blocking the current thread until the operation has completed.
+    pub fn total_eq_blocking (&self, other: &Self, wait: WaitList) -> Result<bool> {
+        if self.inner.eq_buffer(&other.inner) { return Ok(true) }
+
+        let len = self.len()?;
+        if len != other.len()? { return Ok(false) }
+
+        let mut result = blaze_rs::buffer![1u32]?;
+        unsafe {
+            T::vec_program().vec_total_eq_blocking(len, self, other, &mut result, [work_group_size(len)], None, wait)?;
+            return Ok(result.get_blocking(0, None)? == 1);
+        }
+    }
+
+    /// Compares if both vectors are equal.
+    pub fn total_eq<'scope, 'env> (&'env self, scope: &'scope Scope<'scope, 'env>, other: &'env Self, wait: WaitList) -> Result<EqEvent<'scope>> {
+        macro_rules! completed {
+            () => {{
+                let flag = FlagEvent::new()?;
+                flag.try_mark(None)?;
+                flag.subscribe()
+            }};
+        }
+        
+        if self.inner.eq_buffer(&other.inner) {
+            return Ok(Event::new(completed!(), VecEq::Host(true)))
+        }
+
+        let len = self.len()?;
+        if len != other.len()? {
+            return Ok(Event::new(completed!(), VecEq::Host(false)))
+        }
+
+        let mut result = blaze_rs::buffer![1u32]?;
+        unsafe {
+            let evt = T::vec_program().vec_total_eq(scope, len, self, other, change_lifetime_mut(&mut result), [work_group_size(len)], None, wait)?;
+            let get = change_lifetime(&result).get(scope, 0, wait_list_from_ref(&evt))?;
+            return Ok(Event::map_consumer(get, VecEq::Device))
+        }
     }
 
     pub fn lane_eq<'scope, 'env> (&'env self, scope: &'scope Scope<'scope, 'env>, other: &'env Self, wait: WaitList) -> Result<LaneEqEvent<'scope>> {
         let len = self.len()?;
+        if len != other.len()? {
+            return Err(Error::new(ErrorKind::InvalidBufferSize, "vectors of diferent sizes provided"))
+        }
+
         let result_len = len.div_ceil(u32::BITS as usize);
         let mut result = Buffer::<u32>::new_uninit(result_len, MemAccess::WRITE_ONLY, false)?;
         
@@ -296,6 +392,10 @@ impl<T: Real> EucVec<T> {
 
     pub fn lane_eq_blocking (&self, other: &Self, wait: WaitList) -> Result<(BitBox<u32>, usize)> {
         let len = self.len()?;
+        if len != other.len()? {
+            return Err(Error::new(ErrorKind::InvalidBufferSize, "vectors of diferent sizes provided"))
+        }
+
         let result_len = len.div_ceil(u32::BITS as usize);
         let mut result = Buffer::<u32>::new_uninit(result_len, MemAccess::WRITE_ONLY, false)?;
         
@@ -311,8 +411,11 @@ impl<T: Real> EucVec<T> {
         debug_assert_eq!(std::alloc::Layout::new::<i8>(), std::alloc::Layout::new::<Option<Ordering>>());
 
         let len = self.len()?;
-        let mut result = Buffer::<i8>::new_uninit(len, MemAccess::WRITE_ONLY, false)?;
+        if len != other.len()? {
+            return Err(Error::new(ErrorKind::InvalidBufferSize, "vectors of diferent sizes provided"))
+        }
 
+        let mut result = Buffer::<i8>::new_uninit(len, MemAccess::WRITE_ONLY, false)?;
         unsafe {
             let evt = T::vec_program().vec_cmp_partial_ord(scope, len, self, other, change_lifetime_mut(&mut result), [work_group_size(len)], None, wait)?;
             let read = change_lifetime(&result.assume_init()).read(scope, .., wait_list_from_ref(&evt))?;
@@ -325,8 +428,11 @@ impl<T: Real> EucVec<T> {
         debug_assert_eq!(std::alloc::Layout::new::<i8>(), std::alloc::Layout::new::<Option<Ordering>>());
 
         let len = self.len()?;
-        let mut result = Buffer::<i8>::new_uninit(len, MemAccess::WRITE_ONLY, false)?;
+        if len != other.len()? {
+            return Err(Error::new(ErrorKind::InvalidBufferSize, "vectors of diferent sizes provided"))
+        }
 
+        let mut result = Buffer::<i8>::new_uninit(len, MemAccess::WRITE_ONLY, false)?;
         unsafe {
             T::vec_program().vec_cmp_partial_ord_blocking(len, self, other, &mut result, [work_group_size(len)], None, wait)?;
             let v = result.assume_init().read_blocking(.., None)?;
@@ -352,8 +458,11 @@ impl<T: Real> EucVec<T> {
         debug_assert_eq!(std::alloc::Layout::new::<i8>(), std::alloc::Layout::new::<Ordering>());
 
         let len = self.len()?;
-        let mut result = Buffer::<i8>::new_uninit(len, MemAccess::WRITE_ONLY, false)?;
+        if len != other.len()? {
+            return Err(Error::new(ErrorKind::InvalidBufferSize, "vectors of diferent sizes provided"))
+        }
 
+        let mut result = Buffer::<i8>::new_uninit(len, MemAccess::WRITE_ONLY, false)?;
         unsafe {
             T::vec_program().vec_cmp_ord_blocking(len, self, other, &mut result, [work_group_size(len)], None, wait)?;
             let v = result.assume_init().read_blocking(.., None)?;
@@ -381,10 +490,11 @@ impl<T: Debug + Copy> Debug for EucVec<T> {
 impl<T: Real> PartialEq for EucVec<T> {
     #[inline(always)]
     fn eq(&self, other: &Self) -> bool {
-        let (result, len) = self.lane_eq_blocking(other, None).unwrap();
-        todo!()
+        return self.eq_blocking(other, None).unwrap()
     }
 }
+
+impl<T: Real + Eq> Eq for EucVec<T> {}
 
 macro_rules! impl_arith {
     ($($tr:ident => $fn:ident as $impl:ident),+) => {

@@ -1,5 +1,4 @@
 use blase::vec::EucVec;
-use blaze_proc::join_various_blocking;
 use blaze_rs::prelude::*;
 
 #[global_context]
@@ -7,16 +6,17 @@ static CTX : SimpleContext = SimpleContext::default();
 
 #[test]
 fn add () -> Result<()> {
-    let alpha = EucVec::<f32>::new(&[1., 2., 3., 4., 5.], false)?;
-    let beta = EucVec::new(&[1., 1., 7., 4., f32::NAN], false)?;
+    let alpha = EucVec::<f32>::new(&[1., 2., 3., 4., f32::NAN], false)?;
+    let beta = EucVec::new(&[1., 2., 3., 4., f32::NAN], false)?;
 
-    let v = scope(|s| {
-        let partial = alpha.lane_cmp(s, &beta, None)?;
-        let total = alpha.lane_total_cmp(s, &beta, None)?;
-        return join_various_blocking!(partial, total)
+    scope(|s| {
+        let normal = alpha.eq(s, &beta, None)?;
+        let total = alpha.total_eq(s, &beta, None)?;
+        let join = Event::join_sized_blocking([normal, total])?;
+        println!("{join:?}");
+        Ok(())
     })?;
 
-    println!("{v:?}");
     Ok(())
 }
 

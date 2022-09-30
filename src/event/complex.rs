@@ -392,7 +392,7 @@ impl<'a, C: 'a + Consumer> Event<C> {
     /// Blocks the current thread until all the events in the array have completed, returning their values in a new array.
     /// The order of the values in the result is the same as their parents inside the iterator.
     #[inline(always)]
-    pub fn join_all_sized_blocking<const N: usize> (iter: [Self; N]) -> Result<[C::Output; N]> {
+    pub fn join_sized_blocking<const N: usize> (iter: [Self; N]) -> Result<[C::Output; N]> {
         let mut raw = MaybeUninit::uninit_array::<N>();
         let mut consumers = MaybeUninit::uninit_array::<N>();
 

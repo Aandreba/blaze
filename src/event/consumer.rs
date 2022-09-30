@@ -1,7 +1,6 @@
 use std::{marker::PhantomData, panic::{UnwindSafe, catch_unwind}, any::Any};
 use blaze_proc::docfg;
 use crate::prelude::Result;
-use super::{Event, RawEvent};
 
 /// A trait that represents the consumer of an [`Event`](super::Event)
 pub trait Consumer {

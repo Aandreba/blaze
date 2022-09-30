@@ -23,6 +23,8 @@ pub mod events {
     #[docfg(feature = "cl1_2")]
     pub type BufferFill<'a, T, C = Global> = PhantomData<(&'a mut Buffer<T, C>, T)>;
 
+    /// Event for [`Buffer::get`]
+    pub type GetEvent<'a, T, C = Global> = Event<BufferGet<'a, T, C>>;
     /// Event for [`Buffer::read`]
     pub type ReadEvent<'a, T, C = Global> = Event<BufferRead<'a, T, C>>;
     /// Event for [`Buffer::read_into`]
@@ -35,10 +37,38 @@ pub mod events {
     /// Event for [`Buffer::fill`]
     pub type FillEvent<'a, T, C = Global> = Event<BufferFill<'a, T, C>>;
 
+    /// Consumer for [`GetEvent`]
+    pub struct BufferGet<'a, T: Copy, C: Context = Global> (pub(super) Box<MaybeUninit<T>>, pub(super) PhantomData<&'a Buffer<T, C>>);
+
+    impl<'a, T: Copy, C: Context> Consumer for BufferGet<'a, T, C> {
+        type Output = T;
+        
+        #[inline(always)]
+        fn consume (self) -> Result<T> {
+            unsafe { Ok(*self.0.assume_init()) }
+        }
+    }
+
+    impl<'a, T: Copy, C: Context> IncompleteConsumer for BufferGet<'a, T, C> {
+        type Incomplete = MaybeUninit<T>;
+        
+        #[inline(always)]
+        fn consume_incomplete (self) -> Result<Self::Incomplete> {
+            return Ok(*self.0)
+        }
+    }
+
+    impl<'a, T: Copy> Debug for BufferGet<'a, T> {
+        #[inline(always)]
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.debug_struct("BufferGet").finish_non_exhaustive()
+        }
+    }
+
     /// Consumer for [`ReadEvent`]
     pub struct BufferRead<'a, T: Copy, C: Context = Global> (pub(super) Vec<T>, pub(super) PhantomData<&'a Buffer<T, C>>);
 
-    impl<'a, T: Copy> Consumer for BufferRead<'a, T> {
+    impl<'a, T: Copy, C: Context> Consumer for BufferRead<'a, T, C> {
         type Output = Vec<T>;
         
         #[inline(always)]
@@ -48,7 +78,7 @@ pub mod events {
         }
     }
 
-    impl<'a, T: Copy> IncompleteConsumer for BufferRead<'a, T> {
+    impl<'a, T: Copy, C: Context> IncompleteConsumer for BufferRead<'a, T, C> {
         type Incomplete = Vec<MaybeUninit<T>>;
         
         #[inline(always)]
@@ -335,9 +365,19 @@ impl<T: Copy, C: Context> Buffer<T, C> {
             return Ok(result.assume_init())
         }
     }
+
+    /// Reads the contents of the buffer at the specified index, blocking the current thread until the operation has completed.
+    pub fn get<'scope, 'env> (&'env self, scope: &'scope Scope<'scope, 'env, C>, idx: usize, wait: WaitList) -> Result<GetEvent<'scope, T, C>> {
+        let mut result = Box::<T>::new_uninit();
+        let supplier = |queue| unsafe {
+            self.inner.read_to_ptr_in(BufferRange::new(idx * core::mem::size_of::<T>(), core::mem::size_of::<T>()), result.as_mut_ptr().cast(), queue, wait)
+        };
+
+        return Ok(scope.enqueue_noop(supplier)?.set_consumer(BufferGet(result, PhantomData)))
+    }
     
     /// Reads the contents of the buffer.
-    pub fn read<'scope, 'env, R: IntoRange> (&'env self, scope: &'scope Scope<'scope, 'env, C>, range: R, wait: WaitList) -> Result<ReadEvent<'scope, T>> {
+    pub fn read<'scope, 'env, R: IntoRange> (&'env self, scope: &'scope Scope<'scope, 'env, C>, range: R, wait: WaitList) -> Result<ReadEvent<'scope, T, C>> {
         let range = range.into_range::<T>(&self.inner)?;
         let len = range.cb / core::mem::size_of::<T>();
         let mut result = Vec::<T>::with_capacity(len);
@@ -610,7 +650,7 @@ impl<T: PartialEq, C: Context> PartialEq for Buffer<T, C> {
         let [this, other] = local_scope(&self.ctx, |s| {
             let this = self.map(s, .., None)?;
             let other = other.map(s, .., None)?;
-            Event::join_all_sized_blocking([this, other])
+            Event::join_sized_blocking([this, other])
         }).unwrap();
 
         this.deref() == other.deref()
