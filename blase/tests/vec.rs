@@ -6,16 +6,14 @@ static CTX : SimpleContext = SimpleContext::default();
 
 #[test]
 fn add () -> Result<()> {
-    let alpha = EucVec::<f32>::new(&[1., 2., 3., 4., f32::NAN], false)?;
-    let beta = EucVec::new(&[1., 2., 3., 4., f32::NAN], false)?;
+    let alpha = EucVec::<f32>::new(&[1., 2., 3., 4., 5.], false)?;
+    let beta = EucVec::new(&[1., 2., 3., 4., 5.], false)?;
 
-    scope(|s| {
-        let normal = alpha.eq(s, &beta, None)?;
-        let total = alpha.total_eq(s, &beta, None)?;
-        let join = Event::join_sized_blocking([normal, total])?;
-        println!("{join:?}");
-        Ok(())
-    })?;
+    if alpha == beta {
+        println!("They're equal")
+    } else {
+        println!("They are not equal")
+    }
 
     Ok(())
 }

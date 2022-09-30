@@ -20,7 +20,7 @@ macro_rules! lazy_static {
 
 flat_mod!(r#trait, ctx);
 pub mod vec;
-//pub mod random;
+pub mod random;
 pub mod utils;
 
 pub(crate) fn include_prog<T: Real> (src: &str) -> String {

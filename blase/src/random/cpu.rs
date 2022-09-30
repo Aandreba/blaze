@@ -9,7 +9,7 @@ const MASK : Wrapping<u64> = Wrapping((1u64 << 48) - 1);
 static UNIQUIFIER : AtomicU64 = AtomicU64::new(8682522807148012u64);
 
 thread_local! {
-    static THREAD_RNG : UnsafeCell<LocalRandom> = UnsafeCell::new(LocalRandom::new());
+    static THREAD_RNG : std::rc::Rc<LocalRandom> = std::rc::Rc::new(LocalRandom::new());
 }
 
 macro_rules! impl_int {
@@ -557,11 +557,8 @@ mod test {
 }
 
 #[inline(always)]
-pub fn thread_rng () -> &'static LocalRandom {
-    // SAFETY: LocalRandom is `!Sync`, so we know references will not be shared to other threads. 
-    THREAD_RNG.with(|x| unsafe {
-        &*x.get()
-    })
+pub fn thread_rng () -> std::rc::Rc<LocalRandom> {
+    THREAD_RNG.with(|x| x.clone())
 }
 
 macro_rules! impl_static {

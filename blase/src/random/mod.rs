@@ -19,8 +19,8 @@ extern "C" {
     fn random_int (n: usize, seed: *mut u64, out: *mut MaybeUninit<i32>, origin: i32, delta: i32);
     fn random_long (n: usize, seed: *mut u64, out: *mut MaybeUninit<i64>, origin: i64, delta: i64);
 
-    //#[cfg(feature = "half")]
-    //fn random_half (n: usize, seed: *mut u64, out: *mut MaybeUninit<::half::f16>, origin: ::half::f16, delta: ::half::f16);
+    #[cfg(feature = "half")]
+    fn random_half (n: usize, seed: *mut u64, out: *mut MaybeUninit<::half::f16>, origin: ::half::f16, delta: ::half::f16);
     fn random_float (n: usize, seed: *mut u64, out: *mut MaybeUninit<f32>, origin: f32, delta: f32);
     #[cfg(feature = "double")]
     fn random_double (n: usize, seed: *mut u64, out: *mut MaybeUninit<f64>, origin: f64, delta: f64);
@@ -52,8 +52,8 @@ macro_rules! impl_int {
                             len,
                             &mut this.seeds, &mut result,
                             origin, bound,
-                            [wgs], None, EMPTY
-                        )?.wait()?;
+                            [wgs], None, None
+                        )?;
             
                         return Ok(result.assume_init())
                     }
@@ -65,7 +65,7 @@ macro_rules! impl_int {
                     Bound::Included(x) => *x,
                     Bound::Excluded(x) => match x.checked_add(1) {
                         Some(x) => x,
-                        None => return Err(Error::new(ErrorType::InvalidValue, "Range start bound is too large"))
+                        None => return Err(Error::new(ErrorKind::InvalidValue, "Range start bound is too large"))
                     },
                     Bound::Unbounded => <$t>::MIN
                 };
@@ -89,19 +89,19 @@ macro_rules! impl_int {
                             len,
                             &mut self.seeds, &mut result,
                             origin, delta,
-                            [wgs], None, EMPTY
-                        )?.wait()?;
+                            [wgs], None, None
+                        )?;
             
                         return Ok(result.assume_init())
                     }
                 } else if <$t>::MIN != 0 {
                     return match bound.checked_sub(1) {
                         Some(bound) => ranged_by_loop(self, origin, bound, readable, alloc, len, wgs),
-                        None => Err(Error::new(ErrorType::InvalidValue, "Range end bound is too small"))
+                        None => Err(Error::new(ErrorKind::InvalidValue, "Range end bound is too small"))
                     }
                 }
 
-                Err(Error::new(ErrorType::InvalidValue, "Invalid range"))
+                Err(Error::new(ErrorKind::InvalidValue, "Invalid range"))
             }
         )+
     };
@@ -122,7 +122,7 @@ impl Random {
 impl<C: Context + Clone> Random<C> {
     #[inline(always)]
     pub fn new_in (ctx: C, seed_count: Option<NonZeroUsize>) -> Result<Self> where C: 'static {
-        Self::with_rng_in(ctx, thread_rng(), seed_count)
+        Self::with_rng_in(ctx, &thread_rng(), seed_count)
     }
 
     pub fn with_rng_in (ctx: C, rng: &LocalRandom, seed_count: Option<NonZeroUsize>) -> Result<Self> where C: 'static {
@@ -143,13 +143,13 @@ impl<C: Context + Clone> Random<C> {
                 if let Some(max_wgs) = max_wgs {
                     max_wgs.get()
                 } else {
-                    return Err(Error::new(ErrorType::InvalidDevice, "No devices found"));
+                    return Err(Error::new(ErrorKind::InvalidDevice, "No devices found"));
                 }
             }
         };
         
         let mut seeds = Buffer::<u64, _>::new_uninit_in(ctx.clone(), seed_count, MemAccess::default(), false)?;
-        let mut map = seeds.map_mut(.., EMPTY)?.wait()?;
+        let mut map = seeds.map_mut_blocking(.., None)?;
 
         for i in 0..seed_count {
             unsafe {
@@ -170,18 +170,18 @@ impl<C: Context + Clone> Random<C> {
     }
 
     impl_int! {
-        u8 as next_u8 => (random_uchar, loop_random_uchar),
-        u16 as next_u16 => (random_ushort, loop_random_ushort),
-        u32 as next_u32 => (random_uint, loop_random_uint),
-        u64 as next_u64 => (random_ulong, loop_random_ulong),
-        i8 as next_i8 => (random_char, loop_random_char),
-        i16 as next_i16 => (random_short, loop_random_short),
-        i32 as next_i32 => (random_int, loop_random_int),
-        i64 as next_i64 => (random_long, loop_random_long)
+        u8 as next_u8_blocking => (random_uchar_blocking, loop_random_uchar_blocking),
+        u16 as next_u16_blocking => (random_ushort_blocking, loop_random_ushort_blocking),
+        u32 as next_u32_blocking => (random_uint_blocking, loop_random_uint_blocking),
+        u64 as next_u64_blocking => (random_ulong_blocking, loop_random_ulong_blocking),
+        i8 as next_i8_blocking => (random_char_blocking, loop_random_char_blocking),
+        i16 as next_i16_blocking => (random_short_blocking, loop_random_short_blocking),
+        i32 as next_i32_blocking => (random_int_blocking, loop_random_int_blocking),
+        i64 as next_i64_blocking => (random_long_blocking, loop_random_long_blocking)
     }
 
     #[docfg(feature = "half")]
-    pub fn next_f16 (&mut self, len: usize, range: impl RangeBounds<::half::f16>, readable: bool, alloc: bool) -> Result<Buffer<::half::f16, C>> {
+    pub fn next_f16_blocking (&mut self, len: usize, range: impl RangeBounds<::half::f16>, readable: bool, alloc: bool) -> Result<Buffer<::half::f16, C>> {
         let wgs = self.seeds.len()?.min(len);
 
         let origin = match range.start_bound() {
@@ -201,18 +201,18 @@ impl<C: Context + Clone> Random<C> {
         )?;
 
         unsafe {
-            let _ = self.program.random_half(
+            let _ = self.program.random_half_blocking(
                 len,
                 &mut self.seeds, &mut result,
                 origin, bound - origin,
-                [wgs], None, EMPTY
-            )?.wait()?;
+                [wgs], None, None
+            )?;
 
             return Ok(result.assume_init())
         }
     }
 
-    pub fn next_f32 (&mut self, len: usize, range: impl RangeBounds<f32>, readable: bool, alloc: bool) -> Result<Buffer<f32, C>> {
+    pub fn next_f32_blocking (&mut self, len: usize, range: impl RangeBounds<f32>, readable: bool, alloc: bool) -> Result<Buffer<f32, C>> {
         let wgs = self.seeds.len()?.min(len);
 
         let origin = match range.start_bound() {
@@ -232,19 +232,19 @@ impl<C: Context + Clone> Random<C> {
         )?;
 
         unsafe {
-            let _ = self.program.random_float(
+            let _ = self.program.random_float_blocking(
                 len,
                 &mut self.seeds, &mut result,
                 origin, bound - origin,
-                [wgs], None, EMPTY
-            )?.wait()?;
+                [wgs], None, None
+            )?;
 
             return Ok(result.assume_init())
         }
     }
 
     #[docfg(feature = "double")]
-    pub fn next_f64 (&mut self, len: usize, range: impl RangeBounds<f64>, readable: bool, alloc: bool) -> Result<Buffer<f64, C>> {
+    pub fn next_f64_blocking (&mut self, len: usize, range: impl RangeBounds<f64>, readable: bool, alloc: bool) -> Result<Buffer<f64, C>> {
         let wgs = self.seeds.len()?.min(len);
 
         let origin = match range.start_bound() {
@@ -264,12 +264,12 @@ impl<C: Context + Clone> Random<C> {
         )?;
 
         unsafe {
-            let _ = self.program.random_double(
+            let _ = self.program.random_double_blocking(
                 len,
                 &mut self.seeds, &mut result,
                 origin, bound - origin,
-                [wgs], None, EMPTY
-            )?.wait()?;
+                [wgs], None, None
+            )?;
 
             return Ok(result.assume_init())
         }
@@ -301,6 +301,12 @@ fn generate_program (src: &str) -> String {
         }
     }
 
+    println!(
+        "{}{}{src}",
+        EXTENSIONS,
+        define_usize()
+    );
+
     format!(
         "{}{}{src}",
         EXTENSIONS,
@@ -320,8 +326,8 @@ mod test {
     fn add () -> Result<()> {
         let mut rng = Random::new(None)?;
         
-        let test = rng.next_f64(100, 0.0..1., true, false)?;
-        let test = test.read(.., EMPTY)?.wait()?;
+        let test = rng.next_f32_blocking(100, 0.0..1., true, false)?;
+        let test = test.read_blocking(.., None)?;
         
         println!("{test:?}");
 

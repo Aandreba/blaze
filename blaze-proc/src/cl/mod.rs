@@ -85,7 +85,7 @@ pub fn blaze_c (ident: Ident, generics: Generics, blaze: Blaze, content: Expr) -
 
                 for __blaze_kernel__ in __blaze_kernels__.into_iter() {
                     match __blaze_kernel__.name()?.as_str() {
-                        #(#kernel_extern_names => #kernel_names = unsafe { Some(__blaze_kernel__.clone()) }),*,
+                        #(#(#kernel_attrs)* #kernel_extern_names => #kernel_names = unsafe { Some(__blaze_kernel__.clone()) }),*,
                         _ => {}
                         //__other => return Err(::blaze_rs::core::Error::new(::blaze_rs::core::ErrorKind::InvalidKernel, format!("unknown kernel '{}'", __other)))
                     }
@@ -122,9 +122,16 @@ pub fn blaze_c (ident: Ident, generics: Generics, blaze: Blaze, content: Expr) -
 }
 
 fn create_kernel (parent: &Ident, impl_generics: &Generics, parent_generics: &Generics, kernel: &Kernel) -> TokenStream {
-    let Kernel { vis, ident, args, .. } = kernel;
+    let Kernel { attrs, vis, ident, args, .. } = kernel;
     let mut generics = parse_quote! { <'__scope__, '__env__: '__scope__> };
     let (parent_imp, parent_ty, parent_wher) = parent_generics.split_for_impl();
+    let attrs = match attrs.attrs.is_empty() {
+        true => None,
+        false => {
+            let attrs = &attrs.attrs;
+            Some(quote! { #(#attrs)* })
+        }
+    };
 
     let name = args.iter().map(|x| x.name.clone()).collect::<Vec<_>>();
     let new = args.iter().map(|x| x.ty(&mut generics, true)).collect::<Vec<_>>();
@@ -178,10 +185,11 @@ fn create_kernel (parent: &Ident, impl_generics: &Generics, parent_generics: &Ge
     let (r#impl, _, r#where) = generics.split_for_impl();
 
     quote! {
-        #vis type #consumer_name #event_type = ::core::marker::PhantomData<(#(#event_new),*)>;
-        #vis type #event_name #event_type = ::blaze_rs::event::Event<#consumer_name #event_type>;
+        #attrs #vis type #consumer_name #event_type = ::core::marker::PhantomData<(#(#event_new),*)>;
+        #attrs #vis type #event_name #event_type = ::blaze_rs::event::Event<#consumer_name #event_type>;
 
         impl #parent_imp #parent #parent_ty #parent_wher {
+            #attrs
             #vis unsafe fn #ident #r#impl (&self, scope: &'__scope__ ::blaze_rs::context::Scope<'__scope__, '__env__, C>, #(#name: #new,)* global_work_dims: [usize; N], local_work_dims: impl Into<Option<[usize; N]>>, wait: ::blaze_rs::WaitList) -> ::blaze_rs::prelude::Result<#event_name #event_type> #r#where {
                 let mut wait = match wait {
                     ::blaze_rs::WaitList::Some(x) => x.to_vec(),
@@ -205,6 +213,7 @@ fn create_kernel (parent: &Ident, impl_generics: &Generics, parent_generics: &Ge
                 return Ok(__blaze_inner__)
             }
 
+            #attrs
             #vis unsafe fn #blocking_ident #blocking_impl (&self, #(#name: #blocking_new,)* global_work_dims: [usize; N], local_work_dims: impl Into<Option<[usize; N]>>, wait: ::blaze_rs::WaitList) -> ::blaze_rs::prelude::Result<()> #blocking_where {
                 let mut wait = match wait {
                     ::blaze_rs::WaitList::Some(x) => x.to_vec(),

@@ -1,5 +1,4 @@
-// typedef uint usize;
-
+//typedef uint usize;
 #define MULTIPLIER 0x5DEECE66Dl
 #define ADDEND 0xBl
 #define MASK() (1l << 48) - 1;
