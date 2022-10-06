@@ -1,8 +1,9 @@
 #![allow(macro_expanded_macro_exports_accessed_by_absolute_paths)]
 #![feature(mem_copy_fn, box_into_inner, nonzero_min_max, new_uninit, iterator_try_collect, result_flattening, alloc_layout_extra, array_try_map, extend_one, const_nonnull_new, int_roundings, const_maybe_uninit_zeroed, unboxed_closures, const_ptr_as_ref, const_maybe_uninit_array_assume_init, maybe_uninit_array_assume_init, const_option_ext, maybe_uninit_uninit_array, const_option, nonzero_ops, associated_type_bounds, ptr_metadata, is_some_with, fn_traits, vec_into_raw_parts, const_trait_impl, drain_filter, allocator_api)]
-#![cfg_attr(any(feature = "svm", feature = "map"), feature(strict_provenance, layout_for_ptr))]
+#![cfg_attr(feature = "svm", feature(strict_provenance, layout_for_ptr))]
 #![cfg_attr(docsrs, feature(doc_cfg, proc_macro_hygiene))]
 #![cfg_attr(debug_assertions, feature(backtrace, backtrace_frames))]
+#![cfg_attr(feature = "futures", feature(into_future))]
 #![doc = include_str!("../docs/src/intro.md")]
 
 use event::RawEvent;
@@ -151,7 +152,7 @@ pub fn wait_list (v: WaitList) -> core::Result<(u32, *const opencl_sys::cl_event
 
 /// Creates a [`WaitList`] from a reference to a single [`RawEvent`]
 #[inline(always)]
-pub fn wait_list_from_ref (evt: &RawEvent) -> WaitList {
+pub const fn wait_list_from_ref (evt: &RawEvent) -> WaitList {
     return Some(::core::slice::from_ref(evt))
 }
 

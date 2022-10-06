@@ -50,11 +50,11 @@ pub mod events {
     }
 
     impl<'a, T: Copy, C: Context> IncompleteConsumer for BufferGet<'a, T, C> {
-        type Incomplete = MaybeUninit<T>;
+        type Incomplete = Box<MaybeUninit<T>>;
         
         #[inline(always)]
         fn consume_incomplete (self) -> Result<Self::Incomplete> {
-            return Ok(*self.0)
+            return Ok(self.0)
         }
     }
 

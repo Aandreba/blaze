@@ -1,5 +1,7 @@
+use std::{thread::sleep, time::Duration};
+
 use blase::{vec::EucVec, random::Random};
-use blaze_rs::prelude::*;
+use blaze_rs::{prelude::*, event::FlagEvent, wait_list_from_ref};
 
 #[global_context]
 static CTX : SimpleContext = SimpleContext::default();
@@ -12,6 +14,17 @@ fn add () -> Result<()> {
 
     println!("{alpha:?} - {beta:?}");
 
+    Ok(())
+}
+
+#[test]
+fn sum () -> Result<()> {
+    let mut random = Random::new(None)?;
+
+    let alpha = EucVec::from_buffer(random.next_f32_blocking(5, -5.0..=5.0, true, false)?);
+    let gamma = alpha.magn_blocking(None)?;
+
+    println!("sqrt({alpha:?} * {alpha:?}) = {gamma}");
     Ok(())
 }
 

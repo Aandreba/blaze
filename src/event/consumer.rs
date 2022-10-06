@@ -72,6 +72,34 @@ impl<T> IncompleteConsumer for Result<T> {
     }
 }
 
+/// Consumer for [`specific`](super::Event::specific) event
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+#[repr(transparent)]
+pub struct Specific<'a, C: 'a> (C, PhantomData<&'a mut &'a ()>);
+
+impl<C> Specific<'_, C> {
+    #[inline(always)]
+    pub fn new (c: C) -> Self { Self(c, PhantomData) }
+}
+
+impl<'a, C: 'a + Consumer> Consumer for Specific<'a, C> {
+    type Output = C::Output;
+
+    #[inline(always)]
+    fn consume (self) -> Result<Self::Output> {
+        self.0.consume()
+    }
+}
+
+impl<'a, C: 'a + IncompleteConsumer> IncompleteConsumer for Specific<'a, C> {
+    type Incomplete = C::Incomplete;
+
+    #[inline(always)]
+    fn consume_incomplete (self) -> Result<Self::Incomplete> {
+        self.0.consume_incomplete()
+    }
+}
+
 /// A **no**-**op**eration consumer
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct Noop;
@@ -104,13 +132,12 @@ impl<T, U, C: Consumer<Output = T>, F: FnOnce(T) -> U> Consumer for Map<T, C, F>
     }
 }
 
-impl<T, U, C: IncompleteConsumer<Output = T, Incomplete = T>, F: FnOnce(T) -> U> IncompleteConsumer for Map<T, C, F> {
-    type Incomplete = U;
+impl<T, U, C: IncompleteConsumer<Output = T>, F: FnOnce(T) -> U> IncompleteConsumer for Map<T, C, F> {
+    type Incomplete = C::Incomplete;
 
     #[inline(always)]
-    fn consume_incomplete (self) -> Result<U> {
-        let v = self.0.consume_incomplete()?;
-        return Ok((self.1)(v))
+    fn consume_incomplete (self) -> Result<Self::Incomplete> {
+        self.0.consume_incomplete()
     }
 }
 
@@ -133,13 +160,12 @@ impl<T, U, C: Consumer<Output = T>, F: FnOnce(T) -> Result<U>> Consumer for TryM
     }
 }
 
-impl<T, U, C: IncompleteConsumer<Output = T, Incomplete = T>, F: FnOnce(T) -> Result<U>> IncompleteConsumer for TryMap<T, C, F> {
-    type Incomplete = U;
+impl<T, U, C: IncompleteConsumer<Output = T>, F: FnOnce(T) -> Result<U>> IncompleteConsumer for TryMap<T, C, F> {
+    type Incomplete = C::Incomplete;
 
     #[inline(always)]
-    fn consume_incomplete (self) -> Result<U> {
-        let v = self.0.consume()?;
-        return (self.1)(v)
+    fn consume_incomplete (self) -> Result<Self::Incomplete> {
+        self.0.consume_incomplete()
     }
 }
 

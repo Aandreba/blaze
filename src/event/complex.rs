@@ -20,6 +20,8 @@ pub(crate) mod ext {
     pub type NoopEvent = Event<Noop>;
     /// Event with a [`PhantomData`] consumer.
     pub type PhantomEvent<T> = Event<PhantomData<T>>;
+    /// Event for [`specific`](super::Event::specific).
+    pub type SpecificEvent<'a, C> = Event<Specific<'a, C>>;
     /// Event for [`abortable`](super::Event::abortable).
     #[docfg(feature = "cl1_1")]
     pub type AbortableEvent<C> = Event<abort::Abort<C>>;
@@ -162,6 +164,18 @@ impl<C: Consumer> Event<C> {
 
         let event = AbortableEvent::new(flag.into_inner(), consumer);
         return Ok((event, handle))
+    }
+
+    /// Returns an event with the consumer restricted to a specified lifetime.
+    /// 
+    /// The original consumer must have a lifetime greater or equal to the new one.
+    #[inline(always)]
+    pub fn specific<'a> (self) -> SpecificEvent<'a, C> where C: 'a {
+        Event { 
+            inner: self.inner,
+            consumer: Specific::new(self.consumer),
+            send: self.send,
+        }
     }
 
     /// Returns an event that maps the result of the previous event.
@@ -412,6 +426,29 @@ impl<'a, C: 'a + Consumer> Event<C> {
 }
 
 impl<C: Consumer> Event<C> {
+    #[inline]
+    pub fn on_complete_consumed<F: 'static + FnOnce(Result<C::Output>) + Send> (self, f: F) -> Result<()> where C: 'static + Send {
+        #[allow(unused)]
+        let Self { inner, consumer, send } = self;
+        
+        let f = move |_: RawEvent, status: Result<EventStatus>| match status {
+            Ok(_) => f(consumer.consume()),
+            Err(e) => f(Err(e)),
+        };
+
+        #[cfg(feature = "cl1_1")]
+        return RawEvent::on_status_boxed(&inner, EventStatus::Complete, Box::new(f));
+
+        #[cfg(not(feature = "cl1_1"))]
+        {
+            let cb = super::listener::EventCallback { status: EventStatus::Complete, cb: super::listener::Callback::Boxed(Box::new(f)) };
+            return match send.send(cb) {
+                Ok(_) => Ok(()),
+                Err(_) => Err(ErrorKind::InvalidValue.into())
+            }
+        }
+    }
+
     /// Adds a callback function that will be executed when the event is submitted.
     #[inline(always)]
     pub fn on_submit (&self, f: impl 'static + FnOnce(RawEvent, Result<EventStatus>) + Send) -> Result<()> {
@@ -463,17 +500,7 @@ impl<C: Consumer> Event<C> {
     pub fn on_status_boxed (&self, status: EventStatus, f: Box<dyn FnOnce(RawEvent, Result<EventStatus>) + Send>) -> Result<()> {
         cfg_if::cfg_if! {
             if #[cfg(feature = "cl1_1")] {
-                let user_data = Box::into_raw(Box::new(f));
-                unsafe {
-                    if let Err(e) = self.on_status_raw(status, event_listener, user_data.cast()) {
-                        let _ = Box::from_raw(user_data); // drop user data
-                        return Err(e);
-                    }
-
-                    tri!(clRetainEvent(self.id()));
-                }
-
-                return Ok(())
+                return RawEvent::on_status_boxed(&self, status, f)
             } else {
                 let cb = super::listener::EventCallback { status, cb: super::listener::Callback::Boxed(f) };
                 match self.send.send(cb) {
@@ -503,8 +530,7 @@ impl<C: Consumer> Event<C> {
     pub unsafe fn on_status_raw (&self, status: EventStatus, f: unsafe extern "C" fn(event: cl_event, event_command_status: cl_int, user_data: *mut c_void), user_data: *mut c_void) -> Result<()> {
         cfg_if::cfg_if! {
             if #[cfg(feature = "cl1_1")] {
-                tri!(opencl_sys::clSetEventCallback(self.id(), status as i32, Some(f), user_data));
-                return Ok(())
+                return RawEvent::on_status_raw(&self, status, f, user_data)
             } else {
                 let cb = super::listener::EventCallback { status, cb: super::listener::Callback::Raw(f, user_data) };
                 match self.send.send(cb) {
@@ -526,13 +552,3 @@ impl<C: Consumer> Deref for Event<C> {
 }
 
 //impl<C: Unpin> Unpin for Event<C> {}
-
-#[cfg(feature = "cl1_1")]
-unsafe extern "C" fn event_listener (event: cl_event, event_command_status: cl_int, user_data: *mut c_void) {
-    let user_data : *mut Box<dyn FnOnce(RawEvent, Result<EventStatus>) + Send> = user_data.cast();
-    let f = *Box::from_raw(user_data);
-    
-    let event = RawEvent::from_id_unchecked(event);
-    let status = EventStatus::try_from(event_command_status);
-    f(event, status)
-}

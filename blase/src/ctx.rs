@@ -1,8 +1,8 @@
 use std::{num::{NonZeroUsize}};
 use blaze_rs::prelude::*;
 
-lazy_static! {
-    static ref BLASE_CTX: BlaseContext = BlaseContext::new().unwrap();
+thread_local! {
+    static BLASE_CTX: BlaseContext = BlaseContext::new().unwrap();
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -34,10 +34,10 @@ impl BlaseContext {
 
 #[inline(always)]
 pub fn max_work_group_size () -> NonZeroUsize {
-    BLASE_CTX.max_wgs
+    BLASE_CTX.with(|ctx| ctx.max_wgs)
 }
 
 #[inline(always)]
 pub fn work_group_size (n: usize) -> usize {
-    BLASE_CTX.max_wgs.get().min(n)
+    max_work_group_size().get().min(n)
 }

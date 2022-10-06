@@ -8,9 +8,9 @@ flat_mod!(utils);
 
 use std::{mem::{MaybeUninit, transmute}, ops::*, fmt::Debug, cmp::Ordering};
 use bitvec::prelude::BitBox;
-use blaze_rs::{prelude::*, buffer::{KernelPointer}, WaitList, wait_list_from_ref, event::FlagEvent};
-use crate::{Real, work_group_size, utils::{change_lifetime_mut, change_lifetime}, vec::events::VecEq};
-use self::events::{BinaryEvent, LaneEqEvent, LaneEq, LaneCmpEvent, LaneTotalCmpEvent, EqEvent};
+use blaze_rs::{prelude::*, buffer::{KernelPointer}, WaitList, wait_list_from_ref, event::{FlagEvent, Consumer}};
+use crate::{Real, work_group_size, utils::{change_lifetime_mut, change_lifetime}, vec::events::VecEq, max_work_group_size};
+use self::events::{BinaryEvent, LaneEqEvent, LaneEq, LaneCmpEvent, LaneTotalCmpEvent, EqEvent, SumEvent, MagnEvent};
 use blaze_proc::docfg;
 
 pub mod program {
@@ -76,7 +76,7 @@ pub mod program {
 }
 
 mod events {
-    use blaze_rs::{event::{Consumer, consumer::Map}, buffer::events::{BufferRead, BufferGet}};
+    use blaze_rs::{event::{Consumer, consumer::{Map, Specific}}, buffer::events::{BufferRead, BufferGet}};
     use super::*;
 
     #[derive(Debug)]
@@ -92,7 +92,7 @@ mod events {
         fn consume (self) -> Result<Self::Output> {
             return match self {
                 Self::Host(x) => Ok(x),
-                Self::Device(x) => Ok(x.consume()? == 1)
+                Self::Device(x) => Ok(x.consume()? != 0)
             }
         }
     }
@@ -113,8 +113,10 @@ mod events {
         }
     }
 
-    pub type LaneCmp<'a> = Map<Vec<i8>, BufferRead<'a, i8>, fn(Vec<i8>) -> Vec<Option<Ordering>>>;
-    pub type LaneTotalCmp<'a> = Map<Vec<i8>, BufferRead<'a, i8>, fn(Vec<i8>) -> Vec<Ordering>>;
+    pub type LaneCmp<'a> = Map<Vec<i8>, BufferRead<'a, i8>, TransmuteOrdering>;
+    pub type LaneTotalCmp<'a> = Map<Vec<i8>, BufferRead<'a, i8>, TransmuteTotalOrdering>;
+    pub type Sum<'a, T> = BufferGet<'a, T>;
+    pub type Magn<'a, T> = Map<T, Sum<'a, T>, Sqrt<T>>;
 
     /// Event for binary operations
     pub type BinaryEvent<'a, T> = Event<Binary<'a, T>>;
@@ -122,6 +124,8 @@ mod events {
     pub type LaneEqEvent<'a> = Event<LaneEq<'a>>;
     pub type LaneCmpEvent<'a> = Event<LaneCmp<'a>>;
     pub type LaneTotalCmpEvent<'a> = Event<LaneTotalCmp<'a>>;
+    pub type SumEvent<'a, T> = Event<Sum<'a, T>>;
+    pub type MagnEvent<'a, T> = Event<Magn<'a, T>>;
 }
 
 /// Euclidian vector
@@ -419,8 +423,7 @@ impl<T: Real> EucVec<T> {
         unsafe {
             let evt = T::vec_program().vec_cmp_partial_ord(scope, len, self, other, change_lifetime_mut(&mut result), [work_group_size(len)], None, wait)?;
             let read = change_lifetime(&result.assume_init()).read(scope, .., wait_list_from_ref(&evt))?;
-            let map = read.map::<fn(Vec<i8>) -> Vec<Option<Ordering>>, Vec<Option<Ordering>>>(|x| core::mem::transmute::<Vec<i8>, Vec<Option<Ordering>>>(x));
-            return Ok(map)
+            return Ok(read.map(TransmuteOrdering));
         }
     }
 
@@ -444,13 +447,15 @@ impl<T: Real> EucVec<T> {
         debug_assert_eq!(std::alloc::Layout::new::<i8>(), std::alloc::Layout::new::<Option<Ordering>>());
 
         let len = self.len()?;
-        let mut result = Buffer::<i8>::new_uninit(len, MemAccess::WRITE_ONLY, false)?;
+        if len != other.len()? {
+            return Err(Error::new(ErrorKind::InvalidBufferSize, "vectors of diferent sizes provided"))
+        }
 
+        let mut result = Buffer::<i8>::new_uninit(len, MemAccess::WRITE_ONLY, false)?;
         unsafe {
             let evt = T::vec_program().vec_cmp_ord(scope, len, self, other, change_lifetime_mut(&mut result), [work_group_size(len)], None, wait)?;
             let read = change_lifetime(&result.assume_init()).read(scope, .., wait_list_from_ref(&evt))?;
-            let map = read.map::<fn(Vec<i8>) -> Vec<Ordering>, Vec<Ordering>>(|x| core::mem::transmute::<Vec<i8>, Vec<Ordering>>(x));
-            return Ok(map)
+            return Ok(read.map(TransmuteTotalOrdering));
         }
     }
 
@@ -468,6 +473,222 @@ impl<T: Real> EucVec<T> {
             let v = result.assume_init().read_blocking(.., None)?;
             return Ok(transmute(v))
         }
+    }
+}
+
+impl<T: Real> EucVec<T> {
+    pub fn sum<'scope, 'env> (&'env self, scope: &'scope Scope<'scope, 'env>, wait: WaitList) -> Result<SumEvent<'scope, T>> {
+        let wgs = 1usize.max(max_work_group_size().get() >> 1);
+        let n = i32::try_from(self.len()?)
+            .map_err(|e| Error::new(ErrorKind::InvalidBufferSize, e))?;
+
+        let temp_size = wgs.checked_mul(2).ok_or_else(||
+            Error::new(ErrorKind::InvalidBufferSize, "buffer is too big")
+        )?;
+        let mut temp_buffer = Buffer::<T>::new_uninit(temp_size, MemAccess::default(), false)?;
+        let mut asum = Buffer::<T>::new_uninit(1, MemAccess::WRITE_ONLY, false)?;
+
+        unsafe {
+            let sum = T::vec_program().xasum(
+                scope,
+                n, 
+                self,
+                change_lifetime_mut(&mut temp_buffer),
+                [wgs * temp_size], [wgs], 
+                wait
+            )?;
+    
+            let epilogue = T::vec_program().xasum_epilogue(
+                scope,
+                change_lifetime_mut(&mut temp_buffer),
+                change_lifetime_mut(&mut asum),
+                [wgs], [wgs],
+                wait_list_from_ref(&sum)
+            )?;
+
+            return change_lifetime(&asum.assume_init()).get(
+                scope,
+                0,
+                wait_list_from_ref(&epilogue)
+            );
+        }
+    }
+
+    pub fn sum_blocking (&self, wait: WaitList) -> Result<T> {
+        let wgs = 1usize.max(max_work_group_size().get() >> 1);
+        let n = i32::try_from(self.len()?)
+            .map_err(|e| Error::new(ErrorKind::InvalidBufferSize, e))?;
+
+        let temp_size = wgs.checked_mul(2).ok_or_else(||
+            Error::new(ErrorKind::InvalidBufferSize, "buffer is too big")
+        )?;
+        let mut temp_buffer = Buffer::<T>::new_uninit(temp_size, MemAccess::default(), false)?;
+        let mut asum = Buffer::<T>::new_uninit(1, MemAccess::WRITE_ONLY, false)?;
+
+        unsafe {
+            T::vec_program().xasum_blocking(
+                n, 
+                self,
+                &mut temp_buffer,
+                [wgs * temp_size], [wgs], 
+                wait
+            )?;
+    
+            T::vec_program().xasum_epilogue_blocking(&mut temp_buffer, &mut asum, [wgs], [wgs], None)?;
+            return asum.assume_init().get_blocking(0, None);
+        }
+    }
+
+    pub fn dot<'scope, 'env> (&'env self, scope: &'scope Scope<'scope, 'env>, other: &'env Self, wait: WaitList) -> Result<SumEvent<'scope, T>> {
+        let n = self.len()?;
+        if n != other.len()? {
+            return Err(Error::new(ErrorKind::InvalidBufferSize, "vectors of diferent sizes provided"))
+        }
+        
+        let wgs = 1usize.max(max_work_group_size().get() >> 1);
+        let n = i32::try_from(n).map_err(|e| 
+            Error::new(ErrorKind::InvalidBufferSize, e)
+        )?;
+
+        let temp_size = wgs.checked_mul(2).ok_or_else(||
+            Error::new(ErrorKind::InvalidBufferSize, "buffer is too big")
+        )?;
+        let mut temp_buffer = Buffer::<T>::new_uninit(temp_size, MemAccess::default(), false)?;
+        let mut asum = Buffer::<T>::new_uninit(1, MemAccess::WRITE_ONLY, false)?;
+
+        unsafe {
+            let sum = T::vec_program().xdot(
+                scope,
+                n, 
+                self,
+                other,
+                change_lifetime_mut(&mut temp_buffer),
+                [wgs * temp_size], [wgs], 
+                wait
+            )?;
+    
+            let epilogue = T::vec_program().xasum_epilogue(
+                scope,
+                change_lifetime_mut(&mut temp_buffer),
+                change_lifetime_mut(&mut asum),
+                [wgs], [wgs],
+                wait_list_from_ref(&sum)
+            )?;
+
+            return change_lifetime(&asum.assume_init()).get(
+                scope,
+                0,
+                wait_list_from_ref(&epilogue)
+            );
+        }
+    }
+
+    pub fn dot_blocking (&self, other: &Self, wait: WaitList) -> Result<T> {
+        let n = self.len()?;
+        if n != other.len()? {
+            return Err(Error::new(ErrorKind::InvalidBufferSize, "vectors of diferent sizes provided"))
+        }
+
+        let wgs = 1usize.max(max_work_group_size().get() >> 1);
+        let n = i32::try_from(n).map_err(|e| 
+            Error::new(ErrorKind::InvalidBufferSize, e)
+        )?;
+
+        let temp_size = wgs.checked_mul(2).ok_or_else(||
+            Error::new(ErrorKind::InvalidBufferSize, "buffer is too big")
+        )?;
+        let mut temp_buffer = Buffer::<T>::new_uninit(temp_size, MemAccess::default(), false)?;
+        let mut asum = Buffer::<T>::new_uninit(1, MemAccess::WRITE_ONLY, false)?;
+
+        unsafe {
+            T::vec_program().xdot_blocking(
+                n, 
+                self,
+                other,
+                &mut temp_buffer,
+                [wgs * temp_size], [wgs], 
+                wait
+            )?;
+    
+            T::vec_program().xasum_epilogue_blocking(&mut temp_buffer, &mut asum, [wgs], [wgs], None)?;
+            return asum.assume_init().get_blocking(0, None);
+        }
+    }
+
+    #[inline(always)]
+    pub fn square_magn_blocking (&self, wait: WaitList) -> Result<T> {
+        return self.dot_blocking(self, wait)
+    }
+
+    #[inline(always)]
+    pub fn square_magn<'scope, 'env> (&'env self, scope: &'scope Scope<'scope, 'env>, wait: WaitList) -> Result<SumEvent<'scope, T>> {
+        return self.dot(scope, self, wait)
+    }
+
+    #[inline(always)]
+    pub fn magn_blocking (&self, wait: WaitList) -> Result<T> where T: num_traits::real::Real {
+        return self.square_magn_blocking(wait).map(num_traits::real::Real::sqrt)
+    }
+
+    #[inline(always)]
+    pub fn magn<'scope, 'env> (&'env self, scope: &'scope Scope<'scope, 'env>, wait: WaitList) -> Result<MagnEvent<'scope, T>> where T: num_traits::real::Real {
+        let square : SumEvent<'scope, T> = self.square_magn(scope, wait)?;
+        return Ok(square.map(Sqrt::new()));
+    }
+
+    #[inline(always)]
+    pub fn unit_blocking (&self, wait: WaitList) -> Result<Self> where T: num_traits::real::Real {
+        let magn = self.magn_blocking(wait)?;
+        return self.downscale_blocking(magn, None)
+    }
+
+    #[inline(always)]
+    pub fn unit<'scope, 'env> (&'env self, scope: &'scope Scope<'scope, 'env>, wait: WaitList) -> Result<BinaryEvent<'scope, T>> where T: num_traits::real::Real {
+        let (evt, consumer) = self.magn(scope, wait)?.into_parts();
+        
+        evt.on_complete(move |_, _| {
+            let v = consumer.consume();
+        });
+
+        self.downscale(scope, other, wait_list_from_ref(&magn));
+
+        todo!()
+    }
+}
+
+impl<T: Real> Mul for &EucVec<T> {
+    type Output = T;
+
+    #[inline(always)]
+    fn mul(self, rhs: Self) -> Self::Output {
+        self.dot_blocking(rhs, None).unwrap()
+    }
+}
+
+impl<T: Real> Mul<EucVec<T>> for &EucVec<T> {
+    type Output = T;
+
+    #[inline(always)]
+    fn mul(self, rhs: EucVec<T>) -> Self::Output {
+        self.dot_blocking(&rhs, None).unwrap()
+    }
+}
+
+impl<T: Real> Mul for EucVec<T> {
+    type Output = T;
+
+    #[inline(always)]
+    fn mul(self, rhs: Self) -> Self::Output {
+        self.dot_blocking(&rhs, None).unwrap()
+    }
+}
+
+impl<T: Real> Mul<&EucVec<T>> for EucVec<T> {
+    type Output = T;
+
+    #[inline(always)]
+    fn mul(self, rhs: &Self) -> Self::Output {
+        self.dot_blocking(rhs, None).unwrap()
     }
 }
 

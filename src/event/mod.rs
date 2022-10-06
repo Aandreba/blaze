@@ -1,4 +1,4 @@
-flat_mod!(raw, complex, status, profiling);
+flat_mod!(raw, complex, status, profiling, eventual);
 
 #[path = "consumer.rs"]
 mod _consumer;
