@@ -198,14 +198,14 @@ impl<C: IncompleteConsumer + UnwindSafe> IncompleteConsumer for CatchUnwind<C> {
             Err(e) => Ok(Err(e))
         }
     }
-} 
+}
 
-/// Consumer for [`flatten`](super::Event::flatten) event.
+/// Consumer for [`flatten_result`](super::Event::flatten_result) event.
 #[derive(Debug, Clone)]
 #[repr(transparent)]
-pub struct Flatten<C> (pub(super) C);
+pub struct FlattenResult<C> (pub(super) C);
 
-impl<T, C: Consumer<Output = Result<T>>> Consumer for Flatten<C> {
+impl<T, C: Consumer<Output = Result<T>>> Consumer for FlattenResult<C> {
     type Output = T;
 
     #[inline(always)]
@@ -214,7 +214,7 @@ impl<T, C: Consumer<Output = Result<T>>> Consumer for Flatten<C> {
     }
 }
 
-impl<T, C: IncompleteConsumer<Incomplete = Result<T>>> IncompleteConsumer for Flatten<C> where Flatten<C>: Consumer {
+impl<T, C: IncompleteConsumer<Incomplete = Result<T>>> IncompleteConsumer for FlattenResult<C> where FlattenResult<C>: Consumer {
     type Incomplete = T;
 
     #[inline(always)]

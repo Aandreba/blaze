@@ -5,7 +5,7 @@ use blaze_proc::docfg;
 #[derive(Debug, Clone)]
 pub struct Eventual<C, F> {
     parent: Event<C>,
-    f: F,
+    f: F
 }
 
 impl<N: Consumer, C: Consumer, F: FnOnce(C::Output) -> Result<Event<N>>> Eventual<C, F> {
@@ -22,8 +22,7 @@ impl<N: Consumer, C: Consumer, F: FnOnce(C::Output) -> Result<Event<N>>> Eventua
 
     #[inline(always)]
     pub fn join (self) -> Result<N::Output> {
-        let evt = self.wait()?;
-        return evt.join()
+        return self.wait()?.join()
     }
 
     #[docfg(feature = "futures")]

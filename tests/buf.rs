@@ -1,7 +1,4 @@
-use std::ops::Deref;
-
 use blaze_rs::{prelude::*, buffer};
-use buffer::rect::Rect2D;
 
 #[global_context]
 static CONTEXT : SimpleContext = SimpleContext::default();

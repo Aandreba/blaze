@@ -1,4 +1,4 @@
-#![feature(is_some_with, extend_one, iter_advance_by, pattern)]
+#![feature(extend_one, iter_advance_by, pattern)]
 
 macro_rules! flat_mod {
     ($($i:ident),+) => {

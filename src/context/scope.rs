@@ -85,7 +85,7 @@ impl<'scope, 'env: 'scope, C: 'env + Context> Scope<'scope, 'env, C> {
         let scope_data = self.data.clone();
         let scope_thread = self.thread.clone();
 
-        evt.on_complete(move |_, res| {
+        evt.on_complete_silent(move |_, res| {
             drop(queue_size);
 
             if let Err(e) = res {

@@ -33,7 +33,7 @@ impl CommandQueue {
         let evt = Event::new(inner, consumer);
 
         let size = self.size.clone();
-        if let Err(e) = evt.on_complete(move |_, _| {
+        if let Err(e) = evt.on_complete_silent(move |_, _| {
             size.fetch_sub(1, Ordering::AcqRel);
         }) {
             self.size.fetch_sub(1, Ordering::AcqRel);

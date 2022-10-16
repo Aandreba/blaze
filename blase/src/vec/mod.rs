@@ -8,7 +8,7 @@ flat_mod!(utils);
 
 use std::{mem::{MaybeUninit, transmute}, ops::*, fmt::Debug, cmp::Ordering};
 use bitvec::prelude::BitBox;
-use blaze_rs::{prelude::*, buffer::{KernelPointer}, WaitList, wait_list_from_ref, event::{FlagEvent, Consumer}};
+use blaze_rs::{prelude::*, buffer::{KernelPointer}, WaitList, wait_list_from_ref, event::{FlagEvent}};
 use crate::{Real, work_group_size, utils::{change_lifetime_mut, change_lifetime}, vec::events::VecEq, max_work_group_size};
 use self::events::{BinaryEvent, LaneEqEvent, LaneEq, LaneCmpEvent, LaneTotalCmpEvent, EqEvent, SumEvent, MagnEvent};
 use blaze_proc::docfg;
@@ -644,14 +644,14 @@ impl<T: Real> EucVec<T> {
 
     #[inline(always)]
     pub fn unit<'scope, 'env> (&'env self, scope: &'scope Scope<'scope, 'env>, wait: WaitList) -> Result<BinaryEvent<'scope, T>> where T: num_traits::real::Real {
-        let (evt, consumer) = self.magn(scope, wait)?.into_parts();
+        // SAFETY: Buffers are reference counted by opencl, so we won't be accessing a dropped buffer.s
+        let magn : MagnEvent<'static, T> = unsafe {
+            transmute(self.magn(scope, wait)?)
+        };
         
-        evt.on_complete(move |_, _| {
-            let v = consumer.consume();
-        });
+        let evt = magn.try_map(|other| self.downscale(scope, other, None));
 
-        self.downscale(scope, other, wait_list_from_ref(&magn));
-
+        //let test = evt.flatten()?;
         todo!()
     }
 }
