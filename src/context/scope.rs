@@ -1,4 +1,4 @@
-use std::{sync::{Arc, atomic::{AtomicUsize, Ordering, AtomicI32}}, marker::{PhantomData}, panic::{catch_unwind, AssertUnwindSafe, resume_unwind}, thread::Thread};
+use std::{sync::{Arc, atomic::{AtomicUsize, Ordering, AtomicI32}}, marker::{PhantomData}, panic::{catch_unwind, AssertUnwindSafe, resume_unwind}};
 use opencl_sys::CL_SUCCESS;
 use crate::{prelude::{Result, RawCommandQueue, RawEvent, Event, Error}, event::consumer::{Consumer, Noop, NoopEvent, PhantomEvent}};
 use super::{Global, Context};
@@ -33,35 +33,17 @@ pub struct Scope<'scope, 'env: 'scope, C: 'env + Context = Global> {
 }
 
 impl<'scope, 'env: 'scope, C: 'env + Context> Scope<'scope, 'env, C> {
-    /// Creates a new [`Event`] scope in the current thread
-    #[inline(always)]
-    pub fn new (ctx: &'env C) -> Self {
-        Self::with_thread(ctx, std::thread::current())
-    }
-
     /// Creates a new [`Event`] scope targeted to `async` use
     #[docfg(feature = "futures")]
     #[inline(always)]
-    pub fn new_async (ctx: &'env C) -> Self {
+    fn new_async (ctx: &'env C) -> Self {
         Self::with_waker(ctx, Arc::new(futures::task::AtomicWaker::new()))
-    }
-    
-    /// Creates a new [`Event`] scope with the specified thread
-    #[inline(always)]
-    pub fn with_thread (ctx: &'env C, thread: Thread) -> Self {
-        Self {
-            ctx,
-            data: Arc::new((AtomicUsize::new(0), AtomicI32::new(CL_SUCCESS))),
-            thread: ScopeWaker::Thread(thread),
-            scope: PhantomData,
-            env: PhantomData
-        }
     }
 
     /// Creates a new `async` [`Event`] scope with the specified waker 
     #[docfg(feature = "futures")]
     #[inline(always)]
-    pub fn with_waker (ctx: &'env C, waker: Arc<futures::task::AtomicWaker>) -> Self {
+    fn with_waker (ctx: &'env C, waker: Arc<futures::task::AtomicWaker>) -> Self {
         Self {
             ctx,
             data: Arc::new((AtomicUsize::new(0), AtomicI32::new(CL_SUCCESS))),
@@ -77,22 +59,28 @@ impl<'scope, 'env: 'scope, C: 'env + Context> Scope<'scope, 'env, C> {
         let inner = supplier(&queue)?;
         let evt = Event::new(inner, consumer);
 
-        if self.data.0.fetch_add(1, Ordering::Relaxed) == usize::MAX {
+        if self.data.0.fetch_add(1, Ordering::AcqRel) == usize::MAX {
             panic!("too many events in scope")
+        }
+
+        if queue.size.fetch_add(1, Ordering::AcqRel) == usize::MAX {
+            panic!("Queue size overflow");
         }
 
         let queue_size = queue.size.clone();
         let scope_data = self.data.clone();
         let scope_thread = self.thread.clone();
 
+        // TODO HANDLE ERROR
+        // ALSO, we are not getting into the callback
         evt.on_complete_silent(move |_, res| {
-            drop(queue_size);
+            let _ = queue_size.fetch_sub(1, Ordering::AcqRel);
 
             if let Err(e) = res {
-                let _ = scope_data.1.compare_exchange(CL_SUCCESS, e.ty.as_i32(), Ordering::Relaxed, Ordering::Relaxed);
+                let _ = scope_data.1.compare_exchange(CL_SUCCESS, e.ty.as_i32(), Ordering::AcqRel, Ordering::Acquire);
             }
 
-            if scope_data.0.fetch_sub(1, Ordering::Relaxed) == 1 {
+            if scope_data.0.fetch_sub(1, Ordering::AcqRel) == 1 {
                 scope_thread.wake();
             }
         }).unwrap();
@@ -143,7 +131,7 @@ pub fn local_scope<'env, T, C: 'env + Context, F: for<'scope> FnOnce(&'scope Sco
     return match result {
         Err(e) => resume_unwind(e),
         Ok(x) => {
-            let e = scope.data.1.load(Ordering::Relaxed);
+            let e = scope.data.1.load(Ordering::Acquire);
             if e != CL_SUCCESS {
                 return Err(Error::from(e));
             }

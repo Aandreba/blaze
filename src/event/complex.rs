@@ -90,18 +90,11 @@ impl<C: Consumer> Event<C> {
     /// Creates a new event with the specified consumer.   
     #[inline(always)]
     pub fn new (inner: RawEvent, consumer: C) -> Self {
-        #[cfg(not(feature = "cl1_1"))]
-        let (send, recv) = std::sync::mpsc::channel();
-        #[cfg(not(feature = "cl1_1"))]
-        let list = super::listener::get_sender();
-        #[cfg(not(feature = "cl1_1"))]
-        list.send((inner.clone(), recv)).unwrap();
-
         Self {
             inner,
             consumer,
             #[cfg(not(feature = "cl1_1"))]
-            send,
+            send: super::listener::get_sender(),
             #[cfg(feature = "cl1_1")]
             send: std::marker::PhantomData
         }
@@ -532,7 +525,7 @@ impl<C: Consumer> Event<C> {
             if #[cfg(feature = "cl1_1")] {
                 return RawEvent::on_status_silent(&self, status, f)
             } else {
-                let cb = super::listener::EventCallback { status, cb: super::listener::Callback::Boxed(Box::new(f)) };
+                let cb = super::listener::EventCallback { evt: self.inner.clone(),  status, cb: super::listener::Callback::Boxed(Box::new(f)) };
                 match self.send.send(cb) {
                     Ok(_) => Ok(()),
                     Err(_) => Err(ErrorKind::InvalidValue.into())
@@ -562,7 +555,7 @@ impl<C: Consumer> Event<C> {
             if #[cfg(feature = "cl1_1")] {
                 return RawEvent::on_status_silent_raw(&self, status, f, user_data)
             } else {
-                let cb = super::listener::EventCallback { status, cb: super::listener::Callback::Raw(f, user_data) };
+                let cb = super::listener::EventCallback { evt: self.inner.clone(), status, cb: super::listener::Callback::Raw(f, user_data) };
                 match self.send.send(cb) {
                     Ok(_) => Ok(()),
                     Err(_) => Err(ErrorKind::InvalidValue.into())
