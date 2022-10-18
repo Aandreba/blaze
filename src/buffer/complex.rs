@@ -9,10 +9,9 @@ use crate::blaze_rs;
 use events::*;
 
 pub mod events {
-    use std::{marker::*, fmt::Debug, mem::{MaybeUninit, transmute}, sync::mpsc::Receiver};
+    use std::{marker::*, fmt::Debug, mem::{MaybeUninit}, sync::mpsc::Receiver};
     use crate::{prelude::*, event::{Consumer, consumer::IncompleteConsumer}};
     use blaze_proc::docfg;
-    use utils_atomics::TakeCell;
     
     /// Consumer for [`ReadIntoEvent`]
     pub type BufferReadInto<'a, T, C = Global> = PhantomData<(&'a Buffer<T, C>, &'a mut [T])>;
@@ -39,23 +38,23 @@ pub mod events {
     pub type FillEvent<'a, T, C = Global> = Event<BufferFill<'a, T, C>>;
 
     /// Consumer for [`GetEvent`]
-    pub struct BufferGet<'a, T: Copy, C: Context = Global> (pub(super) Box<MaybeUninit<T>>, pub(super) PhantomData<&'a Buffer<T, C>>);
+    pub struct BufferGet<'a, T: Copy, C: Context = Global> {
+        pub(super) v: Receiver<T>,
+        pub(super) _phtm: PhantomData<&'a Buffer<T, C>>
+    }
 
     impl<'a, T: Copy, C: Context> Consumer for BufferGet<'a, T, C> {
         type Output = T;
         
         #[inline(always)]
         fn consume (self) -> Result<T> {
-            unsafe { Ok(*self.0.assume_init()) }
-        }
-    }
-
-    impl<'a, T: Copy, C: Context> IncompleteConsumer for BufferGet<'a, T, C> {
-        type Incomplete = Box<MaybeUninit<T>>;
-        
-        #[inline(always)]
-        fn consume_incomplete (self) -> Result<Self::Incomplete> {
-            return Ok(self.0)
+            // Optimistic lock
+            return loop {
+                match self.v.try_recv() {
+                    Ok(x) => break Ok(x),
+                    Err(_) => core::hint::spin_loop()
+                }
+            }
         }
     }
 
@@ -76,7 +75,7 @@ pub mod events {
         type Output = Vec<T>;
         
         #[inline(always)]
-        fn consume (mut self) -> Result<Vec<T>> {
+        fn consume (self) -> Result<Vec<T>> {
             // Optimistic lock
             return loop {
                 match self.vec.try_recv() {
@@ -364,13 +363,27 @@ impl<T: Copy, C: Context> Buffer<T, C> {
     }
 
     /// Reads the contents of the buffer at the specified index, blocking the current thread until the operation has completed.
-    pub fn get<'scope, 'env> (&'env self, scope: &'scope Scope<'scope, 'env, C>, idx: usize, wait: WaitList) -> Result<GetEvent<'scope, T, C>> {
+    pub fn get<'scope, 'env> (&'env self, scope: &'scope Scope<'scope, 'env, C>, idx: usize, wait: WaitList) -> Result<GetEvent<'scope, T, C>> where T: 'static + Send {
         let mut result = Box::<T>::new_uninit();
         let supplier = |queue| unsafe {
             self.inner.read_to_ptr_in(BufferRange::new(idx * core::mem::size_of::<T>(), core::mem::size_of::<T>()), result.as_mut_ptr().cast(), queue, wait)
         };
 
-        return Ok(scope.enqueue_noop(supplier)?.set_consumer(BufferGet(result, PhantomData)))
+        let (send, recv) = sync_channel(1);
+        let evt = scope
+            .enqueue_noop(supplier)?
+            .set_consumer(BufferGet {
+                v: recv,
+                _phtm: PhantomData
+            });
+
+        evt.on_complete_silent(move |_, status| unsafe {
+            if status.is_ok() {
+                let _ = send.send(*result.assume_init());
+            }
+        })?;
+
+        return Ok(evt)
     }
     
     /// Reads the contents of the buffer.
