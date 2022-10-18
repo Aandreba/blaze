@@ -1,13 +1,15 @@
 use crate::core::*;
 use std::ffi::c_void;
+use std::marker::PhantomData;
 use std::panic::{resume_unwind};
+use std::sync::mpsc::{TryRecvError};
 use std::time::{Duration, SystemTime};
 use std::{mem::MaybeUninit, ptr::{NonNull}};
 use opencl_sys::*;
 use blaze_proc::docfg;
 
 use super::ext::NoopEvent;
-use super::{EventStatus, ProfilingInfo, CommandType, Event};
+use super::{EventStatus, ProfilingInfo, CommandType, Event, Consumer};
 
 /// Raw OpenCL event
 #[derive(Debug, PartialEq, Eq, Hash)]
@@ -186,26 +188,50 @@ impl RawEvent {
 
 #[docfg(feature = "cl1_1")]
 impl RawEvent {
+    #[inline(always)]
+    pub fn on_submit<T: 'static + Send> (&self, f: impl 'static + Send + FnOnce(RawEvent, Result<EventStatus>) -> T) -> Result<CallbackHandle<T>> { 
+        self.on_status(EventStatus::Submitted, f)
+    }
+
+    #[inline(always)]
+    pub fn on_run<T: 'static + Send> (&self, f: impl 'static + Send + FnOnce(RawEvent, Result<EventStatus>) -> T) -> Result<CallbackHandle<T>> { 
+        self.on_status(EventStatus::Running, f)
+    }
+
+    #[inline(always)]
+    pub fn on_complete<T: 'static + Send> (&self, f: impl 'static + Send + FnOnce(RawEvent, Result<EventStatus>) -> T) -> Result<CallbackHandle<T>> { 
+        self.on_status(EventStatus::Complete, f)
+    }
+
+    /// Adds a callback function that will be executed when the event reaches the specified status.
+    /// 
+    /// Unlike [`on_status_silent`], this method returns a [`CallbackHandle`] that allows to wait for the callcack to execute and getting its result.
     pub fn on_status<T: 'static + Send> (&self, status: EventStatus, f: impl 'static + Send + FnOnce(RawEvent, Result<EventStatus>) -> T) -> Result<CallbackHandle<T>> {        
         let (send, recv) = std::sync::mpsc::sync_channel::<_>(1);
-        #[cfg(feature = "futures")]
-        let waker = std::sync::Arc::new(futures::task::AtomicWaker::new());
-        #[cfg(feature = "futures")]
-        let my_waker = waker.clone();
-
+        let data = std::sync::Arc::new(CallbackHandleData {
+            #[cfg(feature = "cl1_1")]
+            flag: once_cell::sync::OnceCell::new(),
+            #[cfg(feature = "future")]
+            waker: futures::task::AtomicWaker::new()
+        });
+        
+        let my_data = data.clone();
         self.on_status_silent(status, move |evt, status| {
-            let f = std::panic::AssertUnwindSafe(|| f(evt, status));
+            let f = std::panic::AssertUnwindSafe(|| f(evt, status.clone()));
             match send.send(std::panic::catch_unwind(f)) {
                 Ok(_) => {
+                    #[cfg(feature = "cl1_1")]
+                    if let Some(flag) = my_data.flag.get_or_init(|| None) {
+                        flag.try_mark(status.err().map(|x| x.ty)).unwrap();
+                    }
                     #[cfg(feature = "futures")]
-                    my_waker.wake();
+                    my_data.waker.wake();
                 },
                 Err(_) => {}
             }
-            
         })?;
 
-        return Ok(CallbackHandle { recv, #[cfg(feature = "futures")] waker })
+        return Ok(CallbackHandle { recv, data, phtm: PhantomData })
     }
 
     /// Adds a callback function that will be executed when the event is submitted.
@@ -234,11 +260,12 @@ impl RawEvent {
     /// Because commands in a command-queue are not required to begin execution until the command-queue is flushed, callbacks that enqueue commands on a command-queue should either call [`RawCommandQueue::flush`] on the queue before returning, or arrange for the command-queue to be flushed later.
     #[inline(always)]
     pub fn on_status_silent (&self, status: EventStatus, f: impl 'static + FnOnce(RawEvent, Result<EventStatus>) + Send) -> Result<()> {
-        let user_data = sealed::BoxedSilentCallback::new(f).into_raw();
+        let f: Box<Box<dyn 'static + FnOnce(RawEvent, Result<EventStatus>) + Send>> = Box::new(Box::new(f));
+        let user_data = Box::into_raw(f);
 
         unsafe {
-            if let Err(e) = self.on_status_silent_raw(status, event_listener, user_data.cast()) {
-                let _ = sealed::BoxedSilentCallback::from_raw(user_data); // drop user data
+            if let Err(e) = self.on_status_raw(status, event_listener, user_data.cast()) {
+                let _ = Box::from_raw(user_data); // drop user data
                 return Err(e);
             }
 
@@ -248,22 +275,22 @@ impl RawEvent {
     }
     
     #[inline(always)]
-    pub unsafe fn on_submit_silent_raw (&self, f: unsafe extern "C" fn(event: cl_event, event_command_status: cl_int, user_data: *mut c_void), user_data: *mut c_void) -> Result<()> {
-        Self::on_status_silent_raw(&self, EventStatus::Submitted, f, user_data)
+    pub unsafe fn on_submit_raw (&self, f: unsafe extern "C" fn(event: cl_event, event_command_status: cl_int, user_data: *mut c_void), user_data: *mut c_void) -> Result<()> {
+        Self::on_status_raw(&self, EventStatus::Submitted, f, user_data)
     }
 
     #[inline(always)]
-    pub unsafe fn on_run_silent_raw (&self, f: unsafe extern "C" fn(event: cl_event, event_command_status: cl_int, user_data: *mut c_void), user_data: *mut c_void) -> Result<()> {
-        Self::on_status_silent_raw(&self, EventStatus::Running, f, user_data)
+    pub unsafe fn on_run_raw (&self, f: unsafe extern "C" fn(event: cl_event, event_command_status: cl_int, user_data: *mut c_void), user_data: *mut c_void) -> Result<()> {
+        Self::on_status_raw(&self, EventStatus::Running, f, user_data)
     }
 
     #[inline(always)]
-    pub unsafe fn on_complete_silent_raw (&self, f: unsafe extern "C" fn(event: cl_event, event_command_status: cl_int, user_data: *mut c_void), user_data: *mut c_void) -> Result<()> {
-        Self::on_status_silent_raw(&self, EventStatus::Complete, f, user_data)
+    pub unsafe fn on_complete_raw (&self, f: unsafe extern "C" fn(event: cl_event, event_command_status: cl_int, user_data: *mut c_void), user_data: *mut c_void) -> Result<()> {
+        Self::on_status_raw(&self, EventStatus::Complete, f, user_data)
     }
 
     #[inline(always)]
-    pub unsafe fn on_status_silent_raw (&self, status: EventStatus, f: unsafe extern "C" fn(event: cl_event, event_command_status: cl_int, user_data: *mut c_void), user_data: *mut c_void) -> Result<()> {
+    pub unsafe fn on_status_raw (&self, status: EventStatus, f: unsafe extern "C" fn(event: cl_event, event_command_status: cl_int, user_data: *mut c_void), user_data: *mut c_void) -> Result<()> {
         tri!(opencl_sys::clSetEventCallback(self.id(), status as i32, Some(f), user_data));
         return Ok(())
     }
@@ -299,21 +326,42 @@ impl Drop for RawEvent {
 unsafe impl Send for RawEvent {}
 unsafe impl Sync for RawEvent {}
 
-#[cfg(feature = "cl1_1")]
-unsafe extern "C" fn event_listener (event: cl_event, event_command_status: cl_int, user_data: *mut c_void) {
-    let mut f = sealed::BoxedSilentCallback::from_raw(user_data.cast());
+pub(crate) unsafe extern "C" fn event_listener (event: cl_event, event_command_status: cl_int, user_data: *mut c_void) {
+    let mut f = *Box::from_raw(user_data.cast::<Box<dyn 'static + Send + FnOnce(RawEvent, Result<EventStatus>)>>());
     let event = RawEvent::from_id_unchecked(event);
     let status = EventStatus::try_from(event_command_status);
-    sealed::SilentCallback::call(&mut f, (event, status));
+    f(event, status)
 }
 
-pub struct CallbackHandle<T> {
-    pub(super) recv: std::sync::mpsc::Receiver<std::thread::Result<T>>,
+pub type CallbackHandle<T> = ScopedCallbackHandle<'static, T>;
+pub type CallbackConsumer<T> = ScopedCallbackConsumer<'static, T>;
+
+pub(crate) struct CallbackHandleData {
+    #[cfg(feature = "cl1_1")]
+    pub(crate) flag: once_cell::sync::OnceCell<Option<super::FlagEvent>>,
     #[cfg(feature = "futures")]
-    pub(super) waker: std::sync::Arc<futures::task::AtomicWaker>
+    pub(crate) waker: futures::task::AtomicWaker
 }
 
-impl<T> CallbackHandle<T> {
+pub struct ScopedCallbackHandle<'a, T> {
+    pub(crate) recv: std::sync::mpsc::Receiver<std::thread::Result<T>>,
+    pub(crate) data: std::sync::Arc<CallbackHandleData>,
+    pub(crate) phtm: PhantomData<&'a mut &'a ()>
+}
+
+impl<'a, T> ScopedCallbackHandle<'a, T> {
+    #[docfg(feature = "cl1_1")]
+    pub fn into_event_in<C: crate::prelude::Context> (self, ctx: C) -> Result<Event<ScopedCallbackConsumer<'a, T>>> {
+        let flag = super::FlagEvent::new_in(ctx.as_raw())?;
+
+        match self.data.flag.try_insert(Some(flag)) {
+            Ok(x) => {},
+            Err((_, flag)) => todo!()
+        }
+
+        todo!()
+    }
+
     #[inline]
     pub fn join (self) -> std::thread::Result<T> {
         return match self.recv.recv() {
@@ -330,19 +378,49 @@ impl<T> CallbackHandle<T> {
             Err(_) => panic!("Handle already joined")
         }
     }
+
+    #[inline]
+    pub fn try_join (self) -> ::core::result::Result<std::thread::Result<T>, Self> {
+        return match self.recv.try_recv() {
+            Ok(x) => Ok(x),
+            Err(TryRecvError::Empty) => Err(self),
+            Err(TryRecvError::Disconnected) => panic!("Handle already joined")
+        }
+    }
+
+    #[inline]
+    pub fn try_join_unwrap (self) -> ::core::result::Result<T, Self> {
+        return match self.recv.try_recv() {
+            Ok(Ok(x)) => Ok(x),
+            Ok(Err(e)) => resume_unwind(e),
+            Err(TryRecvError::Empty) => Err(self),
+            Err(TryRecvError::Disconnected) => panic!("Handle already joined")
+        }
+    }
+}
+
+#[repr(transparent)]
+pub struct ScopedCallbackConsumer<'a, T> (ScopedCallbackHandle<'a, T>);
+
+impl<'a, T> Consumer for ScopedCallbackConsumer<'a, T> {
+    type Output = T;
+
+    fn consume (self) -> Result<Self::Output> {
+        todo!()
+    }
 }
 
 cfg_if::cfg_if! {
     if #[cfg(feature = "futures")] {
         use futures::future::*;
         use std::task::*;
-        use std::sync::mpsc::TryRecvError;
         
-        impl<T> Future for CallbackHandle<T> {
-            type Output = T;
+        #[cfg_attr(docsrs, doc(cfg(feature = "futures")))]
+        impl<T> Future for ScopedCallbackHandle<'_, T> {
+            type Output = std::thread::Result<T>;
 
             fn poll(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> std::task::Poll<Self::Output> {
-                self.waker.register(cx.waker());
+                self.data.waker.register(cx.waker());
                 return match self.recv.try_recv() {
                     Ok(x) => Poll::Ready(x),
                     Err(TryRecvError::Empty) => Poll::Pending,
@@ -353,19 +431,18 @@ cfg_if::cfg_if! {
     }
 }
 
-mod sealed {
+pub(crate) mod sealed {
     use thin_trait_object::*;
     use crate::prelude::*;
     use crate::event::EventStatus;
     use super::RawEvent;
-    // impl 'static + FnOnce(RawEvent, Result<EventStatus>) + Send
     
     #[thin_trait_object]
     pub trait SilentCallback {
         unsafe fn call (&mut self, args: (RawEvent, Result<EventStatus>,));
     }
 
-    impl<F: 'static + Send + FnOnce(RawEvent, Result<EventStatus>)> SilentCallback for F {
+    impl<F: Send + FnOnce(RawEvent, Result<EventStatus>)> SilentCallback for F {
         #[inline(always)]
         unsafe fn call (&mut self, args: (RawEvent, Result<EventStatus>,)) {
             core::ptr::read(self).call_once(args)

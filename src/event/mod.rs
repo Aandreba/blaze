@@ -20,7 +20,7 @@ mod abort;
 #[cfg(feature = "cl1_1")]
 pub use abort::AbortHandle;
 
-//#[cfg(not(feature = "cl1_1"))]
+#[cfg(not(feature = "cl1_1"))]
 mod listener;
 
 #[cfg(feature = "futures")]

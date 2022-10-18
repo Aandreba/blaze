@@ -1,6 +1,6 @@
 use crate::prelude::*;
 use super::{RawEvent, EventStatus};
-use std::{sync::{mpsc::{Receiver, Sender, channel, TryRecvError}}, ffi::c_void, panic::{catch_unwind, AssertUnwindSafe}};
+use std::{panic::*, sync::{mpsc::{Sender, channel, TryRecvError}}, ffi::c_void};
 use once_cell::unsync::OnceCell;
 use opencl_sys::*;
 
@@ -41,16 +41,23 @@ pub(super) fn get_sender () -> Sender<EventCallback> {
                             };
 
                             let callback = callbacks.swap_remove(i);
-                            match callback.cb {
-                                Callback::Boxed(f) => f(callback.evt, status),
+                            let v = match callback.cb {
+                                Callback::Boxed(f) => catch_unwind(AssertUnwindSafe(|| f(callback.evt, status))),
                                 Callback::Raw(f, user_data) => unsafe {
                                     let status = match status {
                                         Ok(x) => x as i32,
                                         Err(e) => e.ty.as_i32()
                                     };
                                     
-                                    f(callback.evt.id(), status, user_data);
+                                    catch_unwind(AssertUnwindSafe(|| f(callback.evt.id(), status, user_data)))
                                 }
+                            };
+
+                            if let Err(e) = v {
+                                #[cfg(debug_assertions)]
+                                resume_unwind(e);
+                                #[cfg(not(debug_assertions))]
+                                todo!()
                             }
                         }
                     }

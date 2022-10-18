@@ -7,11 +7,34 @@ static CONTEXT : SimpleContext = SimpleContext::default();
 #[test]
 fn read () -> Result<()> {
     let buf = buffer![1, 2, 3, 4, 5]?;
-    let blocking = buf.read_blocking(2.., None)?;
-    let scope = scope(|s| buf.read(s, ..=3, None)?.join())?;
+    //let blocking = buf.read_blocking(2.., None)?;
+    
+    println!("{:?}", buf.reference_count());
+    scope(|s| {
+        println!("{:?}", buf.reference_count());
+        let evt = buf.read(s, ..=3, None)?;
+        println!("{:?}", buf.reference_count());
+        /*evt.then_scoped(s, |x| {
+            println!("{x:?}");
+            Ok(())
+        })?;*/
 
-    assert_eq!(blocking, vec![3, 4, 5]);
-    assert_eq!(scope, vec![1, 2, 3, 4]);
+        Ok(())
+    })?;
+
+    println!("{:?}", buf.reference_count());
+    Ok(())
+}
+
+#[cfg(feature = "cl1_1")]
+#[test]
+fn cb () -> Result<()> {
+    use blaze_rs::event::FlagEvent;
+
+    let flag = FlagEvent::new()?;
+    let handle = flag.subscribe().on_complete(|_, _| println!("Done!"))?;
+    assert!(flag.try_mark(None)?);
+    handle.join_unwrap();
 
     Ok(())
 }

@@ -92,6 +92,11 @@ impl Error {
             backtrace: Arc::new(std::backtrace::Backtrace::capture())
         }
     }
+
+    #[inline(always)]
+    pub fn as_i32 (self) -> i32 {
+        return self.ty.as_i32()
+    }
 }
 
 impl<T: Into<ErrorCode>> From<T> for Error {

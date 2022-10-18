@@ -1,4 +1,4 @@
-use std::{marker::PhantomData, ptr::{NonNull}, ops::{Deref, DerefMut}, fmt::Debug, mem::{MaybeUninit, transmute}};
+use std::{marker::PhantomData, ptr::{NonNull}, ops::{Deref, DerefMut}, fmt::Debug, mem::{MaybeUninit, transmute}, sync::mpsc::{channel, sync_channel}};
 use blaze_proc::docfg;
 use crate::{context::{Context, Global, Scope, local_scope}, prelude::{Event}, WaitList, memobj::MapPtr};
 use crate::core::*;
@@ -9,9 +9,10 @@ use crate::blaze_rs;
 use events::*;
 
 pub mod events {
-    use std::{marker::*, fmt::Debug, mem::{MaybeUninit, transmute}};
+    use std::{marker::*, fmt::Debug, mem::{MaybeUninit, transmute}, sync::mpsc::Receiver};
     use crate::{prelude::*, event::{Consumer, consumer::IncompleteConsumer}};
     use blaze_proc::docfg;
+    use utils_atomics::TakeCell;
     
     /// Consumer for [`ReadIntoEvent`]
     pub type BufferReadInto<'a, T, C = Global> = PhantomData<(&'a Buffer<T, C>, &'a mut [T])>;
@@ -66,26 +67,22 @@ pub mod events {
     }
 
     /// Consumer for [`ReadEvent`]
-    pub struct BufferRead<'a, T: Copy, C: Context = Global> (pub(super) Vec<T>, pub(super) PhantomData<&'a Buffer<T, C>>);
+    pub struct BufferRead<'a, T: Copy, C: Context = Global> {
+        pub(super) vec: Receiver<Vec<T>>,
+        pub(super) _phtm: PhantomData<&'a Buffer<T, C>>
+    }
 
     impl<'a, T: Copy, C: Context> Consumer for BufferRead<'a, T, C> {
         type Output = Vec<T>;
         
         #[inline(always)]
         fn consume (mut self) -> Result<Vec<T>> {
-            unsafe { self.0.set_len(self.0.capacity()); }
-            Ok(self.0)
-        }
-    }
-
-    impl<'a, T: Copy, C: Context> IncompleteConsumer for BufferRead<'a, T, C> {
-        type Incomplete = Vec<MaybeUninit<T>>;
-        
-        #[inline(always)]
-        fn consume_incomplete (mut self) -> Result<Self::Incomplete> {
-            unsafe { 
-                self.0.set_len(self.0.capacity());
-                return Ok(transmute(self.0))
+            // Optimistic lock
+            return loop {
+                match self.vec.try_recv() {
+                    Ok(x) => break Ok(x),
+                    Err(_) => core::hint::spin_loop()
+                }
             }
         }
     }
@@ -377,17 +374,28 @@ impl<T: Copy, C: Context> Buffer<T, C> {
     }
     
     /// Reads the contents of the buffer.
-    pub fn read<'scope, 'env, R: IntoRange> (&'env self, scope: &'scope Scope<'scope, 'env, C>, range: R, wait: WaitList) -> Result<ReadEvent<'scope, T, C>> {
+    pub fn read<'scope, 'env, R: IntoRange> (&'env self, scope: &'scope Scope<'scope, 'env, C>, range: R, wait: WaitList) -> Result<ReadEvent<'scope, T, C>> where T: 'static + Send {
         let range = range.into_range::<T>(&self.inner)?;
         let len = range.cb / core::mem::size_of::<T>();
         let mut result = Vec::<T>::with_capacity(len);
 
+        let (send, recv) = sync_channel(1);
         let dst = Vec::as_mut_ptr(&mut result);
         let supplier = |queue| unsafe {
             self.inner.read_to_ptr_in(range, dst.cast(), queue, wait)
         };
 
-        return scope.enqueue(supplier, BufferRead(result, PhantomData))
+        let evt = scope.enqueue(supplier, BufferRead {
+            vec: recv,
+            _phtm: PhantomData,
+        })?;
+            
+        evt.on_complete_silent(move |_, status| unsafe {
+            if status.is_ok() { result.set_len(len) }
+            let _ = send.send(result);
+        })?;
+
+        return Ok(evt)
     }
 
     /// Reads the contents of the buffer, blocking the current thread until the operation has completed.
