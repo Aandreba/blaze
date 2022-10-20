@@ -2,7 +2,7 @@ use std::{ops::Deref, ffi::c_void, time::{SystemTime, Duration}, mem::MaybeUnini
 use opencl_sys::*;
 use blaze_proc::docfg;
 use crate::{prelude::*};
-use super::{RawEvent, EventStatus, ProfilingInfo, CallbackHandle, event_listener, ScopedCallbackHandle};
+use super::{RawEvent, EventStatus, ProfilingInfo, CallbackHandle, ScopedCallbackHandle};
 
 /// A dynamic event that **can** be shared between threads.
 pub type DynEvent<'a, T> = Event<Box<dyn 'a + Consumer<Output = T> + Send>>;
@@ -252,29 +252,12 @@ impl<C: Consumer> Event<C> {
     }
 
     #[inline(always)]
-    pub fn after<N: Consumer, F: FnOnce(C::Incomplete, RawEvent) -> Result<Event<N>>> (self, f: F) -> Result<Event<N>> where C: IncompleteConsumer {
-        let (raw, consumer) = self.into_parts();
-        return f(consumer.consume_incomplete()?, raw)
-    }
-
-    #[inline(always)]
-    pub(super) fn consume (self) -> Result<C::Output> {
+    pub(super) unsafe fn consume (self) -> Result<C::Output> {
         self.consumer.consume()
     }
 }
 
 impl<N: Consumer, C: Consumer<Output = Event<N>>> Event<C> {
-    #[docfg(feature = "cl1_1")]
-    pub fn flatten (self) -> Result<()> where C: 'static + Send {
-        let (evt, consumer) = self.into_parts();
-
-        let ctx = evt.raw_context()?;
-        let flag = super::FlagEvent::new_in(&ctx)?;
-        let sub = flag.subscribe();
-
-        todo!()
-    }
-
     #[inline(always)]
     pub fn flatten_join (self) -> Result<N::Output> {
         return self.join()?.join()
@@ -314,7 +297,8 @@ impl<'a, C: 'a + Consumer> Event<C> {
     #[inline(always)]
     pub fn join (self) -> Result<C::Output> {
         self.join_by_ref()?;
-        self.consume()
+        // SAFETY: Event has already been completed
+        unsafe { self.consume() }
     }
 
     /// Blocks the current thread until the event has completes, consuming it and returning it's value, alongside it's profiling info in nanoseconds.
@@ -322,7 +306,8 @@ impl<'a, C: 'a + Consumer> Event<C> {
     pub fn join_with_nanos (self) -> Result<(C::Output, ProfilingInfo<u64>)> {
         self.join_by_ref()?;
         let nanos = self.profiling_nanos()?;
-        let v = self.consume()?;
+        // SAFETY: Event has already been completed
+        let v = unsafe { self.consume()? };
         Ok((v, nanos))
     }
 
@@ -331,7 +316,8 @@ impl<'a, C: 'a + Consumer> Event<C> {
     pub fn join_with_time (self) -> Result<(C::Output, ProfilingInfo<SystemTime>)> {
         self.join_by_ref()?;
         let nanos = self.profiling_time()?;
-        let v = self.consume()?;
+        // SAFETY: Event has already been completed
+        let v = unsafe { self.consume()? };
         Ok((v, nanos))
     }
 
@@ -340,7 +326,8 @@ impl<'a, C: 'a + Consumer> Event<C> {
     pub fn join_with_duration (self) -> Result<(C::Output, Duration)> {
         self.join_by_ref()?;
         let nanos = self.duration()?;
-        let v = self.consume()?;
+        // SAFETY: Event has already been completed
+        let v = unsafe { self.consume()? };
         Ok((v, nanos))
     }
 
@@ -433,7 +420,7 @@ impl<'a, C: 'a + Consumer> Event<C> {
             .unzip::<_, _, Vec<_>, Vec<_>>();
         
         RawEvent::join_all_by_ref(&raw)?;
-        return consumers.into_iter().map(Consumer::consume).try_collect()
+        return consumers.into_iter().map(|x| unsafe { x.consume() }).try_collect()
     }
 
     /// Blocks the current thread until all the events in the array have completed, returning their values in a new array.
@@ -453,27 +440,27 @@ impl<'a, C: 'a + Consumer> Event<C> {
             let consumers = MaybeUninit::array_assume_init(consumers);
 
             RawEvent::join_all_by_ref(&raw)?;
-            return consumers.try_map(Consumer::consume);
+            return consumers.try_map(|x| x.consume());
         }
     }
 }
 
 impl<C: Consumer> Event<C> {
     #[inline]
-    pub fn then<T: 'static + Send, F: 'static + Send + FnOnce(C::Output) -> Result<T>> (self, f: F) -> Result<CallbackHandle<Result<T>>> where C: 'static + Send {
+    pub fn then<T: 'static + Send, F: 'static + Send + FnOnce(C::Output) -> T> (self, f: F) -> Result<CallbackHandle<Result<T>>> where C: 'static + Send {
         let (consumer, this) = unsafe { self.take_consumer() };
         let f = move |_, status: Result<EventStatus>| match status {
-            Ok(_) => f(consumer.consume()?),
+            Ok(_) => unsafe { consumer.consume().map(f) },
             Err(e) => Err(e)
         };
         return this.on_complete(f)
     }
 
     #[inline]
-    pub fn then_scoped<'scope, 'env, T: 'scope + Send, F: 'scope + Send + FnOnce(C::Output) -> Result<T>, Ctx: Context> (self, scope: &'scope Scope<'scope, 'env, Ctx>, f: F) -> Result<ScopedCallbackHandle<'scope, Result<T>>> where C: 'scope + Send {
+    pub fn then_scoped<'scope, 'env, T: 'scope + Send, F: 'scope + Send + FnOnce(C::Output) -> T, Ctx: Context> (self, scope: &'scope Scope<'scope, 'env, Ctx>, f: F) -> Result<ScopedCallbackHandle<'scope, Result<T>>> where C: 'scope + Send {
         let (consumer, this) = unsafe { self.take_consumer() };
         let f = move |_, status: Result<EventStatus>| match status {
-            Ok(_) => f(consumer.consume()?),
+            Ok(_) => unsafe { consumer.consume().map(f) },
             Err(e) => Err(e)
         };
         return unsafe { core::mem::transmute::<_, &'env NoopEvent>(&this).on_complete_scoped(scope, f) };
@@ -482,14 +469,14 @@ impl<C: Consumer> Event<C> {
     #[inline]
     pub fn then_result<T: 'static + Send, F: 'static + Send + FnOnce(Result<C::Output>) -> T> (self, f: F) -> Result<CallbackHandle<T>> where C: 'static + Send {
         let (consumer, this) = unsafe { self.take_consumer() };
-        let f = move |_, status: Result<EventStatus>| f(status.and_then(|_| consumer.consume()));
+        let f = move |_, status: Result<EventStatus>| f(status.and_then(|_| unsafe { consumer.consume() }));
         return this.on_complete(f)
     }
 
     #[inline]
     pub fn then_result_scoped<'scope, 'env, T: 'scope + Send, F: 'scope + Send + FnOnce(Result<C::Output>) -> T, Ctx: Context> (self, scope: &'scope Scope<'scope, 'env, Ctx>, f: F) -> Result<ScopedCallbackHandle<'scope, T>> where C: 'scope + Send {
         let (consumer, this) = unsafe { self.take_consumer() };
-        let f = move |_, status: Result<EventStatus>| f(status.and_then(|_| consumer.consume()));
+        let f = move |_, status: Result<EventStatus>| f(status.and_then(|_| unsafe { consumer.consume() }));
         return unsafe { core::mem::transmute::<_, &'env NoopEvent>(&this).on_complete_scoped(scope, f) };
     }
 

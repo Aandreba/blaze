@@ -14,7 +14,7 @@ use derive_syn_parse::Parse;
 use error::Error;
 use proc_macro2::{TokenStream, Ident};
 use quote::{ToTokens, quote, format_ident};
-use syn::{parse_macro_input, ItemStatic, Meta, DeriveInput, Generics, punctuated::Punctuated, Visibility};
+use syn::{parse_macro_input, ItemStatic, Meta, DeriveInput, Generics, punctuated::Punctuated, Visibility, ItemType, WherePredicate, WhereClause, parse_quote};
 
 use crate::cl::Blaze;
 
@@ -48,6 +48,68 @@ pub fn error (items: proc_macro::TokenStream) -> proc_macro::TokenStream {
     input.to_token_stream().into()
 }
 
+#[proc_macro_attribute]
+pub fn newtype (attrs: proc_macro::TokenStream, items: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    fn extra_where (where_generics: Option<&WhereClause>, extra: WherePredicate) -> WhereClause {
+        match where_generics {
+            Some(x) => {
+                let mut x = x.clone();
+                x.predicates.push(extra);
+                return x
+            },
+
+            None => {
+                let mut predicates = Punctuated::new();
+                predicates.push(extra);
+
+                WhereClause {
+                    where_token: Default::default(),
+                    predicates
+                }
+            }
+        }
+    }
+
+    let inner_vis = parse_macro_input!(attrs as Visibility);
+    let ItemType { attrs, vis, ident, generics, ty, semi_token, .. } = parse_macro_input!(items as ItemType);
+    let (impl_generics, ty_generics, where_generics) = generics.split_for_impl();
+
+    let consumer_generics = extra_where(r#where_generics, parse_quote! { #ty: blaze_rs::event::Consumer });
+    let debug_generics = extra_where(r#where_generics, parse_quote! { #ty: ::core::fmt::Debug });
+    let clone_generics = extra_where(r#where_generics, parse_quote! { #ty: ::core::clone::Clone });
+    let copy_generics = extra_where(r#where_generics, parse_quote! { #ty: ::core::marker::Copy });
+
+    quote! {
+        #(#attrs)*
+        #vis struct #ident #impl_generics (#inner_vis #ty) #semi_token
+
+        impl #impl_generics blaze_rs::event::Consumer for #ident #ty_generics #consumer_generics {
+            type Output = <#ty as blaze_rs::event::Consumer>::Output;
+
+            #[inline(always)]
+            unsafe fn consume (self) -> blaze_rs::prelude::Result<Self::Output> {
+                <#ty as blaze_rs::event::Consumer>::consume(self.0)
+            }
+        }
+        
+        impl #impl_generics ::core::fmt::Debug for #ident #ty_generics #debug_generics {
+            #[inline(always)]
+            fn fmt (&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                ::core::fmt::Debug::fmt(&self.0, f)
+            }
+        }
+
+        impl #impl_generics ::core::clone::Clone for #ident #ty_generics #clone_generics {
+            #[inline(always)]
+            fn clone (&self) -> Self {
+                Self(::core::clone::Clone::clone(&self.0))
+            }
+        }
+
+        impl #impl_generics ::core::marker::Copy for #ident #ty_generics #copy_generics {}
+    }.into()
+}
+
 #[proc_macro]
 pub fn join_various_blocking (items: proc_macro::TokenStream) -> proc_macro::TokenStream {
     #[derive(Parse)]
@@ -59,9 +121,11 @@ pub fn join_various_blocking (items: proc_macro::TokenStream) -> proc_macro::Tok
     quote! {{
         let v = (#(blaze_rs::event::Event::into_parts(#item)),*);
         let (raw, consumer) = ([#(v.#idx.0),*], (#(v.#idx.1),*));
-        blaze_rs::event::RawEvent::join_all_by_ref(&raw).and_then(|_| {
+        blaze_rs::event::RawEvent::join_all_by_ref(&raw).and_then(|_| unsafe {
             Ok((
-                #(blaze_rs::event::Consumer::consume(consumer.#idx)?),*
+                #(
+                    blaze_rs::event::Consumer::consume(consumer.#idx)?
+                ),*
             ))
         })
     }}.into()

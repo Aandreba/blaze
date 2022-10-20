@@ -1,4 +1,5 @@
 use crate::core::*;
+use std::any::Any;
 use std::ffi::c_void;
 use std::marker::PhantomData;
 use std::panic::{resume_unwind};
@@ -327,7 +328,7 @@ unsafe impl Send for RawEvent {}
 unsafe impl Sync for RawEvent {}
 
 pub(crate) unsafe extern "C" fn event_listener (event: cl_event, event_command_status: cl_int, user_data: *mut c_void) {
-    let mut f = *Box::from_raw(user_data.cast::<Box<dyn 'static + Send + FnOnce(RawEvent, Result<EventStatus>)>>());
+    let f = *Box::from_raw(user_data.cast::<Box<dyn 'static + Send + FnOnce(RawEvent, Result<EventStatus>)>>());
     let event = RawEvent::from_id_unchecked(event);
     let status = EventStatus::try_from(event_command_status);
     f(event, status)
@@ -351,15 +352,27 @@ pub struct ScopedCallbackHandle<'a, T> {
 
 impl<'a, T> ScopedCallbackHandle<'a, T> {
     #[docfg(feature = "cl1_1")]
+    #[inline(always)]
+    pub fn into_event (self) -> Result<Event<ScopedCallbackConsumer<'a, T>>> {
+        self.into_event_in(crate::context::Global)
+    }
+
+    #[docfg(feature = "cl1_1")]
     pub fn into_event_in<C: crate::prelude::Context> (self, ctx: C) -> Result<Event<ScopedCallbackConsumer<'a, T>>> {
         let flag = super::FlagEvent::new_in(ctx.as_raw())?;
+        let sub = flag.subscribe();
 
         match self.data.flag.try_insert(Some(flag)) {
-            Ok(x) => {},
-            Err((_, flag)) => todo!()
+            // Flag registered
+            Ok(_) => {},
+
+            // Callback has already completed
+            Err((_, flag)) => unsafe {
+                flag.unwrap_unchecked().try_mark(None)?;
+            }
         }
 
-        todo!()
+        return Ok(Event::new(sub, ScopedCallbackConsumer(self)));
     }
 
     #[inline]
@@ -403,10 +416,18 @@ impl<'a, T> ScopedCallbackHandle<'a, T> {
 pub struct ScopedCallbackConsumer<'a, T> (ScopedCallbackHandle<'a, T>);
 
 impl<'a, T> Consumer for ScopedCallbackConsumer<'a, T> {
-    type Output = T;
+    type Output = ::core::result::Result<T, Box<dyn 'static + Any + Send>>;
 
-    fn consume (self) -> Result<Self::Output> {
-        todo!()
+    #[inline]
+    unsafe fn consume (self) -> Result<Self::Output> {
+        // Optimistic lock
+        loop {
+            match self.0.recv.try_recv() {
+                Ok(x) => return Ok(x),
+                Err(TryRecvError::Disconnected) => todo!(),
+                Err(TryRecvError::Empty) => core::hint::spin_loop()
+            }
+        }
     }
 }
 
@@ -414,7 +435,7 @@ cfg_if::cfg_if! {
     if #[cfg(feature = "futures")] {
         use futures::future::*;
         use std::task::*;
-        
+
         #[cfg_attr(docsrs, doc(cfg(feature = "futures")))]
         impl<T> Future for ScopedCallbackHandle<'_, T> {
             type Output = std::thread::Result<T>;

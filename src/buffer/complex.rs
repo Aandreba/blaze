@@ -1,5 +1,5 @@
-use std::{marker::PhantomData, ptr::{NonNull}, ops::{Deref, DerefMut}, fmt::Debug, mem::{MaybeUninit, transmute}, sync::{mpsc::{sync_channel}, Arc, atomic::AtomicBool}, ffi::c_void};
-use blaze_proc::docfg;
+use std::{marker::PhantomData, ptr::{NonNull}, ops::{Deref, DerefMut}, fmt::Debug, mem::{MaybeUninit, transmute}, sync::Arc, ffi::c_void};
+use blaze_proc::*;
 use crate::{context::{Context, Global, Scope, local_scope}, prelude::{Event}, WaitList, memobj::MapPtr};
 use crate::core::*;
 use crate::buffer::{flags::{MemFlags, HostPtr, MemAccess}, RawBuffer};
@@ -9,19 +9,23 @@ use crate::blaze_rs;
 use events::*;
 
 pub mod events {
-    use std::{marker::*, fmt::Debug, mem::{MaybeUninit}, sync::{mpsc::Receiver, atomic::{AtomicBool, Ordering}, Arc}};
-    use crate::{prelude::*, event::{Consumer, consumer::IncompleteConsumer}};
-    use blaze_proc::docfg;
+    use std::{marker::*, fmt::Debug, mem::{MaybeUninit}, sync::{Arc}};
+    use crate::{blaze_rs, prelude::*, event::{Consumer}};
+    use blaze_proc::*;
     
     /// Consumer for [`ReadIntoEvent`]
-    pub type BufferReadInto<'a, T, C = Global> = PhantomData<(&'a Buffer<T, C>, &'a mut [T])>;
+    #[newtype(pub(super))]
+    pub type BufferReadInto<'a, T, C: Context = Global> = PhantomData<(&'a Buffer<T, C>, &'a mut [T])>;
     /// Consumer for [`WriteEvent`]
-    pub type BufferWrite<'a, T, C = Global> = PhantomData<(&'a mut Buffer<T, C>, &'a [T])>;
+    #[newtype(pub(super))]
+    pub type BufferWrite<'a, T, C: Context = Global> = PhantomData<(&'a mut Buffer<T, C>, &'a [T])>;
     /// Consumer for [`CopyEvent`]
-    pub type BufferCopy<'a, T, C = Global> = PhantomData<(&'a mut Buffer<T, C>, &'a Buffer<T, C>)>;
+    #[newtype(pub(super))]
+    pub type BufferCopy<'a, T, C: Context = Global> = PhantomData<(&'a mut Buffer<T, C>, &'a Buffer<T, C>)>;
     /// Consumer for [`FillEvent`]
     #[docfg(feature = "cl1_2")]
-    pub type BufferFill<'a, T, C = Global> = PhantomData<(&'a mut Buffer<T, C>, T)>;
+    #[newtype(pub(super))]
+    pub type BufferFill<'a, T, C: Context = Global> = PhantomData<(&'a mut Buffer<T, C>, T)>;
 
     /// Event for [`Buffer::get`]
     pub type GetEvent<'a, T, C = Global> = Event<BufferGet<'a, T, C>>;
@@ -47,14 +51,11 @@ pub mod events {
         type Output = T;
         
         #[inline(always)]
-        fn consume (mut self) -> Result<T> {
+        unsafe fn consume (mut self) -> Result<T> {
             // Optimistic lock
             return loop {
                 match Arc::try_unwrap(self.v) {
-                    Ok(x) => unsafe {
-                        break Ok(x.assume_init())
-                    },
-
+                    Ok(x) => break Ok(x.assume_init()),
                     Err(e) => {
                         self.v = e;
                         core::hint::spin_loop()
@@ -81,11 +82,11 @@ pub mod events {
         type Output = Vec<T>;
         
         #[inline(always)]
-        fn consume (mut self) -> Result<Vec<T>> {
+        unsafe fn consume (mut self) -> Result<Vec<T>> {
             // Optimistic lock
             loop {
                 match Arc::try_unwrap(self.vec) {
-                    Ok(mut x) => unsafe {
+                    Ok(mut x) => {
                         x.set_len(x.capacity());
                         return Ok(x)
                     },
@@ -449,7 +450,7 @@ impl<T: 'static + Copy + Send + Sync, C: Context> Buffer<T, C> {
             self.inner.read_to_ptr_in(range, dst.as_mut_ptr().cast(), queue, wait)
         };
 
-        return s.enqueue_phantom(supplier)
+        return Ok(Event::map_consumer(s.enqueue_phantom(supplier)?, BufferReadInto));
     }
 
     /// Reads the contents of the buffer into `dst`, blocking the current thread until the operation has completed.
@@ -471,7 +472,7 @@ impl<T: 'static + Copy + Send + Sync, C: Context> Buffer<T, C> {
             self.inner.write_from_ptr_in(range, src.as_ptr().cast(), queue, wait)
         };
 
-        scope.enqueue_phantom(supplier)
+        return Ok(Event::map_consumer(scope.enqueue_phantom(supplier)?, BufferWrite))
     }
 
     /// Writes the contents of `src` into the buffer, blocking the current thread until the operation has completed.
@@ -487,7 +488,7 @@ impl<T: 'static + Copy + Send + Sync, C: Context> Buffer<T, C> {
 
     /// Copies the contents from `self` to `dst`
     #[inline]
-    pub fn copy_to<'scope, 'env, Src: Into<Option<usize>>, Dst: Into<Option<usize>>, Size: Into<Option<usize>>> (&'env self, s: &'scope Scope<'scope, 'env, C>, src_offset: Src, dst: &'env mut Self, dst_offset: Dst, size: Size, wait: WaitList) -> Result<CopyEvent<'scope, T, C>> {
+    pub fn copy_to<'scope, 'env, Src: Into<Option<usize>>, Dst: Into<Option<usize>>, Size: Into<Option<usize>>> (&'env self, scope: &'scope Scope<'scope, 'env, C>, src_offset: Src, dst: &'env mut Self, dst_offset: Dst, size: Size, wait: WaitList) -> Result<CopyEvent<'scope, T, C>> {
         let src_offset = src_offset.into().unwrap_or_default().checked_mul(core::mem::size_of::<T>()).ok_or_else(|| Error::from_type(ErrorKind::InvalidValue))?;
         let dst_offset = dst_offset.into().unwrap_or_default().checked_mul(core::mem::size_of::<T>()).ok_or_else(|| Error::from_type(ErrorKind::InvalidValue))?;
         let size = match size.into() {
@@ -499,7 +500,7 @@ impl<T: 'static + Copy + Send + Sync, C: Context> Buffer<T, C> {
             dst.copy_from_in(dst_offset, &self, src_offset, size, queue, wait)
         };
 
-        s.enqueue_phantom(supplier)
+        return Ok(Event::map_consumer(scope.enqueue_phantom(supplier)?, BufferCopy))
     }
 
     /// Copies the contents from `self` to `dst`, blocking the current thread until the operation has completed.
@@ -534,13 +535,13 @@ impl<T: 'static + Copy + Send + Sync, C: Context> Buffer<T, C> {
     /// Fills a region of the buffer with `v`
     #[docfg(feature = "cl1_2")]
     #[inline(always)]
-    pub fn fill<'scope, 'env, R: IntoRange> (&'env mut self, s: &'scope Scope<'scope, 'env, C>, v: T, range: R, wait: WaitList) -> Result<FillEvent<'scope, T, C>> {
+    pub fn fill<'scope, 'env, R: IntoRange> (&'env mut self, scope: &'scope Scope<'scope, 'env, C>, v: T, range: R, wait: WaitList) -> Result<FillEvent<'scope, T, C>> {
         let range = range.into_range::<T>(&self.inner)?;
         let supplier = |queue| unsafe {
             self.inner.fill_raw_in(v, range, queue, wait)
         };
         
-        s.enqueue_phantom(supplier)
+        return Ok(Event::map_consumer(scope.enqueue_phantom(supplier)?, BufferFill))
     }
 
     /// Fills a region of the buffer with `v`, blocking the current thread until the operation has completed.

@@ -1,5 +1,5 @@
 use std::{mem::{MaybeUninit, transmute}, marker::PhantomData, cmp::Ordering};
-use blaze_rs::{event::{Consumer, IncompleteConsumer}, prelude::{Buffer, Context, Global}};
+use blaze_rs::{event::{Consumer}, prelude::{Buffer, Context, Global}};
 use super::EucVec;
 
 pub struct Binary<'a, T: Copy> {

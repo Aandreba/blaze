@@ -3,26 +3,27 @@ use blaze_rs::{prelude::*, buffer};
 #[global_context]
 static CONTEXT : SimpleContext = SimpleContext::default();
 
-/* TODO FIX BUG */
+#[cfg(feature = "cl1_1")]
 #[test]
 fn read () -> Result<()> {
+    use rand::seq::SliceRandom;
+
     let buf = buffer![1, 2, 3, 4, 5]?;
     //let blocking = buf.read_blocking(2.., None)?;
     
-    println!("{:?}", buf.reference_count());
     scope(|s| {
-        println!("{:?}", buf.reference_count());
         let evt = buf.read(s, ..=3, None)?;
-        println!("{:?}", buf.reference_count());
-        evt.then_scoped(s, |x| {
-            println!("{x:?}");
-            Ok(())
+        let cb = evt.then_scoped(s, |mut x| {
+            x.shuffle(&mut rand::thread_rng());
+            x
         })?;
+
+        let v = cb.join_unwrap()?;
+        println!("{v:?}");
 
         Ok(())
     })?;
 
-    println!("{:?}", buf.reference_count());
     Ok(())
 }
 

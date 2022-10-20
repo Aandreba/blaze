@@ -1,15 +1,21 @@
 flat_mod!(host);
 
 use std::{ptr::NonNull, ops::{Deref, DerefMut}, num::NonZeroUsize, mem::MaybeUninit, fmt::Debug, marker::PhantomData};
-use crate::{prelude::*, event::{Consumer, ext::PhantomEvent, consumer::IncompleteConsumer}};
+use crate::{blaze_rs, prelude::*, event::{Consumer}};
 use super::{Buffer, flags::{MemFlags, MemAccess, HostPtr}};
-use blaze_proc::docfg;
+use blaze_proc::*;
 
 #[deprecated(since = "0.1.0", note = "use `RectBuffer2D` instead")]
 pub type BufferRect2D<T, C = Global> = RectBuffer2D<T, C>;
+
+#[newtype]
+pub type RectBuffer2DWrite<'a, T, C: Context = Global> = PhantomData<(&'a mut RectBuffer2D<T, C>, &'a [T])>;
+#[newtype]
+pub type RectBuffer2DCopy<'a, T, C: Context = Global> = PhantomData<(&'a mut RectBuffer2D<T, C>, &'a RectBuffer2D<T, C>)>;
+
 pub type ReadEvent<'a, T, C = Global> = Event<ReadRect<'a, T, C>>;
-pub type WriteEvent<'a, T, C = Global> = PhantomEvent<(&'a mut RectBuffer2D<T, C>, &'a [T])>;
-pub type CopyEvent<'a, T, C = Global> = PhantomEvent<(&'a mut RectBuffer2D<T, C>, &'a RectBuffer2D<T, C>)>;
+pub type WriteEvent<'a, T, C = Global> = Event<RectBuffer2DWrite<'a, T, C>>;
+pub type CopyEvent<'a, T, C = Global> = Event<RectBuffer2DCopy<'a, T, C>>;
 
 /// Buffer that conatins a 2D rectangle.
 pub struct RectBuffer2D<T, C: Context = Global> {
@@ -212,7 +218,7 @@ impl<T: Copy, C: Context> RectBuffer2D<T, C> {
             )
         };
 
-        return scope.enqueue_phantom(supplier)
+        return Ok(Event::map_consumer(scope.enqueue_phantom(supplier)?, RectBuffer2DWrite))
     }
 
     pub fn write_blocking (&mut self, offset_dst: impl Into<Option<[usize; 2]>>, src: (&[T], usize), offset_src: impl Into<Option<[usize; 2]>>, region: impl Into<Option<[usize; 2]>>, wait: WaitList) -> Result<()> {
@@ -271,7 +277,7 @@ impl<T: Copy, C: Context> RectBuffer2D<T, C> {
             )
         };
 
-        return scope.enqueue_phantom(supplier);
+        return Ok(Event::map_consumer(scope.enqueue_phantom(supplier)?, RectBuffer2DCopy))
     }
 
     pub fn copy_from_blocking (&mut self, offset_dst: impl Into<Option<[usize; 2]>>, src: &Self, offset_src: impl Into<Option<[usize; 2]>>, region: impl Into<Option<[usize; 2]>>, wait: WaitList) -> Result<()> {
@@ -352,19 +358,8 @@ impl<'a, T: Copy, C: Context> Consumer for ReadRect<'a, T, C> {
     type Output = RectBox2D<T>;
 
     #[inline(always)]
-    fn consume (self) -> Result<Self::Output> {
-        unsafe {
-            Ok(self.0.assume_init())
-        }
-    }
-}
-
-impl<'a, T: Copy, C: Context> IncompleteConsumer for ReadRect<'a, T, C> {
-    type Incomplete = RectBox2D<MaybeUninit<T>>;
-
-    #[inline(always)]
-    fn consume_incomplete (self) -> Result<Self::Incomplete> {
-        return Ok(self.0)
+    unsafe fn consume (self) -> Result<Self::Output> {
+        Ok(self.0.assume_init())
     }
 }
 

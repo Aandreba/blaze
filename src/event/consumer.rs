@@ -6,32 +6,19 @@ use crate::prelude::Result;
 pub trait Consumer {
     type Output;
 
-    /// Consumes the [`Consumer`]
-    fn consume (self) -> Result<Self::Output>;
-}
-
-/// A [`Consumer`] that can share some unfinalized version of it's final result.
-pub trait IncompleteConsumer: Consumer {
-    type Incomplete;
-
-    /// Returns the unfinalized version of the result.
-    fn consume_incomplete (self) -> Result<Self::Incomplete>;
+    /// Consumes the [`Consumer`].
+    /// 
+    /// # Safety
+    /// This method should be safe to execute whenever it's underlying [`RawEvent`](super::RawEvent) has completed.
+    /// Execution of this method before the event's completion is undefined behaviour.
+    unsafe fn consume (self) -> Result<Self::Output>;
 }
 
 impl<T, F: FnOnce() -> Result<T>> Consumer for F {
     type Output = T;
 
     #[inline(always)]
-    fn consume (self) -> Result<T> {
-        (self)()
-    }
-}
-
-impl<T, F: FnOnce() -> Result<T>> IncompleteConsumer for F {
-    type Incomplete = T;
-
-    #[inline(always)]
-    fn consume_incomplete (self) -> Result<T> {
+    unsafe fn consume (self) -> Result<T> {
         (self)()
     }
 }
@@ -40,16 +27,7 @@ impl<T: ?Sized> Consumer for PhantomData<T> {
     type Output = ();
 
     #[inline(always)]
-    fn consume (self) -> Result<Self::Output> {
-        Ok(())
-    }
-}
-
-impl<T: ?Sized> IncompleteConsumer for PhantomData<T> {
-    type Incomplete = ();
-
-    #[inline(always)]
-    fn consume_incomplete (self) -> Result<Self::Incomplete> {
+    unsafe fn consume (self) -> Result<Self::Output> {
         Ok(())
     }
 }
@@ -58,16 +36,7 @@ impl<T> Consumer for Result<T> {
     type Output = T;
 
     #[inline(always)]
-    fn consume (self) -> Result<T> {
-        self
-    }
-}
-
-impl<T> IncompleteConsumer for Result<T> {
-    type Incomplete = T;
-
-    #[inline(always)]
-    fn consume_incomplete (self) -> Result<Self::Incomplete> {
+    unsafe fn consume (self) -> Result<T> {
         self
     }
 }
@@ -86,17 +55,8 @@ impl<'a, C: 'a + Consumer> Consumer for Specific<'a, C> {
     type Output = C::Output;
 
     #[inline(always)]
-    fn consume (self) -> Result<Self::Output> {
+    unsafe fn consume (self) -> Result<Self::Output> {
         self.0.consume()
-    }
-}
-
-impl<'a, C: 'a + IncompleteConsumer> IncompleteConsumer for Specific<'a, C> {
-    type Incomplete = C::Incomplete;
-
-    #[inline(always)]
-    fn consume_incomplete (self) -> Result<Self::Incomplete> {
-        self.0.consume_incomplete()
     }
 }
 
@@ -108,7 +68,7 @@ impl Consumer for Noop {
     type Output = ();
 
     #[inline(always)]
-    fn consume (self) -> Result<Self::Output> {
+    unsafe fn consume (self) -> Result<Self::Output> {
         Ok(())
     }
 }
@@ -126,18 +86,9 @@ impl<T, U, C: Consumer<Output = T>, F: FnOnce(T) -> U> Consumer for Map<T, C, F>
     type Output = U;
 
     #[inline(always)]
-    fn consume (self) -> Result<U> {
+    unsafe fn consume (self) -> Result<U> {
         let v = self.0.consume()?;
         return Ok((self.1)(v))
-    }
-}
-
-impl<T, U, C: IncompleteConsumer<Output = T>, F: FnOnce(T) -> U> IncompleteConsumer for Map<T, C, F> {
-    type Incomplete = C::Incomplete;
-
-    #[inline(always)]
-    fn consume_incomplete (self) -> Result<Self::Incomplete> {
-        self.0.consume_incomplete()
     }
 }
 
@@ -154,18 +105,9 @@ impl<T, U, C: Consumer<Output = T>, F: FnOnce(T) -> Result<U>> Consumer for TryM
     type Output = U;
 
     #[inline(always)]
-    fn consume (self) -> Result<U> {
+    unsafe fn consume (self) -> Result<U> {
         let v = self.0.consume()?;
         return (self.1)(v)
-    }
-}
-
-impl<T, U, C: IncompleteConsumer<Output = T>, F: FnOnce(T) -> Result<U>> IncompleteConsumer for TryMap<T, C, F> {
-    type Incomplete = C::Incomplete;
-
-    #[inline(always)]
-    fn consume_incomplete (self) -> Result<Self::Incomplete> {
-        self.0.consume_incomplete()
     }
 }
 
@@ -178,21 +120,8 @@ impl<C: Consumer + UnwindSafe> Consumer for CatchUnwind<C> {
     type Output = ::core::result::Result<C::Output, Box<dyn Any + Send>>;
 
     #[inline(always)]
-    fn consume (self) -> Result<Self::Output> {
+    unsafe fn consume (self) -> Result<Self::Output> {
         return match catch_unwind(|| self.0.consume()) {
-            Ok(Ok(x)) => Ok(Ok(x)),
-            Ok(Err(e)) => Err(e),
-            Err(e) => Ok(Err(e))
-        }
-    }
-} 
-
-impl<C: IncompleteConsumer + UnwindSafe> IncompleteConsumer for CatchUnwind<C> {
-    type Incomplete = ::core::result::Result<C::Incomplete, Box<dyn Any + Send>>;
-
-    #[inline(always)]
-    fn consume_incomplete (self) -> Result<Self::Incomplete> {
-        return match catch_unwind(|| self.0.consume_incomplete()) {
             Ok(Ok(x)) => Ok(Ok(x)),
             Ok(Err(e)) => Err(e),
             Err(e) => Ok(Err(e))
@@ -209,17 +138,8 @@ impl<T, C: Consumer<Output = Result<T>>> Consumer for FlattenResult<C> {
     type Output = T;
 
     #[inline(always)]
-    fn consume (self) -> Result<T> {
+    unsafe fn consume (self) -> Result<T> {
         self.0.consume().flatten()
-    }
-}
-
-impl<T, C: IncompleteConsumer<Incomplete = Result<T>>> IncompleteConsumer for FlattenResult<C> where FlattenResult<C>: Consumer {
-    type Incomplete = T;
-
-    #[inline(always)]
-    fn consume_incomplete (self) -> Result<Self::Incomplete> {
-        self.0.consume_incomplete().flatten()
     }
 }
 
@@ -231,7 +151,7 @@ impl<C: Consumer, F: FnOnce(&C::Output)> Consumer for Inspect<C, F> {
     type Output = C::Output;
 
     #[inline(always)]
-    fn consume (self) -> Result<C::Output> {
+    unsafe fn consume (self) -> Result<C::Output> {
         let v = self.0.consume()?;
         (self.1)(&v);
         return Ok(v)
@@ -248,17 +168,7 @@ impl<C: Consumer> Consumer for JoinAll<C> {
     type Output = Vec<C::Output>;
 
     #[inline]
-    fn consume (self) -> Result<Vec<C::Output>> {
-        self.0.into_iter().map(Consumer::consume).try_collect()
-    }
-}
-
-#[cfg(feature = "cl1_1")]
-impl<C: IncompleteConsumer> IncompleteConsumer for JoinAll<C> {
-    type Incomplete = Vec<C::Incomplete>;
-
-    #[inline]
-    fn consume_incomplete (self) -> Result<Vec<C::Incomplete>> {
-        self.0.into_iter().map(IncompleteConsumer::consume_incomplete).try_collect()
+    unsafe fn consume (self) -> Result<Vec<C::Output>> {
+        self.0.into_iter().map(|x| x.consume()).try_collect()
     }
 }
