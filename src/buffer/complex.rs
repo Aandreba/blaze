@@ -1,4 +1,4 @@
-use std::{marker::PhantomData, ptr::{NonNull}, ops::{Deref, DerefMut}, fmt::Debug, mem::{MaybeUninit, transmute}, sync::mpsc::{channel, sync_channel}};
+use std::{marker::PhantomData, ptr::{NonNull}, ops::{Deref, DerefMut}, fmt::Debug, mem::{MaybeUninit, transmute}, sync::{mpsc::{sync_channel}, Arc, atomic::AtomicBool}, ffi::c_void};
 use blaze_proc::docfg;
 use crate::{context::{Context, Global, Scope, local_scope}, prelude::{Event}, WaitList, memobj::MapPtr};
 use crate::core::*;
@@ -9,7 +9,7 @@ use crate::blaze_rs;
 use events::*;
 
 pub mod events {
-    use std::{marker::*, fmt::Debug, mem::{MaybeUninit}, sync::mpsc::Receiver};
+    use std::{marker::*, fmt::Debug, mem::{MaybeUninit}, sync::{mpsc::Receiver, atomic::{AtomicBool, Ordering}, Arc}};
     use crate::{prelude::*, event::{Consumer, consumer::IncompleteConsumer}};
     use blaze_proc::docfg;
     
@@ -39,7 +39,7 @@ pub mod events {
 
     /// Consumer for [`GetEvent`]
     pub struct BufferGet<'a, T: Copy, C: Context = Global> {
-        pub(super) v: Receiver<T>,
+        pub(super) v: Arc<MaybeUninit<T>>,
         pub(super) _phtm: PhantomData<&'a Buffer<T, C>>
     }
 
@@ -47,12 +47,18 @@ pub mod events {
         type Output = T;
         
         #[inline(always)]
-        fn consume (self) -> Result<T> {
+        fn consume (mut self) -> Result<T> {
             // Optimistic lock
             return loop {
-                match self.v.try_recv() {
-                    Ok(x) => break Ok(x),
-                    Err(_) => core::hint::spin_loop()
+                match Arc::try_unwrap(self.v) {
+                    Ok(x) => unsafe {
+                        break Ok(x.assume_init())
+                    },
+
+                    Err(e) => {
+                        self.v = e;
+                        core::hint::spin_loop()
+                    }
                 }
             }
         }
@@ -67,7 +73,7 @@ pub mod events {
 
     /// Consumer for [`ReadEvent`]
     pub struct BufferRead<'a, T: Copy, C: Context = Global> {
-        pub(super) vec: Receiver<Vec<T>>,
+        pub(super) vec: Arc<Vec<T>>,
         pub(super) _phtm: PhantomData<&'a Buffer<T, C>>
     }
 
@@ -75,12 +81,19 @@ pub mod events {
         type Output = Vec<T>;
         
         #[inline(always)]
-        fn consume (self) -> Result<Vec<T>> {
+        fn consume (mut self) -> Result<Vec<T>> {
             // Optimistic lock
-            return loop {
-                match self.vec.try_recv() {
-                    Ok(x) => break Ok(x),
-                    Err(_) => core::hint::spin_loop()
+            loop {
+                match Arc::try_unwrap(self.vec) {
+                    Ok(mut x) => unsafe {
+                        x.set_len(x.capacity());
+                        return Ok(x)
+                    },
+                    
+                    Err(e) => {
+                        self.vec = e;
+                        core::hint::spin_loop()
+                    }
                 }
             }
         }
@@ -294,24 +307,24 @@ impl<T, C: Context> Buffer<T, C> {
     }
 }
 
-impl<T, C: Context> Buffer<MaybeUninit<T>, C> {
+impl<T: 'static + Copy + Send + Sync, C: Context> Buffer<MaybeUninit<T>, C> {
     /// Convenience method for writing to an unitialized buffer. See [`write`](Buffer::write).
     #[inline(always)]
-    pub fn write_init<'scope, 'env, O: Into<Option<usize>>> (&'env mut self, scope: &'scope Scope<'scope, 'env, C>, offset: O, src: &'env [T], wait: WaitList) -> Result<WriteEvent<'scope, MaybeUninit<T>, C>> where T: Copy {
+    pub fn write_init<'scope, 'env, O: Into<Option<usize>>> (&'env mut self, scope: &'scope Scope<'scope, 'env, C>, offset: O, src: &'env [T], wait: WaitList) -> Result<WriteEvent<'scope, MaybeUninit<T>, C>> {
         let src = unsafe { transmute::<&'env [T], &'env [MaybeUninit<T>]>(src) };
         self.write(scope, offset, src, wait)
     }
 
     /// Convenience method for writing to an unitialized buffer. See [`write_blocking`](Buffer::write_blocking).
     #[inline(always)]
-    pub fn write_init_blocking (&mut self, offset: impl Into<Option<usize>>, src: &[T], wait: WaitList) -> Result<()> where T: Copy {
+    pub fn write_init_blocking (&mut self, offset: impl Into<Option<usize>>, src: &[T], wait: WaitList) -> Result<()> {
         let src = unsafe { transmute::<&[T], &[MaybeUninit<T>]>(src) };
         self.write_blocking(offset, src, wait)
     }
 
     /// Convenience method for copying to an unitialized buffer. See [`copy_from`](Buffer::copy_from).
     #[inline(always)]
-    pub fn copy_from_init<'scope, 'env, Dst: Into<Option<usize>>, Src: Into<Option<usize>>, Size: Into<Option<usize>>> (&'env mut self, scope: &'scope Scope<'scope, 'env, C>, dst_offset: Dst, src: &'env Buffer<T, C>, src_offset: Src, size: Size, wait: WaitList) -> Result<CopyEvent<'scope, MaybeUninit<T>, C>> where T: Copy {
+    pub fn copy_from_init<'scope, 'env, Dst: Into<Option<usize>>, Src: Into<Option<usize>>, Size: Into<Option<usize>>> (&'env mut self, scope: &'scope Scope<'scope, 'env, C>, dst_offset: Dst, src: &'env Buffer<T, C>, src_offset: Src, size: Size, wait: WaitList) -> Result<CopyEvent<'scope, MaybeUninit<T>, C>> {
         unsafe {
             self.copy_from(scope, dst_offset, transmute(src), src_offset, size, wait)
         }
@@ -319,7 +332,7 @@ impl<T, C: Context> Buffer<MaybeUninit<T>, C> {
 
     /// Convenience method for copying to an unitialized buffer. See [`copy_from_blocking`](Buffer::copy_from_blocking).
     #[inline(always)]
-    pub fn copy_from_init_blocking (&mut self, dst_offset: impl Into<Option<usize>>, src: &Buffer<T, C>, src_offset: impl Into<Option<usize>>, size: impl Into<Option<usize>>, wait: WaitList) -> Result<()> where T: Copy {
+    pub fn copy_from_init_blocking (&mut self, dst_offset: impl Into<Option<usize>>, src: &Buffer<T, C>, src_offset: impl Into<Option<usize>>, size: impl Into<Option<usize>>, wait: WaitList) -> Result<()> where T: Copy + Send + Sync {
         unsafe {
             self.copy_from_blocking(dst_offset, transmute(src), src_offset, size, wait)
         }
@@ -328,17 +341,19 @@ impl<T, C: Context> Buffer<MaybeUninit<T>, C> {
     /// Convenience method for filling an unitialized buffer. See [`fill`](Buffer::fill).
     #[docfg(feature = "cl1_2")]
     #[inline(always)]
-    pub fn fill_init<'scope, 'env, R: IntoRange> (&'env mut self, scope: &'scope Scope<'scope, 'env, C>, v: T, range: R, wait: WaitList) -> Result<FillEvent<'scope, MaybeUninit<T>, C>> where T: Copy {
+    pub fn fill_init<'scope, 'env, R: IntoRange> (&'env mut self, scope: &'scope Scope<'scope, 'env, C>, v: T, range: R, wait: WaitList) -> Result<FillEvent<'scope, MaybeUninit<T>, C>> {
         self.fill(scope, MaybeUninit::new(v), range, wait)
     }
 
     /// Convenience method for filling an unitialized buffer. See [`fill_blocking`](Buffer::fill_blocking).
     #[docfg(feature = "cl1_2")]
     #[inline(always)]
-    pub fn fill_init_blocking (&mut self, v: T, range: impl IntoRange, wait: WaitList) -> Result<()> where T: Copy {
+    pub fn fill_init_blocking (&mut self, v: T, range: impl IntoRange, wait: WaitList) -> Result<()> {
         self.fill_blocking(MaybeUninit::new(v), range, wait)
     }
+}
 
+impl<T, C: Context> Buffer<MaybeUninit<T>, C> {
     /// Extracts the value from `Buffer<MaybeUninit<T>>` to `Buffer<T>`
     /// # Safety
     /// This function has the same safety as [`MaybeUninit`](std::mem::MaybeUninit)'s `assume_init`
@@ -348,7 +363,7 @@ impl<T, C: Context> Buffer<MaybeUninit<T>, C> {
     }
 }
 
-impl<T: Copy, C: Context> Buffer<T, C> {
+impl<T: 'static + Copy + Send + Sync, C: Context> Buffer<T, C> {
     /// Reads the contents of the buffer at the specified index, blocking the current thread until the operation has completed.
     pub fn get_blocking (&self, idx: usize, wait: WaitList) -> Result<T> {
         let mut result = MaybeUninit::<T>::uninit();
@@ -364,50 +379,44 @@ impl<T: Copy, C: Context> Buffer<T, C> {
 
     /// Reads the contents of the buffer at the specified index, blocking the current thread until the operation has completed.
     pub fn get<'scope, 'env> (&'env self, scope: &'scope Scope<'scope, 'env, C>, idx: usize, wait: WaitList) -> Result<GetEvent<'scope, T, C>> where T: 'static + Send {
-        let mut result = Box::<T>::new_uninit();
+        let result = Arc::<T>::new_uninit();
+        let weak = Arc::downgrade(&result);
         let supplier = |queue| unsafe {
-            self.inner.read_to_ptr_in(BufferRange::new(idx * core::mem::size_of::<T>(), core::mem::size_of::<T>()), result.as_mut_ptr().cast(), queue, wait)
+            self.inner.read_to_ptr_in(BufferRange::new(idx * core::mem::size_of::<T>(), core::mem::size_of::<T>()), result.as_ptr() as *mut c_void, queue, wait)
         };
 
-        let (send, recv) = sync_channel(1);
         let evt = scope
             .enqueue_noop(supplier)?
             .set_consumer(BufferGet {
-                v: recv,
+                v: result,
                 _phtm: PhantomData
             });
 
-        evt.on_complete_silent(move |_, status| unsafe {
-            if status.is_ok() {
-                let _ = send.send(*result.assume_init());
-            }
-        })?;
-
+        evt.on_complete_silent(move |_, _| drop(weak))?;
         return Ok(evt)
     }
     
     /// Reads the contents of the buffer.
-    pub fn read<'scope, 'env, R: IntoRange> (&'env self, scope: &'scope Scope<'scope, 'env, C>, range: R, wait: WaitList) -> Result<ReadEvent<'scope, T, C>> where T: 'static + Send {
+    pub fn read<'scope, 'env, R: IntoRange> (&'env self, scope: &'scope Scope<'scope, 'env, C>, range: R, wait: WaitList) -> Result<ReadEvent<'scope, T, C>> {
         let range = range.into_range::<T>(&self.inner)?;
         let len = range.cb / core::mem::size_of::<T>();
-        let mut result = Vec::<T>::with_capacity(len);
 
-        let (send, recv) = sync_channel(1);
+        let mut result = Vec::<T>::with_capacity(len);
         let dst = Vec::as_mut_ptr(&mut result);
+
+        let vec = Arc::new(result);
+        let weak = Arc::downgrade(&vec);
+
         let supplier = |queue| unsafe {
             self.inner.read_to_ptr_in(range, dst.cast(), queue, wait)
         };
 
         let evt = scope.enqueue(supplier, BufferRead {
-            vec: recv,
+            vec,
             _phtm: PhantomData,
         })?;
             
-        evt.on_complete_silent(move |_, status| unsafe {
-            if status.is_ok() { result.set_len(len) }
-            let _ = send.send(result);
-        })?;
-
+        evt.on_complete_silent(move |_, _| drop(weak))?;
         return Ok(evt)
     }
 

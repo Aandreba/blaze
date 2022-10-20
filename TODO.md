@@ -11,3 +11,8 @@
 ## Before release
 - [x] Blocking events for `#[blaze]` programs
 - ...
+
+## Read vec drop table
+| Current action | Consumer dropped | Event completed |
+| Consumer dropped | 
+| Event completed  |

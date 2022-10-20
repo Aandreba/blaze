@@ -14,10 +14,10 @@ fn read () -> Result<()> {
         println!("{:?}", buf.reference_count());
         let evt = buf.read(s, ..=3, None)?;
         println!("{:?}", buf.reference_count());
-        /*evt.then_scoped(s, |x| {
+        evt.then_scoped(s, |x| {
             println!("{x:?}");
             Ok(())
-        })?;*/
+        })?;
 
         Ok(())
     })?;
