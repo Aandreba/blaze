@@ -18,17 +18,8 @@ impl<T: Copy> Consumer for Binary<'_, T> {
     type Output = EucVec<T>;
 
     #[inline(always)]
-    fn consume (self) -> blaze_rs::prelude::Result<Self::Output> {
-        unsafe { Ok(self.inner.assume_init()) }
-    }
-}
-
-impl<T: Copy> IncompleteConsumer for Binary<'_, T> {
-    type Incomplete = EucVec<MaybeUninit<T>>;
-
-    #[inline(always)]
-    fn consume_incomplete (self) -> blaze_rs::prelude::Result<Self::Incomplete> {
-        return Ok(self.inner)
+    unsafe fn consume (self) -> blaze_rs::prelude::Result<Self::Output> {
+        return Ok(self.inner.assume_init())
     }
 }
 

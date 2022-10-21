@@ -158,6 +158,34 @@ impl<C: Consumer, F: FnOnce(&C::Output)> Consumer for Inspect<C, F> {
     }
 }
 
+/// Consumer for [`flatten`](super::Event::flatten)
+#[docfg(feature = "cl1_1")]
+pub type Flatten<C> = FlattenScoped<'static, C>;
+
+/// Consumer for [`flatten_scoped`](super::Event::flatten_scoped)
+#[docfg(feature = "cl1_1")]
+pub struct FlattenScoped<'a, C> (pub(super) super::ScopedCallbackHandle<'a, Result<C>>);
+
+#[cfg(feature = "cl1_1")]
+impl<C: Consumer> Consumer for FlattenScoped<'_, C> {
+    type Output = C::Output;
+
+    #[inline]
+    unsafe fn consume (mut self) -> Result<Self::Output> {
+        // Optimistic lock
+        loop {
+            match self.0.try_join_unwrap() {
+                Ok(Ok(c)) => return c.consume(),
+                Ok(Err(e)) => return Err(e),
+                Err(e) => {
+                    self.0 = e;
+                    core::hint::spin_loop()
+                }
+            }
+        }
+    }
+}
+
 /// Consumer for [`join_all`](super::Event::join_all) event.
 #[docfg(feature = "cl1_1")]
 #[derive(Debug, Clone)]

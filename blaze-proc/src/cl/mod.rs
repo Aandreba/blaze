@@ -193,6 +193,7 @@ fn create_kernel (default_vis: &Visibility, parent: &Ident, impl_generics: &Gene
     let (r#impl, _, r#where) = generics.split_for_impl();
 
     quote! {
+        #[::blaze_rs::blaze_proc::newtype]
         #attrs #vis type #consumer_name #event_type = ::core::marker::PhantomData<(#(#event_new),*)>;
         #attrs #vis type #event_name #event_type = ::blaze_rs::event::Event<#consumer_name #event_type>;
 
@@ -213,6 +214,7 @@ fn create_kernel (default_vis: &Visibility, parent: &Ident, impl_generics: &Gene
 
                 let __blaze_inner__ = __blaze_kernel__.enqueue_phantom_with_scope(&scope, global_work_dims, local_work_dims, Some(&wait))?;
                 drop(__blaze_kernel__);
+                let __blaze_inner__ = ::blaze_rs::event::Event::map_consumer(__blaze_inner__, #consumer_name);
 
                 #(
                     ::blaze_rs::buffer::KernelPointer::complete(#pointer_names, &__blaze_inner__)?;

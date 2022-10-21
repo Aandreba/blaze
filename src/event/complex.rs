@@ -37,6 +37,12 @@ pub(crate) mod ext {
     pub type FlattenResultEvent<C> = Event<FlattenResult<C>>;
     /// Event for [`inspect`](super::Event::flatten).
     pub type InspectEvent<C, F> = Event<Inspect<C, F>>;
+    /// Event for [`flatten`](super::Event::flatten_scoped).
+    #[docfg(feature = "cl1_1")]
+    pub type FlattenEvent<C> = Event<Flatten<C>>;
+    /// Event for [`flatten_scoped`](super::Event::flatten_scoped).
+    #[docfg(feature = "cl1_1")]
+    pub type FlattenScopedEvent<'a, C> = Event<FlattenScoped<'a, C>>;
     /// Event for [`join_all`](super::Event::join_all).
     #[docfg(feature = "cl1_1")]
     pub type JoinAllEvent<C> = Event<JoinAll<C>>;
@@ -231,16 +237,6 @@ impl<C: Consumer> Event<C> {
         }
     }
 
-    /// Returns an event that flattens the result of it's parent.
-    #[inline(always)]
-    pub fn flatten_result (self) -> FlattenResultEvent<C> {
-        FlattenResultEvent {
-            inner: self.inner,
-            consumer: FlattenResult(self.consumer),
-            send: self.send
-        }
-    }
-
     /// Returns an event that will inspect it's parent's return value before completing.
     #[inline(always)]
     pub fn inspect<F: FnOnce(&C::Output)> (self, f: F) -> InspectEvent<C, F> {
@@ -257,7 +253,87 @@ impl<C: Consumer> Event<C> {
     }
 }
 
+impl<T, C: Consumer<Output = Result<T>>> Event<C> {
+    /// Returns an event that flattens the result of it's parent.
+    #[inline(always)]
+    pub fn flatten_result (self) -> FlattenResultEvent<C> {
+        FlattenResultEvent {
+            inner: self.inner,
+            consumer: FlattenResult(self.consumer),
+            send: self.send
+        }
+    }
+}
+
 impl<N: Consumer, C: Consumer<Output = Event<N>>> Event<C> {
+    #[docfg(feature = "cl1_1")]
+    pub fn flatten (self) -> Result<FlattenEvent<N>> where C: 'static + Send, N: 'static + Send {    
+        use super::FlagEvent;
+
+        let ctx = self.raw_context()?;
+        let flag = FlagEvent::new_in(&ctx)?;
+        let sub = flag.subscribe();
+        
+        let cb = self.then_result(move |evt| {
+            match evt {
+                Ok(evt) => unsafe {
+                    let (consumer, evt) = evt.take_consumer();
+                    let my_flag = flag.clone();
+                    return match evt.on_complete_silent(move |_, status| {
+                        my_flag.try_mark(status.err().map(|x| x.ty)).unwrap();
+                    }) {
+                        Ok(_) => Result::Ok(consumer),
+                        Err(e) => {
+                            flag.try_mark(Some(e.ty))?;
+                            Result::Err(e)
+                        }
+                    }
+                },
+
+                Err(e) => {
+                    flag.try_mark(Some(e.ty))?;
+                    return Result::Err(e);
+                }
+            }
+        })?;
+
+        return Ok(Event::new(sub, FlattenScoped(cb)))
+    }
+
+    #[docfg(feature = "cl1_1")]
+    pub fn flatten_scoped<'scope, 'env, Ctx: Context> (self, scope: &'scope Scope<'scope, 'env, Ctx>) -> Result<FlattenScopedEvent<'scope, N>> where C: 'scope + Send, N: 'scope + Send {    
+        use super::FlagEvent;
+
+        let ctx = self.raw_context()?;
+        let flag = FlagEvent::new_in(&ctx)?;
+        let sub = flag.subscribe();
+        
+        let cb = self.then_result_scoped(scope, move |evt| {
+            match evt {
+                Ok(evt) => unsafe {
+                    let (consumer, evt) = evt.take_consumer();
+                    let my_flag = flag.clone();
+                    return match evt.on_complete_silent(move |_, status| {
+                        my_flag.try_mark(status.err().map(|x| x.ty)).unwrap();
+                    }) {
+                        Ok(_) => Result::Ok(consumer),
+                        Err(e) => {
+                            flag.try_mark(Some(e.ty))?;
+                            Result::Err(e)
+                        }
+                    }
+                },
+
+                Err(e) => {
+                    flag.try_mark(Some(e.ty))?;
+                    return Result::Err(e);
+                }
+            }
+        })?;
+
+        return Ok(Event::new(sub, FlattenScoped(cb)))
+    }
+
     #[inline(always)]
     pub fn flatten_join (self) -> Result<N::Output> {
         return self.join()?.join()

@@ -18,7 +18,7 @@ impl<T, P: ?Sized> Consumer for ValueConsumer<T, P> {
     type Output = T;
 
     #[inline(always)]
-    fn consume (self) -> blaze_rs::prelude::Result<Self::Output> {
+    unsafe fn consume (self) -> blaze_rs::prelude::Result<Self::Output> {
         Ok(self.inner)
     }
 }

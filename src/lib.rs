@@ -86,7 +86,8 @@ pub extern crate futures;
 #[doc(hidden)]
 pub extern crate utils_atomics;
 
-extern crate blaze_proc;
+#[doc(hidden)]
+pub extern crate blaze_proc;
 
 /// Re-export of the public-facing macros in `blaze_proc`
 pub mod macros {

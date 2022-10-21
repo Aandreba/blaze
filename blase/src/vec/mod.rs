@@ -9,8 +9,8 @@ flat_mod!(utils);
 use std::{mem::{MaybeUninit, transmute}, ops::*, fmt::Debug, cmp::Ordering};
 use bitvec::prelude::BitBox;
 use blaze_rs::{prelude::*, buffer::{KernelPointer}, WaitList, wait_list_from_ref, event::{FlagEvent}};
-use crate::{Real, work_group_size, utils::{change_lifetime_mut, change_lifetime}, vec::events::VecEq, max_work_group_size};
-use self::events::{BinaryEvent, LaneEqEvent, LaneEq, LaneCmpEvent, LaneTotalCmpEvent, EqEvent, SumEvent, MagnEvent};
+use crate::{Real, work_group_size, utils::{change_lifetime_mut, change_lifetime}, vec::events::{VecEq, LaneCmp}, max_work_group_size};
+use self::events::*;
 use blaze_proc::docfg;
 
 pub mod program {
@@ -76,7 +76,8 @@ pub mod program {
 }
 
 mod events {
-    use blaze_rs::{event::{Consumer, consumer::{Map, Specific}}, buffer::events::{BufferRead, BufferGet}};
+    use blaze_proc::newtype;
+    use blaze_rs::{event::{Consumer, consumer::{Map}}, buffer::events::{BufferRead, BufferGet}};
     use super::*;
 
     #[derive(Debug)]
@@ -89,7 +90,7 @@ mod events {
         type Output = bool;
 
         #[inline(always)]
-        fn consume (self) -> Result<Self::Output> {
+        unsafe fn consume (self) -> Result<Self::Output> {
             return match self {
                 Self::Host(x) => Ok(x),
                 Self::Device(x) => Ok(x.consume()? != 0)
@@ -107,16 +108,22 @@ mod events {
         type Output = (BitBox<u32>, usize);
 
         #[inline(always)]
-        fn consume (self) -> Result<Self::Output> {
+        unsafe fn consume (self) -> Result<Self::Output> {
             let result = self.read.consume()?;
             Ok((BitBox::from_boxed_slice(result.into_boxed_slice()), self.len))
         }
     }
 
+    #[newtype(pub(super))]
     pub type LaneCmp<'a> = Map<Vec<i8>, BufferRead<'a, i8>, TransmuteOrdering>;
+    #[newtype(pub(super))]
     pub type LaneTotalCmp<'a> = Map<Vec<i8>, BufferRead<'a, i8>, TransmuteTotalOrdering>;
-    pub type Sum<'a, T> = BufferGet<'a, T>;
-    pub type Magn<'a, T> = Map<T, Sum<'a, T>, Sqrt<T>>;
+    #[newtype(pub(super))]
+    pub type Sum<'a, T: Copy> = BufferGet<'a, T>;
+    #[newtype(pub(super))]
+    pub type Dot<'a, T: Copy> = BufferGet<'a, T>;
+    #[newtype(pub(super))]
+    pub type Magn<'a, T: Copy> = Map<T, Dot<'a, T>, Sqrt<T>>;
 
     /// Event for binary operations
     pub type BinaryEvent<'a, T> = Event<Binary<'a, T>>;
@@ -125,6 +132,7 @@ mod events {
     pub type LaneCmpEvent<'a> = Event<LaneCmp<'a>>;
     pub type LaneTotalCmpEvent<'a> = Event<LaneTotalCmp<'a>>;
     pub type SumEvent<'a, T> = Event<Sum<'a, T>>;
+    pub type DotEvent<'a, T> = Event<Dot<'a, T>>;
     pub type MagnEvent<'a, T> = Event<Magn<'a, T>>;
 }
 
@@ -423,7 +431,8 @@ impl<T: Real> EucVec<T> {
         unsafe {
             let evt = T::vec_program().vec_cmp_partial_ord(scope, len, self, other, change_lifetime_mut(&mut result), [work_group_size(len)], None, wait)?;
             let read = change_lifetime(&result.assume_init()).read(scope, .., wait_list_from_ref(&evt))?;
-            return Ok(read.map(TransmuteOrdering));
+            let evt = read.map(TransmuteOrdering);
+            return Ok(Event::map_consumer(evt, LaneCmp));
         }
     }
 
@@ -455,7 +464,8 @@ impl<T: Real> EucVec<T> {
         unsafe {
             let evt = T::vec_program().vec_cmp_ord(scope, len, self, other, change_lifetime_mut(&mut result), [work_group_size(len)], None, wait)?;
             let read = change_lifetime(&result.assume_init()).read(scope, .., wait_list_from_ref(&evt))?;
-            return Ok(read.map(TransmuteTotalOrdering));
+            let evt = read.map(TransmuteTotalOrdering);
+            return Ok(Event::map_consumer(evt, LaneTotalCmp))
         }
     }
 
@@ -506,11 +516,13 @@ impl<T: Real> EucVec<T> {
                 wait_list_from_ref(&sum)
             )?;
 
-            return change_lifetime(&asum.assume_init()).get(
+            let evt = change_lifetime(&asum.assume_init()).get(
                 scope,
                 0,
                 wait_list_from_ref(&epilogue)
-            );
+            )?;
+
+            return Ok(Event::map_consumer(evt, Sum))
         }
     }
 
@@ -539,7 +551,7 @@ impl<T: Real> EucVec<T> {
         }
     }
 
-    pub fn dot<'scope, 'env> (&'env self, scope: &'scope Scope<'scope, 'env>, other: &'env Self, wait: WaitList) -> Result<SumEvent<'scope, T>> {
+    pub fn dot<'scope, 'env> (&'env self, scope: &'scope Scope<'scope, 'env>, other: &'env Self, wait: WaitList) -> Result<DotEvent<'scope, T>> {
         let n = self.len()?;
         if n != other.len()? {
             return Err(Error::new(ErrorKind::InvalidBufferSize, "vectors of diferent sizes provided"))
@@ -575,11 +587,13 @@ impl<T: Real> EucVec<T> {
                 wait_list_from_ref(&sum)
             )?;
 
-            return change_lifetime(&asum.assume_init()).get(
+            let evt = change_lifetime(&asum.assume_init()).get(
                 scope,
                 0,
                 wait_list_from_ref(&epilogue)
-            );
+            )?;
+
+            return Ok(Event::map_consumer(evt, Dot))
         }
     }
 
@@ -621,7 +635,7 @@ impl<T: Real> EucVec<T> {
     }
 
     #[inline(always)]
-    pub fn square_magn<'scope, 'env> (&'env self, scope: &'scope Scope<'scope, 'env>, wait: WaitList) -> Result<SumEvent<'scope, T>> {
+    pub fn square_magn<'scope, 'env> (&'env self, scope: &'scope Scope<'scope, 'env>, wait: WaitList) -> Result<DotEvent<'scope, T>> {
         return self.dot(scope, self, wait)
     }
 
@@ -632,8 +646,9 @@ impl<T: Real> EucVec<T> {
 
     #[inline(always)]
     pub fn magn<'scope, 'env> (&'env self, scope: &'scope Scope<'scope, 'env>, wait: WaitList) -> Result<MagnEvent<'scope, T>> where T: num_traits::real::Real {
-        let square : SumEvent<'scope, T> = self.square_magn(scope, wait)?;
-        return Ok(square.map(Sqrt::new()));
+        let square = self.square_magn(scope, wait)?;
+        let evt = square.map(Sqrt::new());
+        return Ok(Event::map_consumer(evt, Magn))
     }
 
     #[inline(always)]
@@ -644,14 +659,10 @@ impl<T: Real> EucVec<T> {
 
     #[inline(always)]
     pub fn unit<'scope, 'env> (&'env self, scope: &'scope Scope<'scope, 'env>, wait: WaitList) -> Result<BinaryEvent<'scope, T>> where T: num_traits::real::Real {
-        // SAFETY: Buffers are reference counted by opencl, so we won't be accessing a dropped buffer.s
-        let magn : MagnEvent<'static, T> = unsafe {
-            transmute(self.magn(scope, wait)?)
-        };
-        
-        let evt = magn.try_map(|other| self.downscale(scope, other, None));
+        let magn = self.magn(scope, wait)?;
+        let cb = magn.then_scoped(scope, |x| self.downscale(scope, x, None))?;
+        let unit = cb.into_event()?;
 
-        //let test = evt.flatten()?;
         todo!()
     }
 }

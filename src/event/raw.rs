@@ -451,22 +451,3 @@ cfg_if::cfg_if! {
         }
     }
 }
-
-pub(crate) mod sealed {
-    use thin_trait_object::*;
-    use crate::prelude::*;
-    use crate::event::EventStatus;
-    use super::RawEvent;
-    
-    #[thin_trait_object]
-    pub trait SilentCallback {
-        unsafe fn call (&mut self, args: (RawEvent, Result<EventStatus>,));
-    }
-
-    impl<F: Send + FnOnce(RawEvent, Result<EventStatus>)> SilentCallback for F {
-        #[inline(always)]
-        unsafe fn call (&mut self, args: (RawEvent, Result<EventStatus>,)) {
-            core::ptr::read(self).call_once(args)
-        }
-    }
-}
