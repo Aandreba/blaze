@@ -20,3 +20,6 @@ miri:
 
 doc:
 	cargo rustdoc --open --all-features -- --cfg docsrs
+
+book:
+	cd docs && mdbook serve

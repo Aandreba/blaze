@@ -135,7 +135,7 @@ impl<C: Consumer> Event<C> {
                 Err(e) => Some(e.ty)
             };
 
-            if my_flag.try_mark(res).is_ok_and(core::mem::copy) {
+            if my_flag.try_mark(res).is_ok_and(core::convert::identity) {
                 my_aborted.store(super::abort::FALSE, std::sync::atomic::Ordering::Release);
             }
         })?;
