@@ -26,7 +26,7 @@ impl<'scope, 'env, T, C: Context> Consumer for BufferMap<'scope, 'env, T, C> {
     type Output = MapGuard<'env, T, C>;
     
     #[inline]
-    fn consume (self) -> crate::prelude::Result<MapGuard<'env, T, C>> {
+    unsafe fn consume (self) -> crate::prelude::Result<MapGuard<'env, T, C>> {
         let ptr = unsafe {
             core::slice::from_raw_parts_mut(self.ptr as *mut T, self.len)
         };
@@ -56,7 +56,7 @@ impl<'scope, 'env, T, C: Context> Consumer for BufferMapMut<'scope, 'env, T, C> 
     type Output = MapMutGuard<'env, T, C>;
 
     #[inline]
-    fn consume (self) -> crate::prelude::Result<Self::Output> {
+    unsafe fn consume (self) -> crate::prelude::Result<Self::Output> {
         let ptr = unsafe {
             core::slice::from_raw_parts_mut(self.ptr as *mut T, self.len)
         };

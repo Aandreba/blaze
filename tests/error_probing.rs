@@ -1,5 +1,4 @@
 #![feature(nonzero_min_max)]
-use std::ffi::c_void;
 
 use blaze_proc::join_various_blocking;
 use blaze_rs::{prelude::*};

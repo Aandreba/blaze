@@ -1,6 +1,6 @@
-use std::{sync::{Arc, atomic::{AtomicUsize, Ordering, AtomicI32}}, marker::{PhantomData}, panic::{catch_unwind, AssertUnwindSafe, resume_unwind}, thread::Thread};
+use std::{sync::{Arc, atomic::{AtomicUsize, Ordering, AtomicI32}}, marker::{PhantomData}, panic::{catch_unwind, AssertUnwindSafe, resume_unwind}};
 use opencl_sys::CL_SUCCESS;
-use crate::{prelude::{Result, RawCommandQueue, RawEvent, Event, Error}, event::consumer::{Consumer, Noop, NoopEvent, PhantomEvent}};
+use crate::{prelude::{Result, RawCommandQueue, RawEvent, Event, Error}, event::{consumer::{Consumer, Noop, NoopEvent, PhantomEvent}, EventStatus, CallbackHandleData}};
 use super::{Global, Context};
 use blaze_proc::docfg;
 
@@ -22,49 +22,39 @@ impl ScopeWaker {
     }
 }
 
+struct ScopeData {
+    items: AtomicUsize,
+    err: AtomicI32
+}
+
 /// A scope to enqueue events in.\
 /// See [`scope`] and [`local_scope`]
 pub struct Scope<'scope, 'env: 'scope, C: 'env + Context = Global> {
     ctx: &'env C,
-    data: Arc<(AtomicUsize, AtomicI32)>,
+    data: Arc<ScopeData>,
     thread: ScopeWaker,
     scope: PhantomData<&'scope mut &'scope ()>,
     env: PhantomData<&'env mut &'env ()>
 }
 
 impl<'scope, 'env: 'scope, C: 'env + Context> Scope<'scope, 'env, C> {
-    /// Creates a new [`Event`] scope in the current thread
-    #[inline(always)]
-    pub fn new (ctx: &'env C) -> Self {
-        Self::with_thread(ctx, std::thread::current())
-    }
-
     /// Creates a new [`Event`] scope targeted to `async` use
     #[docfg(feature = "futures")]
     #[inline(always)]
-    pub fn new_async (ctx: &'env C) -> Self {
+    pub unsafe fn new_async (ctx: &'env C) -> Self {
         Self::with_waker(ctx, Arc::new(futures::task::AtomicWaker::new()))
-    }
-    
-    /// Creates a new [`Event`] scope with the specified thread
-    #[inline(always)]
-    pub fn with_thread (ctx: &'env C, thread: Thread) -> Self {
-        Self {
-            ctx,
-            data: Arc::new((AtomicUsize::new(0), AtomicI32::new(CL_SUCCESS))),
-            thread: ScopeWaker::Thread(thread),
-            scope: PhantomData,
-            env: PhantomData
-        }
     }
 
     /// Creates a new `async` [`Event`] scope with the specified waker 
     #[docfg(feature = "futures")]
     #[inline(always)]
-    pub fn with_waker (ctx: &'env C, waker: Arc<futures::task::AtomicWaker>) -> Self {
+    fn with_waker (ctx: &'env C, waker: Arc<futures::task::AtomicWaker>) -> Self {
         Self {
             ctx,
-            data: Arc::new((AtomicUsize::new(0), AtomicI32::new(CL_SUCCESS))),
+            data: Arc::new(ScopeData {
+                items: AtomicUsize::new(0),
+                err: AtomicI32::new(CL_SUCCESS)
+            }),
             thread: ScopeWaker::Flag(waker),
             scope: PhantomData,
             env: PhantomData
@@ -77,24 +67,28 @@ impl<'scope, 'env: 'scope, C: 'env + Context> Scope<'scope, 'env, C> {
         let inner = supplier(&queue)?;
         let evt = Event::new(inner, consumer);
 
-        if self.data.0.fetch_add(1, Ordering::Relaxed) == usize::MAX {
-            panic!("too many events in scope")
+        if self.data.items.fetch_add(1, Ordering::AcqRel) == usize::MAX {
+            panic!("too many items in scope")
+        }
+
+        if queue.size.fetch_add(1, Ordering::AcqRel) == usize::MAX {
+            panic!("Queue size overflow");
         }
 
         let queue_size = queue.size.clone();
         let scope_data = self.data.clone();
         let scope_thread = self.thread.clone();
 
-        evt.on_complete(move |_, res| {
-            drop(queue_size);
+        // TODO HANDLE ERROR
+        // ALSO, we are not getting into the callback
+        evt.on_complete_silent(move |_, res| {
+            let _ = queue_size.fetch_sub(1, Ordering::AcqRel);
 
             if let Err(e) = res {
-                let _ = scope_data.1.compare_exchange(CL_SUCCESS, e.ty.as_i32(), Ordering::Relaxed, Ordering::Relaxed);
+                let _ = scope_data.err.compare_exchange(CL_SUCCESS, e.ty.as_i32(), Ordering::AcqRel, Ordering::Acquire);
             }
 
-            if scope_data.0.fetch_sub(1, Ordering::Relaxed) == 1 {
-                scope_thread.wake();
-            }
+            Self::reduce_items(&scope_data, &scope_thread)
         }).unwrap();
 
         return Ok(evt)
@@ -111,6 +105,65 @@ impl<'scope, 'env: 'scope, C: 'env + Context> Scope<'scope, 'env, C> {
     pub fn enqueue_phantom<T: 'scope, E: FnOnce(&'env RawCommandQueue) -> Result<RawEvent>> (&'scope self, supplier: E) -> Result<PhantomEvent<T>> {
         self.enqueue(supplier, PhantomData)
     }
+
+    /// Adds a callback function that will be executed when the event reaches the specified status.
+    pub(crate) fn on_status<T: 'scope + Send, F: 'scope + Send + FnOnce(RawEvent, Result<EventStatus>) -> T, Cn: Consumer> (&'scope self, evt: &'env Event<Cn>, status: EventStatus, f: F) -> Result<crate::event::ScopedCallbackHandle<'scope, T>> {
+        let (send, recv) = std::sync::mpsc::sync_channel::<_>(1);
+        let cb_data = std::sync::Arc::new(CallbackHandleData {
+            #[cfg(feature = "cl1_1")]
+            flag: once_cell::sync::OnceCell::new(),
+            #[cfg(feature = "futures")]
+            waker: futures::task::AtomicWaker::new()
+        });
+
+        if self.data.items.fetch_add(1, Ordering::AcqRel) == usize::MAX {
+            panic!("too many items in scope")
+        }
+
+        let my_data = self.data.clone();
+        let my_thread = self.thread.clone();
+        let my_cb_data = cb_data.clone();
+
+        let f = move |evt, status: Result<EventStatus>| {
+            let f = std::panic::AssertUnwindSafe(|| f(evt, status.clone()));
+            match send.send(std::panic::catch_unwind(f)) {
+                Ok(_) => {
+                    #[cfg(feature = "cl1_1")]
+                    if let Some(flag) = my_cb_data.flag.get_or_init(|| None) {
+                        flag.try_mark(status.err().map(|x| x.ty)).unwrap();
+                    }
+                    #[cfg(feature = "futures")]
+                    my_cb_data.waker.wake();
+                },
+                Err(_) => {}
+            }
+
+            Self::reduce_items(&my_data, &my_thread)
+        };
+
+        let f: Box<Box<dyn 'scope + Send + FnOnce(RawEvent, Result<EventStatus>)>> = Box::new(Box::new(f));
+        let user_data = Box::into_raw(f);
+
+        unsafe {
+            if let Err(e) = evt.on_status_raw(status, crate::event::event_listener, user_data.cast()) {
+                let _ = Box::from_raw(user_data); // drop user data
+                Self::reduce_items(&self.data, &self.thread);
+                return Err(e);
+            }
+
+            tri!(opencl_sys::clRetainEvent(evt.id()));
+        }
+
+        return Ok(crate::event::ScopedCallbackHandle { recv, data: cb_data, phtm: PhantomData })
+    }
+
+
+    #[inline]
+    fn reduce_items (scope_data: &ScopeData, scope_thread: &ScopeWaker) {
+        if scope_data.items.fetch_sub(1, Ordering::AcqRel) == 1 {
+            scope_thread.wake();
+        }
+    }
 }
 
 /// Creates a new scope with the global context to enqueue events in.
@@ -123,9 +176,14 @@ pub fn scope<'env, T, F: for<'scope> FnOnce(&'scope Scope<'scope, 'env>) -> Resu
 /// Creates a new scope with the specified context to enqueue events in.
 /// All events that haven't completed by the end of the function will be automatically joined before the function returns.
 pub fn local_scope<'env, T, C: 'env + Context, F: for<'scope> FnOnce(&'scope Scope<'scope, 'env, C>) -> Result<T>> (ctx: &'env C, f: F) -> Result<T> {
+    let data = ScopeData {
+        items: AtomicUsize::new(0),
+        err: AtomicI32::new(CL_SUCCESS)
+    };
+
     let scope = Scope {
         ctx,
-        data: Arc::new((AtomicUsize::new(0), AtomicI32::new(CL_SUCCESS))),
+        data: Arc::new(data),
         thread: ScopeWaker::Thread(std::thread::current()),
         scope: PhantomData,
         env: PhantomData
@@ -135,7 +193,7 @@ pub fn local_scope<'env, T, C: 'env + Context, F: for<'scope> FnOnce(&'scope Sco
     let result = catch_unwind(AssertUnwindSafe(|| f(&scope)));
     
     // Wait until all the events are finished.
-    while scope.data.0.load(Ordering::Acquire) != 0 {
+    while scope.data.items.load(Ordering::Acquire) != 0 {
         std::thread::park();
     }
 
@@ -143,7 +201,7 @@ pub fn local_scope<'env, T, C: 'env + Context, F: for<'scope> FnOnce(&'scope Sco
     return match result {
         Err(e) => resume_unwind(e),
         Ok(x) => {
-            let e = scope.data.1.load(Ordering::Relaxed);
+            let e = scope.data.err.load(Ordering::Acquire);
             if e != CL_SUCCESS {
                 return Err(Error::from(e));
             }
@@ -210,7 +268,7 @@ cfg_if::cfg_if! {
                 
                 // Sleep
                 this.get_waker().register(cx.waker());
-                if this.scope.data.0.load(Ordering::Acquire) != 0 {
+                if this.scope.data.items.load(Ordering::Acquire) != 0 {
                     return std::task::Poll::Pending;
                 }
 
@@ -218,7 +276,7 @@ cfg_if::cfg_if! {
                 match core::mem::replace(&mut this.fut, AsyncScopeFuture::Ended) {
                     AsyncScopeFuture::Panic(e) => resume_unwind(e),
                     AsyncScopeFuture::Value(x) => {
-                        let e = this.scope.data.1.load(Ordering::Relaxed);
+                        let e = this.scope.data.err.load(Ordering::Relaxed);
                         if e == CL_SUCCESS {
                             return std::task::Poll::Ready(x)
                         }
@@ -228,7 +286,7 @@ cfg_if::cfg_if! {
                     #[cfg(debug_assertions)]
                     AsyncScopeFuture::Future(_) => unreachable!(),
                     #[cfg(not(debug_assertions))]
-                    AsyncScopeFuture::Future(_) => unreachable_unchecked()
+                    AsyncScopeFuture::Future(_) => unsafe { std::hint::unreachable_unchecked() }
                 }
             }
         }
@@ -246,7 +304,7 @@ cfg_if::cfg_if! {
                 
                 loop {
                     self.get_waker().register(&waker);
-                    if self.scope.data.0.load(Ordering::Acquire) == 0 { break }
+                    if self.scope.data.items.load(Ordering::Acquire) == 0 { break }
                     std::thread::park();
                 }
             }
@@ -323,7 +381,7 @@ cfg_if::cfg_if! {
 
             ($ctx:expr, $f:expr) => {
                 async {
-                    let scope = $crate::context::Scope::new_async($ctx);
+                    let scope = unsafe { $crate::context::Scope::new_async($ctx) };
                     unsafe {
                         $crate::context::InnerAsyncScope::new(&scope, $f).await
                     }

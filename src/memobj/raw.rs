@@ -2,7 +2,6 @@ use std::{mem::MaybeUninit, ptr::{NonNull}, ffi::c_void};
 use opencl_sys::*;
 use blaze_proc::docfg;
 use crate::{core::*, context::RawContext, buffer::flags::MemFlags};
-
 use super::MemObjectType;
 
 /// A raw OpenCL memory object

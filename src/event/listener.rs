@@ -1,105 +1,76 @@
 use crate::prelude::*;
 use super::{RawEvent, EventStatus};
-use std::{sync::{mpsc::{Receiver, Sender, channel, TryRecvError}}, ffi::c_void, panic::{catch_unwind, AssertUnwindSafe}};
+use std::{panic::*, sync::{mpsc::{Sender, channel, TryRecvError}}, ffi::c_void};
 use once_cell::unsync::OnceCell;
 use opencl_sys::*;
 
-type ListenerSender = Sender<(RawEvent, Receiver<EventCallback>)>;
-
 thread_local! {
-    static LISTENER_THREAD_STATUS : OnceCell<ListenerSender> = OnceCell::new();
+    static LISTENER_THREAD_STATUS : OnceCell<Sender<EventCallback>> = OnceCell::new();
 }
 
-pub(super) fn get_sender () -> ListenerSender {
+pub(super) fn get_sender () -> Sender<EventCallback> {
     LISTENER_THREAD_STATUS.with(|lts| {
         lts.get_or_init(|| {
-            let (send, recv) = channel();
+            let (send, recv) = channel::<EventCallback>();
             
-            std::thread::spawn(move || {
-                let mut listeners = Vec::<Listener>::new();
-                let mut connected = true;
+            std::thread::Builder::new()
+                .name(String::from("Callback Handler"))
+                .spawn(move || {
+                    let mut callbacks = Vec::<EventCallback>::with_capacity(1);
+                    let mut open = true;
 
-                while connected || !listeners.is_empty() {
-                    // Check for new listeners to add to the queue
-                    if connected {
+                    while open {
                         loop {
                             match recv.try_recv() {
-                                Ok((evt, recv)) => listeners.push(Listener { evt, recv, cbs: Vec::new(), closed: false }),
-                                Err(TryRecvError::Empty) => break,
-                                Err(TryRecvError::Disconnected) => connected = false
+                                Ok(x) => callbacks.push(x),
+                                Err(TryRecvError::Disconnected) => break open = false,
+                                Err(TryRecvError::Empty) => break
                             }
-                        }
-                    }
-
-                    // Check for callbacks to add to the list
-                    for listener in listeners.iter_mut().filter(|x| !x.closed) {
-                        loop {
-                            match listener.recv.try_recv() {
-                                Ok(cb) => listener.cbs.push(cb),
-                                Err(TryRecvError::Disconnected) => listener.closed = true,
-                                Err(TryRecvError::Empty) => break,
-                            }
-                        }
-                    }
-
-                    // Consume the appropiate listeners
-                    let mut i = 0;
-                    while i < listeners.len() {
-                        let listener = unsafe { listeners.get_unchecked_mut(i) };
-                        let cbs = &mut listener.cbs;
-
-                        let status = listener.evt.status();
-                        let status_num = match &status {
-                            Ok(status) => *status as i32,
-                            Err(e) => e.ty.as_i32()
                         };
 
-                        // Consume appropiate listener's callbacks
-                        let mut j = 0;
-                        while j < cbs.len() {
-                            let cb = unsafe { cbs.get_unchecked(j) };
-                            
-                            if status_num <= cb.status as i32 {
-                                match cbs.swap_remove(j).cb {
-                                    Callback::Boxed(f) => {
-                                        let _ = catch_unwind(AssertUnwindSafe(|| f(listener.evt.clone(), status.clone())));
-                                    },
-
-                                    Callback::Raw(f, user_data) => unsafe {
-                                        let f = AssertUnwindSafe(f);
-                                        let _ = catch_unwind(|| f(listener.evt.id(), status_num, user_data));
-                                    }
+                        let mut i = 0;
+                        while i < callbacks.len() {
+                            let callback = unsafe { callbacks.get_unchecked(i) };
+                            let status = match callback.evt.status() {
+                                Ok(s) if s <= callback.status => Ok(callback.status),
+                                e @ Err(_) => e,
+                                Ok(_) => {
+                                    i += 1;
+                                    continue
                                 }
-                                continue;
+                            };
+
+                            let callback = callbacks.swap_remove(i);
+                            let v = match callback.cb {
+                                Callback::Boxed(f) => catch_unwind(AssertUnwindSafe(|| f(callback.evt, status))),
+                                Callback::Raw(f, user_data) => unsafe {
+                                    let status = match status {
+                                        Ok(x) => x as i32,
+                                        Err(e) => e.ty.as_i32()
+                                    };
+                                    
+                                    catch_unwind(AssertUnwindSafe(|| f(callback.evt.id(), status, user_data)))
+                                }
+                            };
+
+                            if let Err(e) = v {
+                                #[cfg(debug_assertions)]
+                                resume_unwind(e);
+                                #[cfg(not(debug_assertions))]
+                                todo!()
                             }
-
-                            j += 1;
                         }
-
-                        // If channel closed and no more callbacks exist, remove listener 
-                        if listener.closed && cbs.len() == 0 {
-                            listeners.swap_remove(i);
-                            continue;
-                        }
-
-                        i += 1;
                     }
-                }
-            });
+                    
+                }).unwrap();
 
             return send
         }).clone()
     })
 }
 
-struct Listener {
-    evt: RawEvent,
-    cbs: Vec<EventCallback>,
-    recv: Receiver<EventCallback>,
-    closed: bool
-}
-
 pub(super) struct EventCallback {
+    pub evt: RawEvent,
     pub status: EventStatus,
     pub cb: Callback
 }

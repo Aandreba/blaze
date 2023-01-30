@@ -33,7 +33,7 @@ impl<C: Unpin + Consumer> Future for EventWait<C> {
         let this = &mut *self;
         if this.sub.poll_unpin(cx).is_ready() {
             let event = this.inner.take().unwrap();
-            return Poll::Ready(event.status().and_then(|_| event.consume()))
+            return Poll::Ready(event.status().and_then(|_| unsafe { event.consume() }))
         }
 
         return Poll::Pending;

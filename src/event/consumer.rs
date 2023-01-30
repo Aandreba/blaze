@@ -6,24 +6,28 @@ use crate::prelude::Result;
 pub trait Consumer {
     type Output;
 
-    /// Consumes the [`Consumer`]
-    fn consume (self) -> Result<Self::Output>;
+    /// Consumes the [`Consumer`].
+    /// 
+    /// # Safety
+    /// This method should be safe to execute whenever it's underlying [`RawEvent`](super::RawEvent) has completed.
+    /// Execution of this method before the event's completion is undefined behaviour.
+    unsafe fn consume (self) -> Result<Self::Output>;
 }
 
 impl<T, F: FnOnce() -> Result<T>> Consumer for F {
     type Output = T;
 
     #[inline(always)]
-    fn consume (self) -> Result<T> {
+    unsafe fn consume (self) -> Result<T> {
         (self)()
     }
 }
 
-impl<T> Consumer for PhantomData<T> {
+impl<T: ?Sized> Consumer for PhantomData<T> {
     type Output = ();
 
     #[inline(always)]
-    fn consume (self) -> Result<Self::Output> {
+    unsafe fn consume (self) -> Result<Self::Output> {
         Ok(())
     }
 }
@@ -32,8 +36,27 @@ impl<T> Consumer for Result<T> {
     type Output = T;
 
     #[inline(always)]
-    fn consume (self) -> Result<T> {
+    unsafe fn consume (self) -> Result<T> {
         self
+    }
+}
+
+/// Consumer for [`specific`](super::Event::specific) event
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+#[repr(transparent)]
+pub struct Specific<'a, C: 'a> (C, PhantomData<&'a mut &'a ()>);
+
+impl<C> Specific<'_, C> {
+    #[inline(always)]
+    pub fn new (c: C) -> Self { Self(c, PhantomData) }
+}
+
+impl<'a, C: 'a + Consumer> Consumer for Specific<'a, C> {
+    type Output = C::Output;
+
+    #[inline(always)]
+    unsafe fn consume (self) -> Result<Self::Output> {
+        self.0.consume()
     }
 }
 
@@ -45,7 +68,7 @@ impl Consumer for Noop {
     type Output = ();
 
     #[inline(always)]
-    fn consume (self) -> Result<Self::Output> {
+    unsafe fn consume (self) -> Result<Self::Output> {
         Ok(())
     }
 }
@@ -63,7 +86,7 @@ impl<T, U, C: Consumer<Output = T>, F: FnOnce(T) -> U> Consumer for Map<T, C, F>
     type Output = U;
 
     #[inline(always)]
-    fn consume (self) -> Result<U> {
+    unsafe fn consume (self) -> Result<U> {
         let v = self.0.consume()?;
         return Ok((self.1)(v))
     }
@@ -82,7 +105,7 @@ impl<T, U, C: Consumer<Output = T>, F: FnOnce(T) -> Result<U>> Consumer for TryM
     type Output = U;
 
     #[inline(always)]
-    fn consume (self) -> Result<U> {
+    unsafe fn consume (self) -> Result<U> {
         let v = self.0.consume()?;
         return (self.1)(v)
     }
@@ -97,25 +120,25 @@ impl<C: Consumer + UnwindSafe> Consumer for CatchUnwind<C> {
     type Output = ::core::result::Result<C::Output, Box<dyn Any + Send>>;
 
     #[inline(always)]
-    fn consume (self) -> Result<Self::Output> {
+    unsafe fn consume (self) -> Result<Self::Output> {
         return match catch_unwind(|| self.0.consume()) {
             Ok(Ok(x)) => Ok(Ok(x)),
             Ok(Err(e)) => Err(e),
             Err(e) => Ok(Err(e))
         }
     }
-} 
+}
 
-/// Consumer for [`flatten`](super::Event::flatten) event.
+/// Consumer for [`flatten_result`](super::Event::flatten_result) event.
 #[derive(Debug, Clone)]
 #[repr(transparent)]
-pub struct Flatten<C> (pub(super) C);
+pub struct FlattenResult<C> (pub(super) C);
 
-impl<T, C: Consumer<Output = Result<T>>> Consumer for Flatten<C> {
+impl<T, C: Consumer<Output = Result<T>>> Consumer for FlattenResult<C> {
     type Output = T;
 
     #[inline(always)]
-    fn consume (self) -> Result<T> {
+    unsafe fn consume (self) -> Result<T> {
         self.0.consume().flatten()
     }
 }
@@ -128,10 +151,38 @@ impl<C: Consumer, F: FnOnce(&C::Output)> Consumer for Inspect<C, F> {
     type Output = C::Output;
 
     #[inline(always)]
-    fn consume (self) -> Result<C::Output> {
+    unsafe fn consume (self) -> Result<C::Output> {
         let v = self.0.consume()?;
         (self.1)(&v);
         return Ok(v)
+    }
+}
+
+/// Consumer for [`flatten`](super::Event::flatten)
+#[docfg(feature = "cl1_1")]
+pub type Flatten<C> = FlattenScoped<'static, C>;
+
+/// Consumer for [`flatten_scoped`](super::Event::flatten_scoped)
+#[docfg(feature = "cl1_1")]
+pub struct FlattenScoped<'a, C> (pub(super) super::ScopedCallbackHandle<'a, Result<C>>);
+
+#[cfg(feature = "cl1_1")]
+impl<C: Consumer> Consumer for FlattenScoped<'_, C> {
+    type Output = C::Output;
+
+    #[inline]
+    unsafe fn consume (mut self) -> Result<Self::Output> {
+        // Optimistic lock
+        loop {
+            match self.0.try_join_unwrap() {
+                Ok(Ok(c)) => return c.consume(),
+                Ok(Err(e)) => return Err(e),
+                Err(e) => {
+                    self.0 = e;
+                    core::hint::spin_loop()
+                }
+            }
+        }
     }
 }
 
@@ -145,7 +196,7 @@ impl<C: Consumer> Consumer for JoinAll<C> {
     type Output = Vec<C::Output>;
 
     #[inline]
-    fn consume (self) -> Result<Vec<C::Output>> {
-        self.0.into_iter().map(Consumer::consume).try_collect()
+    unsafe fn consume (self) -> Result<Vec<C::Output>> {
+        self.0.into_iter().map(|x| x.consume()).try_collect()
     }
 }

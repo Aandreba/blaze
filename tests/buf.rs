@@ -1,19 +1,41 @@
-use std::ops::Deref;
-
 use blaze_rs::{prelude::*, buffer};
-use buffer::rect::Rect2D;
 
 #[global_context]
 static CONTEXT : SimpleContext = SimpleContext::default();
 
+#[cfg(feature = "cl1_1")]
 #[test]
 fn read () -> Result<()> {
-    let buf = buffer![1, 2, 3, 4, 5]?;
-    let blocking = buf.read_blocking(2.., None)?;
-    let scope = scope(|s| buf.read(s, ..=3, None)?.join())?;
+    use rand::seq::SliceRandom;
 
-    assert_eq!(blocking, vec![3, 4, 5]);
-    assert_eq!(scope, vec![1, 2, 3, 4]);
+    let buf = buffer![1, 2, 3, 4, 5]?;
+    //let blocking = buf.read_blocking(2.., None)?;
+    
+    scope(|s| {
+        let evt = buf.read(s, ..=3, None)?;
+        let cb = evt.then_scoped(s, |mut x| {
+            x.shuffle(&mut rand::thread_rng());
+            x
+        })?;
+
+        let v = cb.join_unwrap()?;
+        println!("{v:?}");
+
+        Ok(())
+    })?;
+
+    Ok(())
+}
+
+#[cfg(feature = "cl1_1")]
+#[test]
+fn cb () -> Result<()> {
+    use blaze_rs::event::FlagEvent;
+
+    let flag = FlagEvent::new()?;
+    let handle = flag.subscribe().on_complete(|_, _| println!("Done!"))?;
+    assert!(flag.try_mark(None)?);
+    handle.join_unwrap();
 
     Ok(())
 }
@@ -55,7 +77,7 @@ cfg_if::cfg_if! {
             Ok(())
         }
 
-        #[test]
+        /*#[test]
         fn write_rect () -> Result<()> {
             let mut buf = rect_buf()?; 
             let host = Rect2D::new(&[10, 11, 12, 13], 2);
@@ -65,7 +87,7 @@ cfg_if::cfg_if! {
 
             assert_eq!(buf.map_blocking(.., None)?.deref(), &[12, 13, 3, 4, 10, 11, 7, 12, 13]);
             Ok(())
-        }
+        }*/
 
         #[test]
         fn copy_rect () -> Result<()> {

@@ -1,4 +1,4 @@
-use std::{backtrace::Backtrace, sync::Arc, fmt::{Display, Debug}};
+use std::{sync::Arc, fmt::{Display, Debug}};
 use blaze_proc::error;
 
 pub type Result<T> = ::core::result::Result<T, Error>;
@@ -61,20 +61,20 @@ impl From<::core::result::Result<ErrorKind, i32>> for ErrorCode {
 #[non_exhaustive]
 pub struct Error {
     pub ty: ErrorCode,
-    pub desc: Option<Arc<dyn Display>>,
+    pub desc: Option<Arc<dyn Send + Sync + Display>>,
     #[cfg_attr(docsrs, doc(cfg(debug_assertions)))]
     #[cfg(debug_assertions)]
-    pub backtrace: Arc<Backtrace>
+    pub backtrace: Arc<std::backtrace::Backtrace>
 }
 
 impl Error {
     #[inline(always)]
-    pub fn new<D: 'static + Display> (ty: impl Into<ErrorCode>, desc: D) -> Self {
-        Self::from_parts(ty, Some(Arc::new(desc)), Arc::new(Backtrace::capture()))
+    pub fn new<D: 'static + Send + Sync + Display> (ty: impl Into<ErrorCode>, desc: D) -> Self {
+        Self::from_parts(ty, Some(Arc::new(desc)), #[cfg(debug_assertions)] Arc::new(std::backtrace::Backtrace::capture()))
     }
 
     #[inline(always)]
-    pub fn from_parts (ty: impl Into<ErrorCode>, desc: Option<Arc<dyn Display>>, #[cfg(debug_assertions)] backtrace: Arc<Backtrace>) -> Self {
+    pub fn from_parts (ty: impl Into<ErrorCode>, desc: Option<Arc<dyn Send + Sync + Display>>, #[cfg(debug_assertions)] backtrace: Arc<std::backtrace::Backtrace>) -> Self {
         Self { 
             ty: ty.into(),
             desc,
@@ -89,8 +89,13 @@ impl Error {
             ty: ty.into(),
             desc: None,
             #[cfg(debug_assertions)]
-            backtrace: Arc::new(Backtrace::capture())
+            backtrace: Arc::new(std::backtrace::Backtrace::capture())
         }
+    }
+
+    #[inline(always)]
+    pub fn as_i32 (self) -> i32 {
+        return self.ty.as_i32()
     }
 }
 

@@ -1,4 +1,4 @@
-flat_mod!(raw, complex, status, profiling);
+flat_mod!(raw, complex, status, profiling, eventual);
 
 #[path = "consumer.rs"]
 mod _consumer;
@@ -10,7 +10,7 @@ pub mod consumer {
     pub use super::abort::Abort;
 }
 
-pub use consumer::Consumer;
+pub use consumer::{Consumer};
 
 #[cfg(feature = "cl1_1")]
 flat_mod!(flag);

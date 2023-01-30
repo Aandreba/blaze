@@ -1,11 +1,17 @@
 use crate::core::*;
+use std::any::Any;
 use std::ffi::c_void;
+use std::marker::PhantomData;
+use std::panic::{resume_unwind};
+use std::sync::mpsc::{TryRecvError};
 use std::time::{Duration, SystemTime};
 use std::{mem::MaybeUninit, ptr::{NonNull}};
 use opencl_sys::*;
 use blaze_proc::docfg;
+use thinnbox::ThinBox;
+
 use super::ext::NoopEvent;
-use super::{EventStatus, ProfilingInfo, CommandType, Event};
+use super::{EventStatus, ProfilingInfo, CommandType, Event, Consumer};
 
 /// Raw OpenCL event
 #[derive(Debug, PartialEq, Eq, Hash)]
@@ -182,6 +188,116 @@ impl RawEvent {
     }
 }
 
+#[docfg(feature = "cl1_1")]
+impl RawEvent {
+    #[inline(always)]
+    pub fn on_submit<T: 'static + Send> (&self, f: impl 'static + Send + FnOnce(RawEvent, Result<EventStatus>) -> T) -> Result<CallbackHandle<T>> { 
+        self.on_status(EventStatus::Submitted, f)
+    }
+
+    #[inline(always)]
+    pub fn on_run<T: 'static + Send> (&self, f: impl 'static + Send + FnOnce(RawEvent, Result<EventStatus>) -> T) -> Result<CallbackHandle<T>> { 
+        self.on_status(EventStatus::Running, f)
+    }
+
+    #[inline(always)]
+    pub fn on_complete<T: 'static + Send> (&self, f: impl 'static + Send + FnOnce(RawEvent, Result<EventStatus>) -> T) -> Result<CallbackHandle<T>> { 
+        self.on_status(EventStatus::Complete, f)
+    }
+
+    /// Adds a callback function that will be executed when the event reaches the specified status.
+    /// 
+    /// Unlike [`on_status_silent`], this method returns a [`CallbackHandle`] that allows to wait for the callcack to execute and getting its result.
+    pub fn on_status<T: 'static + Send> (&self, status: EventStatus, f: impl 'static + Send + FnOnce(RawEvent, Result<EventStatus>) -> T) -> Result<CallbackHandle<T>> {        
+        let (send, recv) = std::sync::mpsc::sync_channel::<_>(1);
+        let data = std::sync::Arc::new(CallbackHandleData {
+            #[cfg(feature = "cl1_1")]
+            flag: once_cell::sync::OnceCell::new(),
+            #[cfg(feature = "futures")]
+            waker: futures::task::AtomicWaker::new()
+        });
+        
+        let my_data = data.clone();
+        self.on_status_silent(status, move |evt, status| {
+            let f = std::panic::AssertUnwindSafe(|| f(evt, status.clone()));
+            match send.send(std::panic::catch_unwind(f)) {
+                Ok(_) => {
+                    #[cfg(feature = "cl1_1")]
+                    if let Some(flag) = my_data.flag.get_or_init(|| None) {
+                        flag.try_mark(status.err().map(|x| x.ty)).unwrap();
+                    }
+                    #[cfg(feature = "futures")]
+                    my_data.waker.wake();
+                },
+                Err(_) => {}
+            }
+        })?;
+
+        return Ok(CallbackHandle { recv, data, phtm: PhantomData })
+    }
+
+    /// Adds a callback function that will be executed when the event is submitted.
+    #[inline(always)]
+    pub fn on_submit_silent (&self, f: impl 'static + FnOnce(RawEvent, Result<EventStatus>) + Send) -> Result<()> {
+        self.on_status_silent(EventStatus::Submitted, f)
+    }
+
+    /// Adds a callback function that will be executed when the event starts running.
+    #[inline(always)]
+    pub fn on_run_silent (&self, f: impl 'static + FnOnce(RawEvent, Result<EventStatus>) + Send) -> Result<()> {
+        self.on_status_silent(EventStatus::Running, f)
+    }
+
+    /// Adds a callback function that will be executed when the event completes.
+    #[inline(always)]
+    pub fn on_complete_silent (&self, f: impl 'static + FnOnce(RawEvent, Result<EventStatus>) + Send) -> Result<()> {
+        self.on_status_silent(EventStatus::Complete, f)
+    }
+
+    /// Registers a user callback function for a specific command execution status.\
+    /// The registered callback function will be called when the execution status of command associated with event changes to an execution status equal to or past the status specified by `status`.\
+    /// Each call to [`Event::on_status`] registers the specified user callback function on a callback stack associated with event. The order in which the registered user callback functions are called is undefined.\
+    /// All callbacks registered for an event object must be called before the event object is destroyed. Callbacks should return promptly.\
+    /// Behavior is undefined when calling expensive system routines, OpenCL APIs to create contexts or command-queues, or blocking OpenCL APIs in an event callback. Rather than calling a blocking OpenCL API in an event callback, applications may call a non-blocking OpenCL API, then register a completion callback for the non-blocking OpenCL API with the remainder of the work.\
+    /// Because commands in a command-queue are not required to begin execution until the command-queue is flushed, callbacks that enqueue commands on a command-queue should either call [`RawCommandQueue::flush`] on the queue before returning, or arrange for the command-queue to be flushed later.
+    #[inline(always)]
+    pub fn on_status_silent (&self, status: EventStatus, f: impl 'static + FnOnce(RawEvent, Result<EventStatus>) + Send) -> Result<()> {
+        let f: ThinBox<dyn 'static + FnMut(RawEvent, Result<EventStatus>)> = unsafe { ThinBox::from_once_unchecked(f) };
+        let user_data = ThinBox::into_raw(f);
+
+        unsafe {
+            if let Err(e) = self.on_status_raw(status, event_listener, user_data.as_ptr().cast()) {
+                let _ = ThinBox::<dyn 'static + FnMut(RawEvent, Result<EventStatus>)>::from_raw(user_data); // drop user data
+                return Err(e);
+            }
+
+            tri!(clRetainEvent(self.id()));
+            return Ok(())
+        }
+    }
+    
+    #[inline(always)]
+    pub unsafe fn on_submit_raw (&self, f: unsafe extern "C" fn(event: cl_event, event_command_status: cl_int, user_data: *mut c_void), user_data: *mut c_void) -> Result<()> {
+        Self::on_status_raw(&self, EventStatus::Submitted, f, user_data)
+    }
+
+    #[inline(always)]
+    pub unsafe fn on_run_raw (&self, f: unsafe extern "C" fn(event: cl_event, event_command_status: cl_int, user_data: *mut c_void), user_data: *mut c_void) -> Result<()> {
+        Self::on_status_raw(&self, EventStatus::Running, f, user_data)
+    }
+
+    #[inline(always)]
+    pub unsafe fn on_complete_raw (&self, f: unsafe extern "C" fn(event: cl_event, event_command_status: cl_int, user_data: *mut c_void), user_data: *mut c_void) -> Result<()> {
+        Self::on_status_raw(&self, EventStatus::Complete, f, user_data)
+    }
+
+    #[inline(always)]
+    pub unsafe fn on_status_raw (&self, status: EventStatus, f: unsafe extern "C" fn(event: cl_event, event_command_status: cl_int, user_data: *mut c_void), user_data: *mut c_void) -> Result<()> {
+        tri!(opencl_sys::clSetEventCallback(self.id(), status as i32, Some(f), user_data));
+        return Ok(())
+    }
+}
+
 impl Into<NoopEvent> for RawEvent {
     #[inline(always)]
     fn into(self) -> NoopEvent {
@@ -211,3 +327,128 @@ impl Drop for RawEvent {
 
 unsafe impl Send for RawEvent {}
 unsafe impl Sync for RawEvent {}
+
+pub(crate) unsafe extern "C" fn event_listener (event: cl_event, event_command_status: cl_int, user_data: *mut c_void) {
+    let mut f = ThinBox::<dyn 'static + FnMut(RawEvent, Result<EventStatus>)>::from_raw(NonNull::new_unchecked(user_data.cast()));
+    let event = RawEvent::from_id_unchecked(event);
+    let status = EventStatus::try_from(event_command_status);
+    f(event, status)
+}
+
+pub type CallbackHandle<T> = ScopedCallbackHandle<'static, T>;
+pub type CallbackConsumer<T> = ScopedCallbackConsumer<'static, T>;
+
+pub(crate) struct CallbackHandleData {
+    #[cfg(feature = "cl1_1")]
+    pub(crate) flag: once_cell::sync::OnceCell<Option<super::FlagEvent>>,
+    #[cfg(feature = "futures")]
+    pub(crate) waker: futures::task::AtomicWaker
+}
+
+pub struct ScopedCallbackHandle<'a, T> {
+    pub(crate) recv: std::sync::mpsc::Receiver<std::thread::Result<T>>,
+    pub(crate) data: std::sync::Arc<CallbackHandleData>,
+    pub(crate) phtm: PhantomData<&'a mut &'a ()>
+}
+
+impl<'a, T> ScopedCallbackHandle<'a, T> {
+    #[docfg(feature = "cl1_1")]
+    #[inline(always)]
+    pub fn into_event (self) -> Result<Event<ScopedCallbackConsumer<'a, T>>> {
+        self.into_event_in(crate::context::Global)
+    }
+
+    #[docfg(feature = "cl1_1")]
+    pub fn into_event_in<C: crate::prelude::Context> (self, ctx: C) -> Result<Event<ScopedCallbackConsumer<'a, T>>> {
+        let flag = super::FlagEvent::new_in(ctx.as_raw())?;
+        let sub = flag.subscribe();
+
+        match self.data.flag.try_insert(Some(flag)) {
+            // Flag registered
+            Ok(_) => {},
+
+            // Callback has already completed
+            Err((_, flag)) => unsafe {
+                flag.unwrap_unchecked().try_mark(None)?;
+            }
+        }
+
+        return Ok(Event::new(sub, ScopedCallbackConsumer(self)));
+    }
+
+    #[inline]
+    pub fn join (self) -> std::thread::Result<T> {
+        return match self.recv.recv() {
+            Ok(x) => x,
+            Err(_) => panic!("Handle already joined")
+        }
+    }
+
+    #[inline]
+    pub fn join_unwrap (self) -> T {
+        return match self.recv.recv() {
+            Ok(Ok(x)) => x,
+            Ok(Err(e)) => resume_unwind(e),
+            Err(_) => panic!("Handle already joined")
+        }
+    }
+
+    #[inline]
+    pub fn try_join (self) -> ::core::result::Result<std::thread::Result<T>, Self> {
+        return match self.recv.try_recv() {
+            Ok(x) => Ok(x),
+            Err(TryRecvError::Empty) => Err(self),
+            Err(TryRecvError::Disconnected) => panic!("Handle already joined")
+        }
+    }
+
+    #[inline]
+    pub fn try_join_unwrap (self) -> ::core::result::Result<T, Self> {
+        return match self.recv.try_recv() {
+            Ok(Ok(x)) => Ok(x),
+            Ok(Err(e)) => resume_unwind(e),
+            Err(TryRecvError::Empty) => Err(self),
+            Err(TryRecvError::Disconnected) => panic!("Handle already joined")
+        }
+    }
+}
+
+#[repr(transparent)]
+pub struct ScopedCallbackConsumer<'a, T> (ScopedCallbackHandle<'a, T>);
+
+impl<'a, T> Consumer for ScopedCallbackConsumer<'a, T> {
+    type Output = ::core::result::Result<T, Box<dyn 'static + Any + Send>>;
+
+    #[inline]
+    unsafe fn consume (self) -> Result<Self::Output> {
+        // Optimistic lock
+        loop {
+            match self.0.recv.try_recv() {
+                Ok(x) => return Ok(x),
+                Err(TryRecvError::Disconnected) => todo!(),
+                Err(TryRecvError::Empty) => core::hint::spin_loop()
+            }
+        }
+    }
+}
+
+cfg_if::cfg_if! {
+    if #[cfg(feature = "futures")] {
+        use futures::future::*;
+        use std::task::*;
+
+        #[cfg_attr(docsrs, doc(cfg(feature = "futures")))]
+        impl<T> Future for ScopedCallbackHandle<'_, T> {
+            type Output = std::thread::Result<T>;
+
+            fn poll(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> std::task::Poll<Self::Output> {
+                self.data.waker.register(cx.waker());
+                return match self.recv.try_recv() {
+                    Ok(x) => Poll::Ready(x),
+                    Err(TryRecvError::Empty) => Poll::Pending,
+                    Err(TryRecvError::Disconnected) => panic!("Handle already joined")
+                }
+            }
+        }
+    }
+}

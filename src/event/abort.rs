@@ -38,13 +38,13 @@ impl<C: Consumer> Consumer for Abort<C> {
     type Output = Option<C::Output>;
 
     #[inline]
-    fn consume (self) -> Result<Self::Output> {
+    unsafe fn consume (self) -> Result<Self::Output> {
         loop {
             match self.aborted.load(Ordering::Acquire) {
                 TRUE => return Ok(None),
                 FALSE => return self.consumer.consume().map(Some),
                 UNINIT => core::hint::spin_loop(),
-                _ => unsafe { unreachable_unchecked() }
+                _ => unreachable_unchecked()
             }
         }
     }

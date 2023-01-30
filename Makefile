@@ -5,6 +5,10 @@ check:
 	$(foreach x, $(features), cargo check --features $(x);)
 	$(foreach x, $(features), cargo check --features strict,$(x);)
 	cargo check --all-features
+	cargo check --no-default-features --release
+	$(foreach x, $(features), cargo check --release --features $(x);)
+	$(foreach x, $(features), cargo check --release --features strict,$(x);)
+	cargo check --release --all-features
 
 test:
 	cargo test --no-default-features

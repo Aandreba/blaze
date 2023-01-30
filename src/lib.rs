@@ -1,9 +1,16 @@
 #![allow(macro_expanded_macro_exports_accessed_by_absolute_paths)]
+<<<<<<< HEAD
 #![feature(mem_copy_fn, is_some_and, box_into_inner, nonzero_min_max, new_uninit, iterator_try_collect, result_flattening, alloc_layout_extra, array_try_map, extend_one, const_nonnull_new, int_roundings, const_maybe_uninit_zeroed, unboxed_closures, const_ptr_as_ref, const_maybe_uninit_array_assume_init, maybe_uninit_array_assume_init, const_option_ext, maybe_uninit_uninit_array, const_option, nonzero_ops, associated_type_bounds, ptr_metadata, fn_traits, vec_into_raw_parts, const_trait_impl, drain_filter, allocator_api)]
 #![cfg_attr(any(feature = "svm", feature = "map"), feature(strict_provenance, layout_for_ptr))]
+=======
+#![feature(mem_copy_fn, box_into_inner, nonzero_min_max, new_uninit, unsize, iterator_try_collect, is_some_and, result_flattening, alloc_layout_extra, array_try_map, extend_one, const_nonnull_new, int_roundings, const_maybe_uninit_zeroed, unboxed_closures, const_ptr_as_ref, layout_for_ptr, const_maybe_uninit_array_assume_init, maybe_uninit_array_assume_init, const_option_ext, maybe_uninit_uninit_array, const_option, nonzero_ops, associated_type_bounds, ptr_metadata, fn_traits, vec_into_raw_parts, const_trait_impl, drain_filter, allocator_api)]
+#![cfg_attr(feature = "svm", feature(strict_provenance))]
+>>>>>>> origin/master
 #![cfg_attr(docsrs, feature(doc_cfg, proc_macro_hygiene))]
 #![cfg_attr(debug_assertions, feature(backtrace_frames))]
 #![doc = include_str!("../docs/src/intro.md")]
+
+use event::RawEvent;
 
 macro_rules! flat_mod {
     ($($i:ident),+) => {
@@ -83,7 +90,8 @@ pub extern crate futures;
 #[doc(hidden)]
 pub extern crate utils_atomics;
 
-extern crate blaze_proc;
+#[doc(hidden)]
+pub extern crate blaze_proc;
 
 /// Re-export of the public-facing macros in `blaze_proc`
 pub mod macros {
@@ -145,6 +153,12 @@ pub fn wait_list (v: WaitList) -> core::Result<(u32, *const opencl_sys::cl_event
         },
         None => Ok((0, ::core::ptr::null()))
     }
+}
+
+/// Creates a [`WaitList`] from a reference to a single [`RawEvent`]
+#[inline(always)]
+pub const fn wait_list_from_ref (evt: &RawEvent) -> WaitList {
+    return Some(::core::slice::from_ref(evt))
 }
 
 /// A list of events to be awaited.
