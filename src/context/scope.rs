@@ -286,7 +286,7 @@ cfg_if::cfg_if! {
                     #[cfg(debug_assertions)]
                     AsyncScopeFuture::Future(_) => unreachable!(),
                     #[cfg(not(debug_assertions))]
-                    AsyncScopeFuture::Future(_) => unreachable_unchecked()
+                    AsyncScopeFuture::Future(_) => unsafe { std::hint::unreachable_unchecked() }
                 }
             }
         }

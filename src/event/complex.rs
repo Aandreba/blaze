@@ -581,7 +581,7 @@ impl<C: Consumer> Event<C> {
                 let data = std::sync::Arc::new(super::CallbackHandleData {
                     #[cfg(feature = "cl1_1")]
                     flag: once_cell::sync::OnceCell::new(),
-                    #[cfg(feature = "future")]
+                    #[cfg(feature = "futures")]
                     waker: futures::task::AtomicWaker::new()
                 });
 
