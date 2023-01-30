@@ -61,7 +61,7 @@ pub struct Event<C> {
     #[cfg(not(feature = "cl1_1"))]
     send: std::sync::Arc<utils_atomics::FillQueue<super::listener::EventCallback>>,
     #[cfg(feature = "cl1_1")]
-    send: std::marker::PhantomData<std::sync::Arc<utils_atomics::FillQueue<(RawEvent, EventStatus, Box<dyn FnOnce(RawEvent, Result<EventStatus>) + Send>)>>>,
+    send: std::marker::PhantomData<std::sync::Arc<utils_atomics::FillQueue<(RawEvent, EventStatus, Box<dyn FnOnce(RawEvent, Result<EventStatus>) + Send + Sync>)>>>,
 }
 
 impl NoopEvent {
