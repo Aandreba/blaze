@@ -16,6 +16,7 @@ pub extern "C" {
     fn next_bytes (n: u32, out: *mut MaybeUninit<u8>);
 }
 
+#[cfg(feature = "cl3")]
 #[test]
 fn main () -> Result<()> {
     const SIZE : usize = 50;
@@ -24,10 +25,10 @@ fn main () -> Result<()> {
     let mut random = Buffer::<u8>::new_uninit(SIZE, MemAccess::WRITE_ONLY, false)?;
     
     let random = unsafe {
-        let _ = rng.next_bytes(SIZE as u32, &mut random, [SIZE], None, EMPTY)?.wait()?;
+        let _ = rng.next_bytes_blocking(SIZE as u32, &mut random, [SIZE], None, None)?;
         random.assume_init()  
     };
 
-    let _ = random.read(.., EMPTY)?.wait()?;
+    let _ = random.read_event(.., EMPTY)?.wait()?;
     Ok(())
 }

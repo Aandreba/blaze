@@ -2,7 +2,6 @@ use std::{mem::MaybeUninit, ptr::{NonNull}, ffi::c_void};
 use opencl_sys::*;
 use blaze_proc::docfg;
 use crate::{core::*, context::RawContext, buffer::flags::MemFlags};
-
 use super::MemObjectType;
 
 /// A raw OpenCL memory object
@@ -17,7 +16,7 @@ impl RawMemObject {
     }
 
     #[inline(always)]
-    pub const fn from_id (id: cl_mem) -> Option<Self> {
+    pub const unsafe fn from_id (id: cl_mem) -> Option<Self> {
         NonNull::new(id).map(Self)
     }
 
@@ -53,7 +52,14 @@ impl RawMemObject {
     #[inline(always)]
     pub fn associated_memobject (&self) -> Result<Option<RawMemObject>> {
         let v = self.get_info::<cl_mem>(opencl_sys::CL_MEM_ASSOCIATED_MEMOBJECT)?;
-        Ok(Self::from_id(v))
+        unsafe {
+            if let Some(id) = Self::from_id(v) {
+                id.retain()?;
+                return Ok(Some(id));
+            }
+
+            return Ok(None)
+        }
     }
 
     /// Return the flags argument value specified when memobj is created.

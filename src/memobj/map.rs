@@ -1,5 +1,41 @@
+use std::ptr::addr_of_mut;
+
 use opencl_sys::*;
-use crate::prelude::{MemAccess};
+use crate::prelude::{MemAccess, Context, Global, RawEvent};
+use super::RawMemObject;
+
+pub(crate) struct MapPtr<T, C: Context = Global> {
+    pub ptr: *mut [T],
+    mem: RawMemObject,
+    ctx: C
+}
+
+impl<T, C: Context> MapPtr<T, C> {
+    #[inline(always)]
+    pub fn new (ptr: *mut [T], mem: RawMemObject, ctx: C) -> Self {
+        Self {
+            ptr,
+            mem,
+            ctx
+        }
+    }
+}
+
+impl<T, C: Context> Drop for MapPtr<T, C> {
+    #[inline(always)]
+    fn drop(&mut self) {
+        unsafe {
+            self.ctx.next_queue().enqueue_noop(|queue| {
+                let mut event = core::ptr::null_mut();
+                tri!(clEnqueueUnmapMemObject(queue.id(), self.mem.id(), self.ptr.cast(), 0, core::ptr::null(), addr_of_mut!(event)));
+                return Ok(RawEvent::from_id(event).unwrap())
+            }).unwrap().join_unwrap();
+        }
+    }
+}
+
+unsafe impl<T: Send, C: Send + Context> Send for MapPtr<T, C> {}
+unsafe impl<T: Sync, C: Sync + Context> Sync for MapPtr<T, C> {}
 
 /// Mapping flags
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

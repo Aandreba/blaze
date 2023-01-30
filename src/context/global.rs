@@ -1,20 +1,29 @@
 use std::ops::Deref;
-use crate::core::RawCommandQueue;
-use super::{Context, RawContext};
+use super::{Context, RawContext, CommandQueue};
 
 extern "Rust" {
     fn __blaze__global__as_raw () -> &'static RawContext;
-    fn __blaze__global__queues () -> &'static [RawCommandQueue];
-    fn __blaze__global__next_queue () -> &'static RawCommandQueue;
+    fn __blaze__global__queues () -> &'static [CommandQueue];
+    fn __blaze__global__next_queue () -> &'static CommandQueue;
 }
 
 #[doc = include_str!("../../docs/src/context/global.md")]
 #[derive(Copy, Clone, Default, Debug)]
 pub struct Global;
 
+impl Global {
+    /// Returns a reference to a static global allocator.
+    /// This is a convenience function for when needing to pass a reference to a [`Context`].
+    #[inline(always)]
+    pub fn get () -> &'static Global {
+        static STATIC_GLOBAL : Global = Global;
+        &STATIC_GLOBAL
+    }
+}
+
 impl Context for Global {
     #[inline(always)]
-    fn next_queue (&self) -> &RawCommandQueue {
+    fn next_queue (&self) -> &CommandQueue {
         unsafe { __blaze__global__next_queue() } 
     }
 
@@ -24,7 +33,7 @@ impl Context for Global {
     }
 
     #[inline(always)]
-    fn queues (&self) -> &[RawCommandQueue] {
+    fn queues (&self) -> &[CommandQueue] {
         unsafe { __blaze__global__queues() }
     }
 }

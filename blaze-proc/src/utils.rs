@@ -33,6 +33,7 @@ impl ToTokens for AttributeList {
     }
 }
 
+#[allow(unused)]
 pub fn to_pascal_case (str: &str) -> String {
     let mut result = String::with_capacity(str.len());
     let mut capital = true;

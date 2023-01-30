@@ -1,7 +1,7 @@
-use std::{mem::MaybeUninit, ffi::c_void, ptr::{addr_of_mut, NonNull}};
+use std::{mem::MaybeUninit, ffi::c_void, ptr::{addr_of_mut, NonNull}, borrow::Borrow, marker::PhantomData};
 use opencl_sys::*;
 use blaze_proc::docfg;
-use crate::{core::*, context::{RawContext, Context, Global}, event::{RawEvent, WaitList}};
+use crate::{core::*, context::{RawContext, Context}, event::{RawEvent, consumer::{NoopEvent, PhantomEvent}}, wait_list, prelude::Scope, WaitList};
 
 #[derive(Debug, PartialEq, Eq, Hash)]
 #[repr(transparent)]
@@ -19,7 +19,7 @@ impl RawKernel {
     }
 
     #[inline(always)]
-    pub const fn from_id (id: cl_kernel) -> Option<Self> {
+    pub const unsafe fn from_id (id: cl_kernel) -> Option<Self> {
         NonNull::new(id).map(Self)
     }
 
@@ -30,9 +30,9 @@ impl RawKernel {
     }
 
     #[inline(always)]
-    pub unsafe fn set_argument<T: ?Sized> (&mut self, idx: u32, v: &T) -> Result<()> {
-        let ptr = v as *const _ as *const _;
-        tri!(clSetKernelArg(self.id(), idx, core::mem::size_of_val(v), ptr));
+    pub unsafe fn set_argument<T: Copy, R: Borrow<T>> (&mut self, idx: u32, v: R) -> Result<()> {
+        let ptr = v.borrow() as *const _ as *const _;
+        tri!(clSetKernelArg(self.id(), idx, core::mem::size_of_val(v.borrow()), ptr));
         Ok(())
     }
 
@@ -54,16 +54,7 @@ impl RawKernel {
     }
 
     #[inline(always)]
-    pub unsafe fn enqueue<const N: usize> (&mut self, global_work_dims: [usize; N], local_work_dims: impl Into<Option<[usize; N]>>, wait: impl Into<WaitList>) -> Result<RawEvent> {
-        self.enqueue_with_queue(Global.next_queue(), global_work_dims, local_work_dims, wait)
-    }
-
-    #[inline(always)]
-    pub unsafe fn enqueue_with_context<C: Context, const N: usize> (&mut self, ctx: &C, global_work_dims: [usize; N], local_work_dims: impl Into<Option<[usize; N]>>, wait: impl Into<WaitList>) -> Result<RawEvent> {
-        self.enqueue_with_queue(ctx.next_queue(), global_work_dims, local_work_dims, wait)
-    }
-
-    pub unsafe fn enqueue_with_queue<const N: usize> (&mut self, queue: &RawCommandQueue, global_work_dims: [usize; N], local_work_dims: impl Into<Option<[usize; N]>>, wait: impl Into<WaitList>) -> Result<RawEvent> {
+    pub unsafe fn enqueue_unchecked<const N: usize> (&mut self, queue: &RawCommandQueue, global_work_dims: [usize; N], local_work_dims: impl Into<Option<[usize; N]>>, wait: WaitList) -> Result<RawEvent> {
         let work_dim = u32::try_from(N).expect("Integer overflow");
         let local_work_dims = local_work_dims.into();
         let local_work_dims = match local_work_dims {
@@ -71,13 +62,35 @@ impl RawKernel {
             None => core::ptr::null()
         };
 
-        let wait : WaitList = wait.into();
-        let (num_events_in_wait_list, event_wait_list) = wait.raw_parts();
+        let (num_events_in_wait_list, event_wait_list) = wait_list(wait)?;
 
         let mut event = core::ptr::null_mut();
         tri!(clEnqueueNDRangeKernel(queue.id(), self.id(), work_dim, core::ptr::null(), global_work_dims.as_ptr(), local_work_dims, num_events_in_wait_list, event_wait_list, addr_of_mut!(event)));
 
         Ok(RawEvent::from_id(event).unwrap())
+    }
+
+    #[inline(always)]
+    pub unsafe fn enqueue_with_scope<'scope, 'env, C: Context, const N: usize> (&mut self, scope: &'scope Scope<'scope, 'env, C>, global_work_dims: [usize; N], local_work_dims: impl Into<Option<[usize; N]>>, wait: WaitList) -> Result<NoopEvent> {
+        let work_dim = u32::try_from(N).expect("Integer overflow");
+        let local_work_dims = local_work_dims.into();
+        let local_work_dims = match local_work_dims {
+            Some(x) => x.as_ptr(),
+            None => core::ptr::null()
+        };
+
+        let (num_events_in_wait_list, event_wait_list) = wait_list(wait)?;
+
+        return scope.enqueue_noop(|queue| {
+            let mut event = core::ptr::null_mut();
+            tri!(clEnqueueNDRangeKernel(queue.id(), self.id(), work_dim, core::ptr::null(), global_work_dims.as_ptr(), local_work_dims, num_events_in_wait_list, event_wait_list, addr_of_mut!(event)));
+            return Ok(RawEvent::from_id(event).unwrap())
+        })
+    }
+
+    #[inline(always)]
+    pub unsafe fn enqueue_phantom_with_scope<'scope, 'env, T: 'scope, C: Context, const N: usize> (&mut self, scope: &'scope Scope<'scope, 'env, C>, global_work_dims: [usize; N], local_work_dims: impl Into<Option<[usize; N]>>, wait: WaitList) -> Result<PhantomEvent<T>> {
+        Ok(self.enqueue_with_scope(scope, global_work_dims, local_work_dims, wait)?.set_consumer(PhantomData))
     }
 
     /// Return the kernel function name.

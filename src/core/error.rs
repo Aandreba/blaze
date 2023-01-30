@@ -1,27 +1,82 @@
-use std::{backtrace::Backtrace, sync::Arc, fmt::{Display, Debug}};
+use std::{sync::Arc, fmt::{Display, Debug}};
 use blaze_proc::error;
+
 pub type Result<T> = ::core::result::Result<T, Error>;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ErrorCode {
+    Kind (ErrorKind),
+    Unknown (i32)
+}
+
+impl ErrorCode {
+    #[inline(always)]
+    pub const fn as_i32 (self) -> i32 {
+        return match self {
+            Self::Kind(x) => x as i32,
+            Self::Unknown(x) => x
+        }
+    }
+    
+    #[inline]
+    pub fn try_into_known (&mut self) -> Option<ErrorKind> {
+        match *self {
+            Self::Kind(x) => Some(x),
+            Self::Unknown(id) => match ErrorKind::try_from(id) {
+                Ok(x) => {
+                    *self = Self::Kind(x);
+                    return Some(x)
+                },
+                Err(_) => return None 
+            }
+        }
+    }
+}
+
+impl From<ErrorKind> for ErrorCode {
+    #[inline(always)]
+    fn from(x: ErrorKind) -> Self {
+        Self::Kind(x)
+    }
+}
+
+impl From<i32> for ErrorCode {
+    #[inline(always)]
+    fn from(x: i32) -> Self {
+        ErrorKind::try_from(x).into()
+    }
+}
+
+impl From<::core::result::Result<ErrorKind, i32>> for ErrorCode {
+    #[inline(always)]
+    fn from(x: ::core::result::Result<ErrorKind, i32>) -> Self {
+        match x {
+            Ok(x) => Self::Kind(x),
+            Err(e) => Self::Unknown(e)
+        }
+    }
+}
 
 #[derive(Clone)]
 #[non_exhaustive]
 pub struct Error {
-    pub ty: ErrorType,
-    pub desc: Option<Arc<str>>,
+    pub ty: ErrorCode,
+    pub desc: Option<Arc<dyn Send + Sync + Display>>,
     #[cfg_attr(docsrs, doc(cfg(debug_assertions)))]
     #[cfg(debug_assertions)]
-    pub backtrace: Arc<Backtrace>
+    pub backtrace: Arc<std::backtrace::Backtrace>
 }
 
 impl Error {
     #[inline(always)]
-    pub fn new (ty: ErrorType, desc: impl ToString) -> Self {
-        Self::from_parts(ty, Some(Arc::from(desc.to_string())), Arc::new(Backtrace::capture()))
+    pub fn new<D: 'static + Send + Sync + Display> (ty: impl Into<ErrorCode>, desc: D) -> Self {
+        Self::from_parts(ty, Some(Arc::new(desc)), #[cfg(debug_assertions)] Arc::new(std::backtrace::Backtrace::capture()))
     }
 
     #[inline(always)]
-    pub fn from_parts (ty: ErrorType, desc: Option<Arc<str>>, #[cfg(debug_assertions)] backtrace: Arc<Backtrace>) -> Self {
+    pub fn from_parts (ty: impl Into<ErrorCode>, desc: Option<Arc<dyn Send + Sync + Display>>, #[cfg(debug_assertions)] backtrace: Arc<std::backtrace::Backtrace>) -> Self {
         Self { 
-            ty,
+            ty: ty.into(),
             desc,
             #[cfg(debug_assertions)]
             backtrace
@@ -29,27 +84,25 @@ impl Error {
     }
 
     #[inline(always)]
-    pub fn from_type (ty: ErrorType) -> Self {
+    pub fn from_type (ty: impl Into<ErrorCode>) -> Self {
         Self { 
-            ty,
+            ty: ty.into(),
             desc: None,
             #[cfg(debug_assertions)]
-            backtrace: Arc::new(Backtrace::capture())
+            backtrace: Arc::new(std::backtrace::Backtrace::capture())
         }
     }
-}
 
-impl From<ErrorType> for Error {
     #[inline(always)]
-    fn from(ty: ErrorType) -> Self {
-        Self::from_type(ty)
+    pub fn as_i32 (self) -> i32 {
+        return self.ty.as_i32()
     }
 }
 
-impl From<i32> for Error {
+impl<T: Into<ErrorCode>> From<T> for Error {
     #[inline(always)]
-    fn from(x: i32) -> Self {
-        Self::from_type(ErrorType::from(x))
+    fn from(ty: T) -> Self {
+        Self::from_type(ty)
     }
 }
 
@@ -76,9 +129,12 @@ impl Display for Error {
     }
 }
 
+#[deprecated(since="0.1.0", note="use `ErrorKind` instead")]
+pub type ErrorType = ErrorKind;
+
 error! {
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    pub enum ErrorType {
+    pub enum ErrorKind {
         const CL_DEVICE_NOT_FOUND,
         const CL_DEVICE_NOT_AVAILABLE,
         const CL_COMPILER_NOT_AVAILABLE,

@@ -6,9 +6,13 @@
 - [ ] join streams
 - [ ] `image` feature (use ffmpeg?)
 - [ ] serde support
+- [ ] Scoped events (treat events kinda like JoinHandles) 
 
 ## Before release
-- [x] Check most important stuff is documented
-- [x] Create README file for GitHub repo
-- [x] Add badges to README and book
-- [x] Fix warnings
+- [x] Blocking events for `#[blaze]` programs
+- ...
+
+## Read vec drop table
+| Current action | Consumer dropped | Event completed |
+| Consumer dropped | 
+| Event completed  |

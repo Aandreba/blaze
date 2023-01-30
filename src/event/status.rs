@@ -2,7 +2,7 @@ use std::intrinsics::transmute;
 use opencl_sys::{CL_QUEUED, CL_SUBMITTED, CL_RUNNING, CL_COMPLETE};
 use crate::core::Error;
 
-/// Status of an
+/// An event's status
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(i32)]
 pub enum EventStatus {
@@ -44,25 +44,19 @@ impl EventStatus {
     #[inline(always)]
     pub const fn is_queued (&self) -> bool {
         match self {
-            Self::Submitted => true,
+            Self::Queued => true,
             _ => false
         }
     }
 
     #[inline(always)]
     pub const fn has_started_running (&self) -> bool {
-        match self {
-            Self::Running | Self::Complete => true,
-            _ => false
-        }
+        (*self as i32) <= CL_RUNNING
     }
 
     #[inline(always)]
     pub const fn has_submitted (&self) -> bool {
-        match self {
-            Self::Submitted | Self::Running | Self::Complete => true,
-            _ => false
-        }
+        (*self as i32) <= CL_SUBMITTED
     }
 }
 
@@ -72,7 +66,7 @@ impl TryFrom<i32> for EventStatus {
     #[inline(always)]
     fn try_from(value: i32) -> Result<Self, Self::Error> {
         if value < 0 {
-            return Err(Error::from(value))
+            return Err(Error::try_from(value).unwrap())
         }
 
         return unsafe { Ok(transmute(value)) }
