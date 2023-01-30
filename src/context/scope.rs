@@ -1,6 +1,6 @@
 use std::{sync::{Arc, atomic::{AtomicUsize, Ordering, AtomicI32}}, marker::{PhantomData}, panic::{catch_unwind, AssertUnwindSafe, resume_unwind}};
 use opencl_sys::CL_SUCCESS;
-use crate::{prelude::{Result, RawCommandQueue, RawEvent, Event, Error}, event::{consumer::{Consumer, Noop, NoopEvent, PhantomEvent}, EventStatus, CallbackHandleData}};
+use crate::{prelude::{Result, RawCommandQueue, RawEvent, Event, Error}, event::{consumer::{Consumer, Noop, NoopEvent, PhantomEvent}, EventStatus}};
 use super::{Global, Context};
 use blaze_proc::docfg;
 
@@ -109,7 +109,8 @@ impl<'scope, 'env: 'scope, C: 'env + Context> Scope<'scope, 'env, C> {
     /// Adds a callback function that will be executed when the event reaches the specified status.
     pub(crate) fn on_status<T: 'scope + Send, F: 'scope + Send + FnOnce(RawEvent, Result<EventStatus>) -> T, Cn: Consumer> (&'scope self, evt: &'env Event<Cn>, status: EventStatus, f: F) -> Result<crate::event::ScopedCallbackHandle<'scope, T>> {
         let (send, recv) = std::sync::mpsc::sync_channel::<_>(1);
-        let cb_data = std::sync::Arc::new(CallbackHandleData {
+        #[cfg(any(feature = "cl1_1", feature = "futures"))]
+        let cb_data = std::sync::Arc::new(crate::event::CallbackHandleData {
             #[cfg(feature = "cl1_1")]
             flag: once_cell::sync::OnceCell::new(),
             #[cfg(feature = "futures")]
@@ -122,6 +123,7 @@ impl<'scope, 'env: 'scope, C: 'env + Context> Scope<'scope, 'env, C> {
 
         let my_data = self.data.clone();
         let my_thread = self.thread.clone();
+        #[cfg(any(feature = "cl1_1", feature = "futures"))]
         let my_cb_data = cb_data.clone();
 
         let f = move |evt, status: Result<EventStatus>| {
@@ -154,7 +156,7 @@ impl<'scope, 'env: 'scope, C: 'env + Context> Scope<'scope, 'env, C> {
             tri!(opencl_sys::clRetainEvent(evt.id()));
         }
 
-        return Ok(crate::event::ScopedCallbackHandle { recv, data: cb_data, phtm: PhantomData })
+        return Ok(crate::event::ScopedCallbackHandle { recv, #[cfg(any(feature = "cl1_1", feature = "futures"))] data: cb_data, phtm: PhantomData })
     }
 
 
