@@ -8,7 +8,7 @@ edition = "2021"
 half = ["dep:half"]
 double = []
 
-[target.'cfg(not(macos))'.features]
+[target.'cfg(not(target_os = "macos"))'.features]
 default = ["double"]
 
 [package.metadata.docs.rs]

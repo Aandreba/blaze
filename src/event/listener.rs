@@ -66,7 +66,13 @@ pub(super) fn get_sender () -> Arc<FillQueue<EventCallback>> {
                                 #[cfg(debug_assertions)]
                                 resume_unwind(e);
                                 #[cfg(not(debug_assertions))]
-                                eprintln!("{e}")
+                                match Box::<dyn 'static + std::any::Any + Send>::downcast::<String>(e) {
+                                    Ok(x) => eprintln!("{x}"),
+                                    Err(e) => match Box::<dyn 'static + std::any::Any + Send>::downcast::<&'static str>(e) {
+                                        Ok(x) => eprintln!("{x}"),
+                                        Err(e) => eprintln!("Panic with non-strig payload")
+                                    }
+                                }
                             }
                         }
                     }

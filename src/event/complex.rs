@@ -599,7 +599,7 @@ impl<C: Consumer> Event<C> {
                     }
                 })?;
 
-                return Ok(CallbackHandle { recv, data, phtm: PhantomData })
+                return Ok(CallbackHandle { recv, #[cfg(any(feature = "cl1_1", feature = "futures"))] data, phtm: PhantomData })
             }
         }
     }

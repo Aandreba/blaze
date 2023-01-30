@@ -347,6 +347,7 @@ pub(crate) struct CallbackHandleData {
 
 pub struct ScopedCallbackHandle<'a, T> {
     pub(crate) recv: std::sync::mpsc::Receiver<std::thread::Result<T>>,
+    #[cfg(any(feature = "cl1_1", feature = "futures"))]
     pub(crate) data: std::sync::Arc<CallbackHandleData>,
     pub(crate) phtm: PhantomData<&'a mut &'a ()>
 }
