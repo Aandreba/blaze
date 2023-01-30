@@ -107,8 +107,10 @@ unsafe impl<C: Context> Allocator for Svm<C> {
     }
 
     #[inline(always)]
-    unsafe fn deallocate(&self, ptr: std::ptr::NonNull<u8>, _layout: Layout) {
-        self.free(ptr.as_ptr().cast())
+    unsafe fn deallocate(&self, ptr: std::ptr::NonNull<u8>, layout: Layout) {
+        if layout.size() > 0 {
+            self.free(ptr.as_ptr().cast())
+        }
     }
 }
 
@@ -123,12 +125,21 @@ unsafe impl<C: Context> GlobalAlloc for Svm<C> {
             false => DEFAULT_FINE
         };
 
-        self.alloc_with_flags(flags, layout).unwrap()
+        return match self.alloc_with_flags(flags, layout) {
+            Ok(ptr) => ptr,
+            Err(e) => {
+                #[cfg(debug_assertions)]
+                eprintln!("{e}");
+                std::alloc::handle_alloc_error(layout)
+            }
+        }
     }
 
     #[inline(always)]
-    unsafe fn dealloc(&self, ptr: *mut u8, _layout: Layout) {
-        self.free(ptr.cast())
+    unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+        if layout.size() > 0 {
+            self.free(ptr.cast())
+        }
     }
 }
 

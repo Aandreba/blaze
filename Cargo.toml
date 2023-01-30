@@ -52,6 +52,7 @@ bitvec = "1"
 elor = "1"
 ouroboros = "0.15.5"
 thin_trait_object = "1.1.2"
+thinnbox = "0.1.0"
 
 [dev-dependencies]
 tokio = { version = "1.19.2", features = ["full"] }

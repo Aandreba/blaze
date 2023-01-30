@@ -3,7 +3,6 @@
 #![cfg_attr(feature = "svm", feature(strict_provenance))]
 #![cfg_attr(docsrs, feature(doc_cfg, proc_macro_hygiene))]
 #![cfg_attr(debug_assertions, feature(backtrace_frames))]
-#![cfg_attr(feature = "futures", feature(into_future))]
 #![doc = include_str!("../docs/src/intro.md")]
 
 use event::RawEvent;
