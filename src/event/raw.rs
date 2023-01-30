@@ -8,6 +8,7 @@ use std::time::{Duration, SystemTime};
 use std::{mem::MaybeUninit, ptr::{NonNull}};
 use opencl_sys::*;
 use blaze_proc::docfg;
+use thinnbox::ThinBox;
 
 use super::ext::NoopEvent;
 use super::{EventStatus, ProfilingInfo, CommandType, Event, Consumer};
@@ -212,7 +213,7 @@ impl RawEvent {
         let data = std::sync::Arc::new(CallbackHandleData {
             #[cfg(feature = "cl1_1")]
             flag: once_cell::sync::OnceCell::new(),
-            #[cfg(feature = "future")]
+            #[cfg(feature = "futures")]
             waker: futures::task::AtomicWaker::new()
         });
         
@@ -261,12 +262,12 @@ impl RawEvent {
     /// Because commands in a command-queue are not required to begin execution until the command-queue is flushed, callbacks that enqueue commands on a command-queue should either call [`RawCommandQueue::flush`] on the queue before returning, or arrange for the command-queue to be flushed later.
     #[inline(always)]
     pub fn on_status_silent (&self, status: EventStatus, f: impl 'static + FnOnce(RawEvent, Result<EventStatus>) + Send) -> Result<()> {
-        let f: Box<Box<dyn 'static + FnOnce(RawEvent, Result<EventStatus>) + Send>> = Box::new(Box::new(f));
-        let user_data = Box::into_raw(f);
+        let f: ThinBox<dyn 'static + FnMut(RawEvent, Result<EventStatus>)> = unsafe { ThinBox::from_once_unchecked(f) };
+        let user_data = ThinBox::into_raw(f);
 
         unsafe {
-            if let Err(e) = self.on_status_raw(status, event_listener, user_data.cast()) {
-                let _ = Box::from_raw(user_data); // drop user data
+            if let Err(e) = self.on_status_raw(status, event_listener, user_data.as_ptr().cast()) {
+                let _ = ThinBox::<dyn 'static + FnMut(RawEvent, Result<EventStatus>)>::from_raw(user_data); // drop user data
                 return Err(e);
             }
 
@@ -328,7 +329,7 @@ unsafe impl Send for RawEvent {}
 unsafe impl Sync for RawEvent {}
 
 pub(crate) unsafe extern "C" fn event_listener (event: cl_event, event_command_status: cl_int, user_data: *mut c_void) {
-    let f = *Box::from_raw(user_data.cast::<Box<dyn 'static + Send + FnOnce(RawEvent, Result<EventStatus>)>>());
+    let mut f = ThinBox::<dyn 'static + FnMut(RawEvent, Result<EventStatus>)>::from_raw(NonNull::new_unchecked(user_data.cast()));
     let event = RawEvent::from_id_unchecked(event);
     let status = EventStatus::try_from(event_command_status);
     f(event, status)

@@ -41,7 +41,7 @@ impl<'scope, 'env: 'scope, C: 'env + Context> Scope<'scope, 'env, C> {
     /// Creates a new [`Event`] scope targeted to `async` use
     #[docfg(feature = "futures")]
     #[inline(always)]
-    fn new_async (ctx: &'env C) -> Self {
+    pub unsafe fn new_async (ctx: &'env C) -> Self {
         Self::with_waker(ctx, Arc::new(futures::task::AtomicWaker::new()))
     }
 
@@ -51,7 +51,10 @@ impl<'scope, 'env: 'scope, C: 'env + Context> Scope<'scope, 'env, C> {
     fn with_waker (ctx: &'env C, waker: Arc<futures::task::AtomicWaker>) -> Self {
         Self {
             ctx,
-            data: Arc::new((AtomicUsize::new(0), AtomicI32::new(CL_SUCCESS))),
+            data: Arc::new(ScopeData {
+                items: AtomicUsize::new(0),
+                err: AtomicI32::new(CL_SUCCESS)
+            }),
             thread: ScopeWaker::Flag(waker),
             scope: PhantomData,
             env: PhantomData
@@ -109,7 +112,7 @@ impl<'scope, 'env: 'scope, C: 'env + Context> Scope<'scope, 'env, C> {
         let cb_data = std::sync::Arc::new(CallbackHandleData {
             #[cfg(feature = "cl1_1")]
             flag: once_cell::sync::OnceCell::new(),
-            #[cfg(feature = "future")]
+            #[cfg(feature = "futures")]
             waker: futures::task::AtomicWaker::new()
         });
 
@@ -265,7 +268,7 @@ cfg_if::cfg_if! {
                 
                 // Sleep
                 this.get_waker().register(cx.waker());
-                if this.scope.data.0.load(Ordering::Acquire) != 0 {
+                if this.scope.data.items.load(Ordering::Acquire) != 0 {
                     return std::task::Poll::Pending;
                 }
 
@@ -273,7 +276,7 @@ cfg_if::cfg_if! {
                 match core::mem::replace(&mut this.fut, AsyncScopeFuture::Ended) {
                     AsyncScopeFuture::Panic(e) => resume_unwind(e),
                     AsyncScopeFuture::Value(x) => {
-                        let e = this.scope.data.1.load(Ordering::Relaxed);
+                        let e = this.scope.data.err.load(Ordering::Relaxed);
                         if e == CL_SUCCESS {
                             return std::task::Poll::Ready(x)
                         }
@@ -283,7 +286,7 @@ cfg_if::cfg_if! {
                     #[cfg(debug_assertions)]
                     AsyncScopeFuture::Future(_) => unreachable!(),
                     #[cfg(not(debug_assertions))]
-                    AsyncScopeFuture::Future(_) => unreachable_unchecked()
+                    AsyncScopeFuture::Future(_) => unsafe { std::hint::unreachable_unchecked() }
                 }
             }
         }
@@ -301,7 +304,7 @@ cfg_if::cfg_if! {
                 
                 loop {
                     self.get_waker().register(&waker);
-                    if self.scope.data.0.load(Ordering::Acquire) == 0 { break }
+                    if self.scope.data.items.load(Ordering::Acquire) == 0 { break }
                     std::thread::park();
                 }
             }
@@ -378,7 +381,7 @@ cfg_if::cfg_if! {
 
             ($ctx:expr, $f:expr) => {
                 async {
-                    let scope = $crate::context::Scope::new_async($ctx);
+                    let scope = unsafe { $crate::context::Scope::new_async($ctx) };
                     unsafe {
                         $crate::context::InnerAsyncScope::new(&scope, $f).await
                     }
