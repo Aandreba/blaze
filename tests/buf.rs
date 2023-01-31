@@ -61,6 +61,18 @@ fn slice () -> Result<()> {
     Ok(())
 }
 
+// expect panic
+#[cfg(feature = "cl1_1")]
+#[test]
+fn double_slice () -> Result<()> {
+    let buf = buffer![1, 2, 3, 4, 5]?;
+    let slice = buf.slice(1..)?;
+    let slice2 = slice.slice(..2)?;
+
+    println!("{buf:?}, {slice:?}, {slice2:?}");
+    Ok(())
+}
+
 /* RECT */
 cfg_if::cfg_if! {
     if #[cfg(feature = "cl1_1")] {
