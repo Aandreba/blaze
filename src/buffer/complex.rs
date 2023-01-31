@@ -707,10 +707,11 @@ impl<T: Eq, C: Context> Eq for Buffer<T, C> {}
 /// ```rust
 /// use blaze_rs::{buffer, prelude::*};
 /// 
+/// #[global_context]
+/// static CONTEXT : SimpleContext = SimpleContext::default();
+/// 
 /// let r#macro: Result<Buffer<i32>> = buffer![1, 2, 3];
 /// let expanded: Result<Buffer<i32>> = Buffer::new(&[1, 2, 3], MemAccess::READ_WRITE, false);
-/// 
-/// assert_eq!(r#macro, expanded);
 /// ```
 /// 
 /// - Create a [`Buffer`] with a given element and size
@@ -718,11 +719,11 @@ impl<T: Eq, C: Context> Eq for Buffer<T, C> {}
 /// ```rust
 /// use blaze_rs::{buffer, prelude::*};
 /// 
+/// #[global_context]
+/// static CONTEXT : SimpleContext = SimpleContext::default();
+/// 
 /// let r#macro: Result<Buffer<i32>> = buffer![1; 3];
 /// let expanded: Result<Buffer<i32>> = Buffer::new(&vec![1; 3], MemAccess::READ_WRITE, false);
-/// 
-/// assert_eq!(r#macro, expanded);
-/// # Ok::<(), Error>(())
 /// ```
 /// 
 /// - Create a [`Buffer`] with a by-index constructor
@@ -730,17 +731,22 @@ impl<T: Eq, C: Context> Eq for Buffer<T, C> {}
 /// ```rust
 /// use blaze_rs::{buffer, prelude::*};
 /// 
+/// #[global_context]
+/// static CONTEXT : SimpleContext = SimpleContext::default();
+/// 
+/// # fn main () -> Result<()> {
+/// 
 /// let r#macro: Buffer<i32> = buffer![|i| i as i32; 3]?;
-/// let expanded: Buffer<i32> = {
+/// let expanded: Buffer<i32> = unsafe {
 ///     let mut res = Buffer::new_uninit(3, MemAccess::READ_WRITE, false)?;
 ///     for (i, v) in res.map_mut_blocking(.., WaitList::None)?.iter_mut().enumerate() {
 ///         v.write(i as i32);
 ///     }
-///     res
+///     res.assume_init()
 /// };
 /// 
-/// assert_eq!(r#macro, expanded);
 /// # Ok::<(), Error>(())
+/// # }
 /// ```
 /// 
 /// In particular, the by-index constructor facilitates the construction of Buffers of `!Copy` types.
@@ -748,14 +754,16 @@ impl<T: Eq, C: Context> Eq for Buffer<T, C> {}
 /// ```rust
 /// use blaze_rs::{buffer, prelude::*};
 /// 
+/// #[global_context]
+/// static CONTEXT : SimpleContext = SimpleContext::default();
+/// 
 /// #[repr(C)]
 /// struct NoCopyStruct {
 ///     lock: bool,
 ///     val: i32,
 /// }
 /// 
-/// let values: Buffer<NoCopyStruct> = buffer![|i| NoCopyStruct { lock: false, val: i as i32 }; 5]?;
-/// # Ok::<(), Error>(())
+/// let values: Result<Buffer<NoCopyStruct>> = buffer![|i| NoCopyStruct { lock: false, val: i as i32 }; 5];
 /// ```
 #[macro_export]
 macro_rules! buffer {

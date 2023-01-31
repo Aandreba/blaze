@@ -72,6 +72,7 @@ pub mod prelude {
     pub use crate::event::{RawEvent, Event};
     pub use crate::memobj::RawMemObject;
     pub use crate::buffer::rect::{RectBuffer2D, RectBox2D};
+    pub use crate::WaitList;
 }
 
 #[doc(hidden)]
@@ -98,6 +99,11 @@ pub mod macros {
     /// ```rust
     /// use blaze_rs::{prelude::*, macros::*};
     /// use std::ops::Deref;
+    /// 
+    /// #[global_context]
+    /// static CONTEXT : SimpleContext = SimpleContext::default();
+    /// 
+    /// # fn main () -> Result<()> {
     ///   
     /// let buffer = Buffer::new(&[1, 2, 3, 4, 5], MemAccess::default(), false)?;
     /// 
@@ -108,6 +114,8 @@ pub mod macros {
     /// })?;
     /// 
     /// assert_eq!(left.as_slice(), right.deref());
+    /// # return Ok(())
+    /// # }
     /// ```
     pub use blaze_proc::join_various_blocking;
 }
