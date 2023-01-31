@@ -11,6 +11,7 @@ readme = "docs/src/intro.md"
 keywords = ["opencl", "rust", "blaze", "gpgpu", "gpu"]
 categories = ["api-bindings", "concurrency", "hardware-support", "science", "rust-patterns"]
 exclude = [".github", "Makefile", "TODO.md", "CHANGELOG.md"]
+build = "build.rs"
 
 [features]
 # OpenCL version
@@ -58,5 +59,9 @@ thinnbox = "0.1.0"
 tokio = { version = "1.19.2", features = ["full"] }
 rand = "0.8.5"
 
+[build-dependencies]
+camino = "1.1.2"
+
 [workspace]
 members = ["blaze-proc", "blase"]
+

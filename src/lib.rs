@@ -96,7 +96,8 @@ pub mod macros {
 
     /// Similar to [`Event::join_all_blocking`](crate::event::Event::join_all_blocking), but it can also join events with different [`Consumer`](crate::event::Consumer)s
     /// ```rust
-    /// use std::ops::Deref;  
+    /// use blaze_rs::{prelude::*, macros::*};
+    /// use std::ops::Deref;
     ///   
     /// let buffer = Buffer::new(&[1, 2, 3, 4, 5], MemAccess::default(), false)?;
     /// 
