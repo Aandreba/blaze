@@ -1,4 +1,4 @@
-use std::ops::Deref;
+use std::{ops::Deref};
 use blaze_proc::docfg;
 use crate::{core::*};
 use super::{Context, RawContext, ContextProperties, CommandQueue};
@@ -18,7 +18,7 @@ impl SimpleContext {
     }
 
     #[docfg(feature = "cl3")]
-    pub fn with_logger (device: &RawDevice, ctx_props: ContextProperties, props: impl Into<QueueProperties>, loger: impl 'static + Fn(&str) + Send) -> Result<Self> {
+    pub fn with_logger (device: &RawDevice, ctx_props: ContextProperties, props: impl Into<QueueProperties>, loger: impl 'static + Fn(&std::ffi::CStr) + Send) -> Result<Self> {
         let ctx = RawContext::with_logger(ctx_props, core::slice::from_ref(device), loger)?;
         let queue = RawCommandQueue::new(&ctx, props.into(), device).map(CommandQueue::new)?;
         Ok(Self { ctx, queue })
@@ -30,7 +30,7 @@ impl SimpleContext {
 
         cfg_if::cfg_if! {
             if #[cfg(all(debug_assertions, feature = "cl3"))] {
-                Self::with_logger(device, ContextProperties::default(), QueueProperties::default(), |x| println!("{x}"))
+                Self::with_logger(device, ContextProperties::default(), QueueProperties::default(), |x| println!("{x:?}"))
             } else {
                 Self::new(device, ContextProperties::default(), QueueProperties::default())
             }
