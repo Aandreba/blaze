@@ -537,7 +537,7 @@ impl<C: Consumer> Event<C> {
             Ok(_) => unsafe { consumer.consume().map(f) },
             Err(e) => Err(e)
         };
-        return unsafe { core::mem::transmute::<_, &'env NoopEvent>(&this).on_complete_scoped(scope, f) };
+        return unsafe { core::mem::transmute::<&Event<Noop>, &'env NoopEvent>(&this).on_complete_scoped(scope, f) };
     }
 
     #[inline]

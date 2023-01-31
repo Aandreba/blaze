@@ -262,8 +262,14 @@ impl RawEvent {
     /// Because commands in a command-queue are not required to begin execution until the command-queue is flushed, callbacks that enqueue commands on a command-queue should either call [`RawCommandQueue::flush`] on the queue before returning, or arrange for the command-queue to be flushed later.
     #[inline(always)]
     pub fn on_status_silent (&self, status: EventStatus, f: impl 'static + FnOnce(RawEvent, Result<EventStatus>) + Send) -> Result<()> {
-        let f: ThinBox<dyn 'static + FnMut(RawEvent, Result<EventStatus>)> = unsafe { ThinBox::from_once_unchecked(f) };
-        let user_data = ThinBox::into_raw(f);
+        cfg_if::cfg_if! {
+            if #[cfg(debug_assertions)] {
+                let r#fn = ThinBox::<dyn 'static + Send + FnMut(RawEvent, Result<EventStatus>)>::from_once(f);
+            } else {
+                let r#fn = unsafe { ThinBox::<dyn 'static + Send + FnMut(RawEvent, Result<EventStatus>)>::from_once_unchecked(f) };
+            }
+        }
+        let user_data = ThinBox::into_raw(r#fn);
 
         unsafe {
             if let Err(e) = self.on_status_raw(status, event_listener, user_data.as_ptr().cast()) {
@@ -329,7 +335,7 @@ unsafe impl Send for RawEvent {}
 unsafe impl Sync for RawEvent {}
 
 pub(crate) unsafe extern "C" fn event_listener (event: cl_event, event_command_status: cl_int, user_data: *mut c_void) {
-    let mut f = ThinBox::<dyn 'static + FnMut(RawEvent, Result<EventStatus>)>::from_raw(NonNull::new_unchecked(user_data.cast()));
+    let mut f = ThinBox::<dyn 'static + Send + FnMut(RawEvent, Result<EventStatus>)>::from_raw(NonNull::new_unchecked(user_data.cast()));
     let event = RawEvent::from_id_unchecked(event);
     let status = EventStatus::try_from(event_command_status);
     f(event, status)

@@ -1,5 +1,6 @@
 use std::{sync::{Arc, atomic::{AtomicUsize, Ordering, AtomicI32}}, marker::{PhantomData}, panic::{catch_unwind, AssertUnwindSafe, resume_unwind}};
 use opencl_sys::CL_SUCCESS;
+use thinnbox::ThinBox;
 use crate::{prelude::{Result, RawCommandQueue, RawEvent, Event, Error}, event::{consumer::{Consumer, Noop, NoopEvent, PhantomEvent}, EventStatus}};
 use super::{Global, Context};
 use blaze_proc::docfg;
@@ -143,12 +144,18 @@ impl<'scope, 'env: 'scope, C: 'env + Context> Scope<'scope, 'env, C> {
             Self::reduce_items(&my_data, &my_thread)
         };
 
-        let f: Box<Box<dyn 'scope + Send + FnOnce(RawEvent, Result<EventStatus>)>> = Box::new(Box::new(f));
-        let user_data = Box::into_raw(f);
+        cfg_if::cfg_if! {
+            if #[cfg(debug_assertions)] {
+                let r#fn = ThinBox::<dyn 'scope + Send + FnMut(RawEvent, Result<EventStatus>)>::from_once(f);
+            } else {
+                let r#fn = unsafe { ThinBox::<dyn 'scope + Send + FnMut(RawEvent, Result<EventStatus>)>::from_once_unchecked(f) };
+            }
+        }
+        let user_data = ThinBox::into_raw(r#fn);
 
         unsafe {
-            if let Err(e) = evt.on_status_raw(status, crate::event::event_listener, user_data.cast()) {
-                let _ = Box::from_raw(user_data); // drop user data
+            if let Err(e) = evt.on_status_raw(status, crate::event::event_listener, user_data.as_ptr().cast()) {
+                let _ = ThinBox::<dyn 'scope + Send + FnMut(RawEvent, Result<EventStatus>)>::from_raw(user_data); // drop user data
                 Self::reduce_items(&self.data, &self.thread);
                 return Err(e);
             }
