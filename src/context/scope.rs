@@ -331,18 +331,18 @@ cfg_if::cfg_if! {
         /// #[global_context]
         /// static CONTEXT : SimpleContext = SimpleContext::default();
         /// 
-        /// # async fn main () -> Result<()> {
+        /// # async fn foo () -> Result<()> {
         /// let buffer = buffer![1, 2, 3, 4, 5]?;
         /// 
         /// let (left, right) = scope_async!(|s| async {
         ///     let left = buffer.read(s, ..2, None)?.join_async()?;
         ///     let right = buffer.read(s, ..2, None)?.join_async()?;
-        ///     return try_join!(left, right);
+        ///     return tokio::try_join!(left, right);
         /// }).await?;
         /// 
         /// assert_eq!(left, vec![1, 2]);
         /// assert_eq!(right, vec![3, 4, 5]);
-        /// # Ok::<_, Error>()
+        /// # Ok(())
         /// # }
         /// ```
         /// 
@@ -350,24 +350,23 @@ cfg_if::cfg_if! {
         /// 
         /// ```rust
         /// use blaze_rs::{scope_async, prelude::*};
-        /// use futures::future::*;
         /// 
         /// #[global_context]
         /// static CONTEXT : SimpleContext = SimpleContext::default();
         /// 
-        /// # async fn main () -> Result<()> {
+        /// # async fn foo () -> Result<()> {
         /// let ctx = SimpleContext::default()?;
         /// let buffer = Buffer::new_in(ctx, &[1, 2, 3, 4, 5], MemAccess::default(), false)?;
         /// 
         /// let (left, right) = scope_async!(buffer.context(), |s| async {
         ///     let left = buffer.read(s, ..2, None)?.join_async()?;
         ///     let right = buffer.read(s, ..2, None)?.join_async()?;
-        ///     return try_join!(left, right);
+        ///     return tokio::try_join!(left, right);
         /// }).await?;
         /// 
         /// assert_eq!(left, vec![1, 2]);
         /// assert_eq!(right, vec![3, 4, 5]);
-        /// # Ok::<_, Error>()
+        /// # Ok(())
         /// # }
         /// ```
         /// 
@@ -382,7 +381,7 @@ cfg_if::cfg_if! {
         /// #[global_context]
         /// static CONTEXT : SimpleContext = SimpleContext::default();
         /// 
-        /// # async fn main () -> Result<()> {
+        /// # async fn foo () -> Result<()> {
         /// let buffer = buffer![1, 2, 3, 4, 5]?;
         /// 
         /// let mut scope = Box::pin(scope_async!(|s| async {
@@ -394,7 +393,7 @@ cfg_if::cfg_if! {
         /// let mut ctx = std::task::Context::from_waker(noop_waker_ref());
         /// let _ = scope.poll_unpin(&mut ctx)?;
         /// drop(scope); // prints "Left done!", doesn't print "Right done!"
-        /// # Ok::<_, Error>()
+        /// # Ok(())
         /// # }
         /// ```
         #[macro_export]
