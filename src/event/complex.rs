@@ -576,22 +576,17 @@ impl<C: Consumer> Event<C> {
                 return RawEvent::on_status(&self, status, f)
             } else {
                 let (send, recv) = std::sync::mpsc::sync_channel(1);
+                #[cfg(feature = "futures")]
                 let data = std::sync::Arc::new(super::CallbackHandleData {
-                    #[cfg(feature = "cl1_1")]
-                    flag: once_cell::sync::OnceCell::new(),
-                    #[cfg(feature = "futures")]
                     waker: futures::task::AtomicWaker::new()
                 });
-
+                #[cfg(feature = "futures")]
                 let my_data = data.clone();
+
                 self.on_status_silent(status, move |evt, status| {
                     let f = std::panic::AssertUnwindSafe(|| f(evt, status));
                     match send.send(std::panic::catch_unwind(f)) {
                         Ok(_) => {
-                            #[cfg(feature = "cl1_1")]
-                            if let Some(flag) = my_data.flag.get_or_init(|| None) {
-                                flag.try_mark(status.err().map(|x| x.ty)).unwrap();
-                            }
                             #[cfg(feature = "futures")]
                             my_data.waker.wake();
                         },
@@ -599,7 +594,7 @@ impl<C: Consumer> Event<C> {
                     }
                 })?;
 
-                return Ok(CallbackHandle { recv, #[cfg(any(feature = "cl1_1", feature = "futures"))] data, phtm: PhantomData })
+                return Ok(CallbackHandle { recv, #[cfg(feature = "futures")] data, phtm: PhantomData })
             }
         }
     }

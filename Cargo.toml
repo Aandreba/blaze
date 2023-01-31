@@ -54,6 +54,7 @@ elor = "1"
 ouroboros = "0.15.5"
 thin_trait_object = "1.1.2"
 thinnbox = "0.1.1"
+pin-project = "1.0.12"
 
 [dev-dependencies]
 tokio = { version = "1.19.2", features = ["full"] }

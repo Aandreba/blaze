@@ -207,7 +207,7 @@ impl RawEvent {
 
     /// Adds a callback function that will be executed when the event reaches the specified status.
     /// 
-    /// Unlike [`on_status_silent`], this method returns a [`CallbackHandle`] that allows to wait for the callcack to execute and getting its result.
+    /// Unlike `on_status_silent`, this method returns a [`CallbackHandle`] that allows to wait for the callcack to execute and getting its result.
     pub fn on_status<T: 'static + Send> (&self, status: EventStatus, f: impl 'static + Send + FnOnce(RawEvent, Result<EventStatus>) -> T) -> Result<CallbackHandle<T>> {        
         let (send, recv) = std::sync::mpsc::sync_channel::<_>(1);
         let data = std::sync::Arc::new(CallbackHandleData {
@@ -344,6 +344,7 @@ pub(crate) unsafe extern "C" fn event_listener (event: cl_event, event_command_s
 pub type CallbackHandle<T> = ScopedCallbackHandle<'static, T>;
 pub type CallbackConsumer<T> = ScopedCallbackConsumer<'static, T>;
 
+#[cfg(any(feature = "cl1_1", feature = "futures"))]
 pub(crate) struct CallbackHandleData {
     #[cfg(feature = "cl1_1")]
     pub(crate) flag: once_cell::sync::OnceCell<Option<super::FlagEvent>>,
