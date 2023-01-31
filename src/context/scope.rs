@@ -1,6 +1,7 @@
 use std::{sync::{Arc, atomic::{AtomicUsize, Ordering, AtomicI32}}, marker::{PhantomData}, panic::{catch_unwind, AssertUnwindSafe, resume_unwind}};
 use opencl_sys::CL_SUCCESS;
-use crate::{prelude::{Result, RawCommandQueue, RawEvent, Event, Error}, event::{consumer::{Consumer, Noop, NoopEvent, PhantomEvent}, EventStatus, CallbackHandleData}};
+use thinnbox::ThinBox;
+use crate::{prelude::{Result, RawCommandQueue, RawEvent, Event, Error}, event::{consumer::{Consumer, Noop, NoopEvent, PhantomEvent}, EventStatus}};
 use super::{Global, Context};
 use blaze_proc::docfg;
 
@@ -109,7 +110,8 @@ impl<'scope, 'env: 'scope, C: 'env + Context> Scope<'scope, 'env, C> {
     /// Adds a callback function that will be executed when the event reaches the specified status.
     pub(crate) fn on_status<T: 'scope + Send, F: 'scope + Send + FnOnce(RawEvent, Result<EventStatus>) -> T, Cn: Consumer> (&'scope self, evt: &'env Event<Cn>, status: EventStatus, f: F) -> Result<crate::event::ScopedCallbackHandle<'scope, T>> {
         let (send, recv) = std::sync::mpsc::sync_channel::<_>(1);
-        let cb_data = std::sync::Arc::new(CallbackHandleData {
+        #[cfg(any(feature = "cl1_1", feature = "futures"))]
+        let cb_data = std::sync::Arc::new(crate::event::CallbackHandleData {
             #[cfg(feature = "cl1_1")]
             flag: once_cell::sync::OnceCell::new(),
             #[cfg(feature = "futures")]
@@ -122,6 +124,7 @@ impl<'scope, 'env: 'scope, C: 'env + Context> Scope<'scope, 'env, C> {
 
         let my_data = self.data.clone();
         let my_thread = self.thread.clone();
+        #[cfg(any(feature = "cl1_1", feature = "futures"))]
         let my_cb_data = cb_data.clone();
 
         let f = move |evt, status: Result<EventStatus>| {
@@ -141,12 +144,18 @@ impl<'scope, 'env: 'scope, C: 'env + Context> Scope<'scope, 'env, C> {
             Self::reduce_items(&my_data, &my_thread)
         };
 
-        let f: Box<Box<dyn 'scope + Send + FnOnce(RawEvent, Result<EventStatus>)>> = Box::new(Box::new(f));
-        let user_data = Box::into_raw(f);
+        cfg_if::cfg_if! {
+            if #[cfg(debug_assertions)] {
+                let r#fn = ThinBox::<dyn 'scope + Send + FnMut(RawEvent, Result<EventStatus>)>::from_once(f);
+            } else {
+                let r#fn = unsafe { ThinBox::<dyn 'scope + Send + FnMut(RawEvent, Result<EventStatus>)>::from_once_unchecked(f) };
+            }
+        }
+        let user_data = ThinBox::into_raw(r#fn);
 
         unsafe {
-            if let Err(e) = evt.on_status_raw(status, crate::event::event_listener, user_data.cast()) {
-                let _ = Box::from_raw(user_data); // drop user data
+            if let Err(e) = evt.on_status_raw(status, crate::event::event_listener, user_data.as_ptr().cast()) {
+                let _ = ThinBox::<dyn 'scope + Send + FnMut(RawEvent, Result<EventStatus>)>::from_raw(user_data); // drop user data
                 Self::reduce_items(&self.data, &self.thread);
                 return Err(e);
             }
@@ -154,7 +163,7 @@ impl<'scope, 'env: 'scope, C: 'env + Context> Scope<'scope, 'env, C> {
             tri!(opencl_sys::clRetainEvent(evt.id()));
         }
 
-        return Ok(crate::event::ScopedCallbackHandle { recv, data: cb_data, phtm: PhantomData })
+        return Ok(crate::event::ScopedCallbackHandle { recv, #[cfg(any(feature = "cl1_1", feature = "futures"))] data: cb_data, phtm: PhantomData })
     }
 
 
@@ -319,37 +328,46 @@ cfg_if::cfg_if! {
         /// use blaze_rs::{buffer, scope_async, prelude::*};
         /// use futures::future::*;
         /// 
+        /// #[global_context]
+        /// static CONTEXT : SimpleContext = SimpleContext::default();
+        /// 
+        /// # async fn foo () -> Result<()> {
         /// let buffer = buffer![1, 2, 3, 4, 5]?;
         /// 
         /// let (left, right) = scope_async!(|s| async {
         ///     let left = buffer.read(s, ..2, None)?.join_async()?;
         ///     let right = buffer.read(s, ..2, None)?.join_async()?;
-        ///     return try_join!(left, right);
+        ///     return tokio::try_join!(left, right);
         /// }).await?;
         /// 
         /// assert_eq!(left, vec![1, 2]);
         /// assert_eq!(right, vec![3, 4, 5]);
-        /// # Ok::<_, Error>()
+        /// # Ok(())
+        /// # }
         /// ```
         /// 
         /// This macro can be called with the same form as [`scope`] or [`local_scope`].
         /// 
         /// ```rust
         /// use blaze_rs::{scope_async, prelude::*};
-        /// use futures::future::*;
         /// 
+        /// #[global_context]
+        /// static CONTEXT : SimpleContext = SimpleContext::default();
+        /// 
+        /// # async fn foo () -> Result<()> {
         /// let ctx = SimpleContext::default()?;
         /// let buffer = Buffer::new_in(ctx, &[1, 2, 3, 4, 5], MemAccess::default(), false)?;
         /// 
         /// let (left, right) = scope_async!(buffer.context(), |s| async {
         ///     let left = buffer.read(s, ..2, None)?.join_async()?;
         ///     let right = buffer.read(s, ..2, None)?.join_async()?;
-        ///     return try_join!(left, right);
+        ///     return tokio::try_join!(left, right);
         /// }).await?;
         /// 
         /// assert_eq!(left, vec![1, 2]);
         /// assert_eq!(right, vec![3, 4, 5]);
-        /// # Ok::<_, Error>()
+        /// # Ok(())
+        /// # }
         /// ```
         /// 
         /// Unlike it's [blocking](local_scope) counterpart, [`scope_async`](crate::scope_async) does **not** ensure that all events inside the future
@@ -357,9 +375,13 @@ cfg_if::cfg_if! {
         /// and discarting the remaining uninitialized events.
         /// 
         /// ```rust
-        /// use blaze_rs::{buffer, scope_async, scope_async};
+        /// use blaze_rs::{prelude::*, buffer, scope_async};
         /// use futures::{task::*, future::*};
         /// 
+        /// #[global_context]
+        /// static CONTEXT : SimpleContext = SimpleContext::default();
+        /// 
+        /// # async fn foo () -> Result<()> {
         /// let buffer = buffer![1, 2, 3, 4, 5]?;
         /// 
         /// let mut scope = Box::pin(scope_async!(|s| async {
@@ -371,7 +393,8 @@ cfg_if::cfg_if! {
         /// let mut ctx = std::task::Context::from_waker(noop_waker_ref());
         /// let _ = scope.poll_unpin(&mut ctx)?;
         /// drop(scope); // prints "Left done!", doesn't print "Right done!"
-        /// # Ok::<_, Error>()
+        /// # Ok(())
+        /// # }
         /// ```
         #[macro_export]
         macro_rules! scope_async {

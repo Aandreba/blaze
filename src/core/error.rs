@@ -68,11 +68,13 @@ pub struct Error {
 }
 
 impl Error {
+    #[cold]
     #[inline(always)]
     pub fn new<D: 'static + Send + Sync + Display> (ty: impl Into<ErrorCode>, desc: D) -> Self {
         Self::from_parts(ty, Some(Arc::new(desc)), #[cfg(debug_assertions)] Arc::new(std::backtrace::Backtrace::capture()))
     }
 
+    #[cold]
     #[inline(always)]
     pub fn from_parts (ty: impl Into<ErrorCode>, desc: Option<Arc<dyn Send + Sync + Display>>, #[cfg(debug_assertions)] backtrace: Arc<std::backtrace::Backtrace>) -> Self {
         Self { 
@@ -83,6 +85,7 @@ impl Error {
         }
     }
 
+    #[cold]
     #[inline(always)]
     pub fn from_type (ty: impl Into<ErrorCode>) -> Self {
         Self { 

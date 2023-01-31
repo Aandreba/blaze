@@ -16,9 +16,7 @@ pub struct EventWait<C> {
 impl<C: Unpin + Consumer> EventWait<C> {
     #[inline(always)]
     pub fn new (inner: Event<C>) -> Result<Self> {
-        let flag = AsyncFlag::new();
-        let sub = flag.subscribe();
-        
+        let (flag, sub) = utils_atomics::flag::mpmc::async_flag();
         unsafe {
             inner.on_complete_raw(wake_future, flag.into_raw() as *mut _)?;
         }

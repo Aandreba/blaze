@@ -52,18 +52,16 @@ use super::consumer::*;
 
 /// An event with a consumer that will be executed on the completion of the former.
 /// 
-/// When using OpenCL 1.0, the event will also contain a [`Sender`](std::sync::mpsc::Sender) that will send the event's callbacks,
+/// When using OpenCL 1.0, the event will also contain a sender that will send the event's callbacks,
 /// (like [`on_complete`](Event::on_complete)) to a different thread to be executed acordingly. 
 #[derive(Debug, Clone)]
 pub struct Event<C> {
     inner: RawEvent,
     consumer: C,
     #[cfg(not(feature = "cl1_1"))]
-    send: std::sync::mpsc::Sender<super::listener::EventCallback>,
+    send: std::sync::Arc<utils_atomics::FillQueue<super::listener::EventCallback>>,
     #[cfg(feature = "cl1_1")]
-    /// `Sender` is `!Sync`, but `Event` only contains a `Send` in OpenCL 1.0.\
-    /// For the sake of consistency, `!Sync` should be implemented in all features.
-    send: std::marker::PhantomData<std::sync::mpsc::Sender<()>>,
+    send: std::marker::PhantomData<std::sync::Arc<utils_atomics::FillQueue<(RawEvent, EventStatus, Box<dyn FnOnce(RawEvent, Result<EventStatus>) + Send + Sync>)>>>,
 }
 
 impl NoopEvent {
@@ -267,7 +265,7 @@ impl<T, C: Consumer<Output = Result<T>>> Event<C> {
 
 impl<N: Consumer, C: Consumer<Output = Event<N>>> Event<C> {
     #[docfg(feature = "cl1_1")]
-    pub fn flatten (self) -> Result<FlattenEvent<N>> where C: 'static + Send, N: 'static + Send {    
+    pub fn flatten (self) -> Result<FlattenEvent<N>> where C: 'static + Send + Sync, N: 'static + Send {    
         use super::FlagEvent;
 
         let ctx = self.raw_context()?;
@@ -523,7 +521,7 @@ impl<'a, C: 'a + Consumer> Event<C> {
 
 impl<C: Consumer> Event<C> {
     #[inline]
-    pub fn then<T: 'static + Send, F: 'static + Send + FnOnce(C::Output) -> T> (self, f: F) -> Result<CallbackHandle<Result<T>>> where C: 'static + Send {
+    pub fn then<T: 'static + Send, F: 'static + Send + Sync + FnOnce(C::Output) -> T> (self, f: F) -> Result<CallbackHandle<Result<T>>> where C: 'static + Send + Sync {
         let (consumer, this) = unsafe { self.take_consumer() };
         let f = move |_, status: Result<EventStatus>| match status {
             Ok(_) => unsafe { consumer.consume().map(f) },
@@ -533,17 +531,17 @@ impl<C: Consumer> Event<C> {
     }
 
     #[inline]
-    pub fn then_scoped<'scope, 'env, T: 'scope + Send, F: 'scope + Send + FnOnce(C::Output) -> T, Ctx: Context> (self, scope: &'scope Scope<'scope, 'env, Ctx>, f: F) -> Result<ScopedCallbackHandle<'scope, Result<T>>> where C: 'scope + Send {
+    pub fn then_scoped<'scope, 'env, T: 'scope + Send, F: 'scope + Send + Sync + FnOnce(C::Output) -> T, Ctx: Context> (self, scope: &'scope Scope<'scope, 'env, Ctx>, f: F) -> Result<ScopedCallbackHandle<'scope, Result<T>>> where C: 'scope + Send {
         let (consumer, this) = unsafe { self.take_consumer() };
         let f = move |_, status: Result<EventStatus>| match status {
             Ok(_) => unsafe { consumer.consume().map(f) },
             Err(e) => Err(e)
         };
-        return unsafe { core::mem::transmute::<_, &'env NoopEvent>(&this).on_complete_scoped(scope, f) };
+        return unsafe { core::mem::transmute::<&Event<Noop>, &'env NoopEvent>(&this).on_complete_scoped(scope, f) };
     }
 
     #[inline]
-    pub fn then_result<T: 'static + Send, F: 'static + Send + FnOnce(Result<C::Output>) -> T> (self, f: F) -> Result<CallbackHandle<T>> where C: 'static + Send {
+    pub fn then_result<T: 'static + Send, F: 'static + Send + Sync + FnOnce(Result<C::Output>) -> T> (self, f: F) -> Result<CallbackHandle<T>> where C: 'static + Send + Sync {
         let (consumer, this) = unsafe { self.take_consumer() };
         let f = move |_, status: Result<EventStatus>| f(status.and_then(|_| unsafe { consumer.consume() }));
         return this.on_complete(f)
@@ -557,43 +555,38 @@ impl<C: Consumer> Event<C> {
     }
 
     #[inline(always)]
-    pub fn on_submit<T: 'static + Send, F: 'static + Send + FnOnce(RawEvent, Result<EventStatus>) -> T> (&self, f: F) -> Result<CallbackHandle<T>> {
+    pub fn on_submit<T: 'static + Send, F: 'static + Send + Sync + FnOnce(RawEvent, Result<EventStatus>) -> T> (&self, f: F) -> Result<CallbackHandle<T>> {
         self.on_status(EventStatus::Submitted, f)
     }
 
     #[inline(always)]
-    pub fn on_run<T: 'static + Send, F: 'static + Send + FnOnce(RawEvent, Result<EventStatus>) -> T> (&self, f: F) -> Result<CallbackHandle<T>> {
+    pub fn on_run<T: 'static + Send, F: 'static + Send + Sync + FnOnce(RawEvent, Result<EventStatus>) -> T> (&self, f: F) -> Result<CallbackHandle<T>> {
         self.on_status(EventStatus::Running, f)
     }
 
     #[inline(always)]
-    pub fn on_complete<T: 'static + Send, F: 'static + Send + FnOnce(RawEvent, Result<EventStatus>) -> T> (&self, f: F) -> Result<CallbackHandle<T>> {
+    pub fn on_complete<T: 'static + Send, F: 'static + Send + Sync + FnOnce(RawEvent, Result<EventStatus>) -> T> (&self, f: F) -> Result<CallbackHandle<T>> {
         self.on_status(EventStatus::Complete, f)
     }
 
     /// TODO DOC
-    pub fn on_status<T: 'static + Send, F: 'static + Send + FnOnce(RawEvent, Result<EventStatus>) -> T> (&self, status: EventStatus, f: F) -> Result<CallbackHandle<T>> {
+    pub fn on_status<T: 'static + Send, F: 'static + Send + Sync + FnOnce(RawEvent, Result<EventStatus>) -> T> (&self, status: EventStatus, f: F) -> Result<CallbackHandle<T>> {
         cfg_if::cfg_if! {
             if #[cfg(feature = "cl1_1")] {
                 return RawEvent::on_status(&self, status, f)
             } else {
                 let (send, recv) = std::sync::mpsc::sync_channel(1);
+                #[cfg(feature = "futures")]
                 let data = std::sync::Arc::new(super::CallbackHandleData {
-                    #[cfg(feature = "cl1_1")]
-                    flag: once_cell::sync::OnceCell::new(),
-                    #[cfg(feature = "futures")]
                     waker: futures::task::AtomicWaker::new()
                 });
-
+                #[cfg(feature = "futures")]
                 let my_data = data.clone();
+
                 self.on_status_silent(status, move |evt, status| {
                     let f = std::panic::AssertUnwindSafe(|| f(evt, status));
                     match send.send(std::panic::catch_unwind(f)) {
                         Ok(_) => {
-                            #[cfg(feature = "cl1_1")]
-                            if let Some(flag) = my_data.flag.get_or_init(|| None) {
-                                flag.try_mark(status.err().map(|x| x.ty)).unwrap();
-                            }
                             #[cfg(feature = "futures")]
                             my_data.waker.wake();
                         },
@@ -601,7 +594,7 @@ impl<C: Consumer> Event<C> {
                     }
                 })?;
 
-                return Ok(CallbackHandle { recv, data, phtm: PhantomData })
+                return Ok(CallbackHandle { recv, #[cfg(feature = "futures")] data, phtm: PhantomData })
             }
         }
     }
@@ -629,19 +622,19 @@ impl<C: Consumer> Event<C> {
 
     /// Adds a callback function that will be executed when the event is submitted.
     #[inline(always)]
-    pub fn on_submit_silent (&self, f: impl 'static + FnOnce(RawEvent, Result<EventStatus>) + Send) -> Result<()> {
+    pub fn on_submit_silent (&self, f: impl 'static + FnOnce(RawEvent, Result<EventStatus>) + Send + Sync) -> Result<()> {
         self.on_status_silent(EventStatus::Submitted, f)
     }
 
     /// Adds a callback function that will be executed when the event starts running.
     #[inline(always)]
-    pub fn on_run_silent (&self, f: impl 'static + FnOnce(RawEvent, Result<EventStatus>) + Send) -> Result<()> {
+    pub fn on_run_silent (&self, f: impl 'static + FnOnce(RawEvent, Result<EventStatus>) + Send + Sync) -> Result<()> {
         self.on_status_silent(EventStatus::Running, f)
     }
 
     /// Adds a callback function that will be executed when the event completes.
     #[inline(always)]
-    pub fn on_complete_silent (&self, f: impl 'static + FnOnce(RawEvent, Result<EventStatus>) + Send) -> Result<()> {
+    pub fn on_complete_silent (&self, f: impl 'static + FnOnce(RawEvent, Result<EventStatus>) + Send + Sync) -> Result<()> {
         self.on_status_silent(EventStatus::Complete, f)
     }
 
@@ -652,16 +645,14 @@ impl<C: Consumer> Event<C> {
     /// Behavior is undefined when calling expensive system routines, OpenCL APIs to create contexts or command-queues, or blocking OpenCL APIs in an event callback. Rather than calling a blocking OpenCL API in an event callback, applications may call a non-blocking OpenCL API, then register a completion callback for the non-blocking OpenCL API with the remainder of the work.\
     /// Because commands in a command-queue are not required to begin execution until the command-queue is flushed, callbacks that enqueue commands on a command-queue should either call [`RawCommandQueue::flush`] on the queue before returning, or arrange for the command-queue to be flushed later.
     #[inline(always)]
-    pub fn on_status_silent (&self, status: EventStatus, f: impl 'static + FnOnce(RawEvent, Result<EventStatus>) + Send) -> Result<()> {
+    pub fn on_status_silent (&self, status: EventStatus, f: impl 'static + FnOnce(RawEvent, Result<EventStatus>) + Send + Sync) -> Result<()> {
         cfg_if::cfg_if! {
             if #[cfg(feature = "cl1_1")] {
                 return RawEvent::on_status_silent(&self, status, f)
             } else {
                 let cb = super::listener::EventCallback { evt: self.inner.clone(), status, cb: super::listener::Callback::Boxed(Box::new(f)) };
-                match self.send.send(cb) {
-                    Ok(_) => Ok(()),
-                    Err(_) => Err(ErrorKind::InvalidValue.into())
-                }
+                self.send.push(cb);
+                return Ok(())
             }
         }
     }
@@ -688,10 +679,8 @@ impl<C: Consumer> Event<C> {
                 return RawEvent::on_status_raw(&self, status, f, user_data)
             } else {
                 let cb = super::listener::EventCallback { evt: self.inner.clone(), status, cb: super::listener::Callback::Raw(f, user_data) };
-                match self.send.send(cb) {
-                    Ok(_) => Ok(()),
-                    Err(_) => Err(ErrorKind::InvalidValue.into())
-                }
+                self.send.push(cb);
+                return Ok(())
             }
         }
     }

@@ -1,6 +1,6 @@
 [package]
 name = "blaze-proc"
-version = "0.0.1"
+version = "0.1.0"
 edition = "2021"
 description = "Blaze internal/external proc macros"
 license = "MIT"
@@ -16,4 +16,4 @@ derive-syn-parse = "0.1.5"
 elor = "1"
 
 [dev-dependencies]
-blaze-rs = { version = "0.0.1", path = "../" }
+blaze-rs = { version = "0.1.0", path = "../" }

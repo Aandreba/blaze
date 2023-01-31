@@ -4,6 +4,7 @@ use blaze_rs::prelude::*;
 #[global_context]
 static CONTEXT : SimpleContext = SimpleContext::default();
 
+#[allow(unused)]
 #[inline(always)]
 fn rng_code () -> String {
     let nanos = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap();
@@ -29,6 +30,6 @@ fn main () -> Result<()> {
         random.assume_init()  
     };
 
-    let _ = random.read_event(.., EMPTY)?.wait()?;
+    let _ = random.read_blocking(.., None)?;
     Ok(())
 }
