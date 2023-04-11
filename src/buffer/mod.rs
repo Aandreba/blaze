@@ -4,48 +4,68 @@ pub mod map;
 #[cfg(feature = "cl1_1")]
 flat_mod!(slice);
 
+use crate::prelude::{Context, RawEvent, RawKernel, Result};
 use blaze_proc::docfg;
-use crate::{prelude::{Context, RawKernel, Result, RawEvent}};
 
 #[cfg(feature = "svm")]
-use crate::svm::{Svm, SvmBox, SvmVec, SvmPointer};
+use crate::svm::{SvmBox, SvmPointer, SvmVec};
 
-pub mod rect;
 pub mod flags;
+pub mod rect;
 
 pub unsafe trait KernelPointer<T: Sync> {
-    unsafe fn set_arg (&self, kernel: &mut RawKernel, wait: &mut Vec<RawEvent>, idx: u32) -> Result<()>;
-    fn complete (&self, event: &RawEvent) -> Result<()>;
+    unsafe fn set_arg(
+        &self,
+        kernel: &mut RawKernel,
+        wait: &mut Vec<RawEvent>,
+        idx: u32,
+    ) -> Result<()>;
+    fn complete(&self, event: &RawEvent) -> Result<()>;
 }
 
 unsafe impl<T: Copy + Sync, C: Context> KernelPointer<T> for Buffer<T, C> {
     #[inline(always)]
-    unsafe fn set_arg (&self, kernel: &mut RawKernel, _wait: &mut Vec<RawEvent>, idx: u32) -> Result<()> {
+    unsafe fn set_arg(
+        &self,
+        kernel: &mut RawKernel,
+        _wait: &mut Vec<RawEvent>,
+        idx: u32,
+    ) -> Result<()> {
         kernel.set_argument::<opencl_sys::cl_mem, _>(idx, self.id_ref())
     }
 
     #[inline(always)]
-    fn complete (&self, _event: &RawEvent) -> Result<()> {
+    fn complete(&self, _event: &RawEvent) -> Result<()> {
         Ok(())
     }
 }
 
 unsafe impl<T: Copy + Sync, C: Context> KernelPointer<T> for rect::RectBuffer2D<T, C> {
     #[inline(always)]
-    unsafe fn set_arg (&self, kernel: &mut RawKernel, _wait: &mut Vec<RawEvent>, idx: u32) -> Result<()> {
+    unsafe fn set_arg(
+        &self,
+        kernel: &mut RawKernel,
+        _wait: &mut Vec<RawEvent>,
+        idx: u32,
+    ) -> Result<()> {
         kernel.set_argument::<opencl_sys::cl_mem, _>(idx, self.id_ref())
     }
 
     #[inline(always)]
-    fn complete (&self, _event: &RawEvent) -> Result<()> {
+    fn complete(&self, _event: &RawEvent) -> Result<()> {
         Ok(())
     }
 }
 
 #[docfg(feature = "svm")]
-unsafe impl<T: Sync, C: Context> KernelPointer<T> for SvmBox<[T], C> where C: 'static + Send + Clone {
+unsafe impl<T: Sync, C: Context> KernelPointer<T> for SvmBox<[T], C> {
     #[inline]
-    unsafe fn set_arg (&self, kernel: &mut RawKernel, wait: &mut Vec<RawEvent>, idx: u32) -> Result<()> {
+    unsafe fn set_arg(
+        &self,
+        kernel: &mut RawKernel,
+        wait: &mut Vec<RawEvent>,
+        idx: u32,
+    ) -> Result<()> {
         kernel.set_svm_argument::<T, Self>(idx, self)?;
 
         if Box::allocator(self).is_coarse() {
@@ -57,17 +77,17 @@ unsafe impl<T: Sync, C: Context> KernelPointer<T> for SvmBox<[T], C> where C: 's
     }
 
     #[inline]
-    fn complete (&self, event: &RawEvent) -> Result<()> {
+    fn complete(&self, event: &RawEvent) -> Result<()> {
         if Box::allocator(self).is_coarse() {
-            let alloc = Svm::clone(Box::allocator(self));
+            let alloc = Box::allocator(self);
             let size = core::mem::size_of::<T>() * SvmPointer::<T>::len(self);
             let ptr = self.as_ptr() as *const T as usize;
-            
+
             unsafe {
-                let _ = alloc.map::<{opencl_sys::CL_MAP_READ | opencl_sys::CL_MAP_WRITE}>(
+                alloc.map_blocking::<{ opencl_sys::CL_MAP_READ | opencl_sys::CL_MAP_WRITE }>(
                     ptr as *mut _,
                     size,
-                    Some(core::slice::from_ref(event))
+                    Some(core::slice::from_ref(event)),
                 )?;
             }
         }
@@ -77,9 +97,14 @@ unsafe impl<T: Sync, C: Context> KernelPointer<T> for SvmBox<[T], C> where C: 's
 }
 
 #[docfg(feature = "svm")]
-unsafe impl<T: Sync, C: Context> KernelPointer<T> for SvmBox<T, C> where C: 'static + Send + Clone {
+unsafe impl<T: Sync, C: Context> KernelPointer<T> for SvmBox<T, C> {
     #[inline]
-    unsafe fn set_arg (&self, kernel: &mut RawKernel, wait: &mut Vec<RawEvent>, idx: u32) -> Result<()> {
+    unsafe fn set_arg(
+        &self,
+        kernel: &mut RawKernel,
+        wait: &mut Vec<RawEvent>,
+        idx: u32,
+    ) -> Result<()> {
         kernel.set_svm_argument::<T, Self>(idx, self)?;
 
         if Box::allocator(self).is_coarse() {
@@ -91,17 +116,17 @@ unsafe impl<T: Sync, C: Context> KernelPointer<T> for SvmBox<T, C> where C: 'sta
     }
 
     #[inline]
-    fn complete (&self, event: &RawEvent) -> Result<()> {
+    fn complete(&self, event: &RawEvent) -> Result<()> {
         if Box::allocator(self).is_coarse() {
-            let alloc = Svm::clone(Box::allocator(self));
+            let alloc = Box::allocator(self);
             let size = core::mem::size_of::<T>();
             let ptr = self.as_ptr() as *const T as usize;
-            
+
             unsafe {
-                let _ = alloc.map::<{opencl_sys::CL_MAP_READ | opencl_sys::CL_MAP_WRITE}>(
+                alloc.map_blocking::<{ opencl_sys::CL_MAP_READ | opencl_sys::CL_MAP_WRITE }>(
                     ptr as *mut _,
                     size,
-                    Some(core::slice::from_ref(event))
+                    Some(core::slice::from_ref(event)),
                 )?;
             }
         }
@@ -111,9 +136,14 @@ unsafe impl<T: Sync, C: Context> KernelPointer<T> for SvmBox<T, C> where C: 'sta
 }
 
 #[docfg(feature = "svm")]
-unsafe impl<T: Sync, C: Context> KernelPointer<T> for SvmVec<T, C> where C: 'static + Send + Clone {
+unsafe impl<T: Sync, C: Context> KernelPointer<T> for SvmVec<T, C> {
     #[inline]
-    unsafe fn set_arg (&self, kernel: &mut RawKernel, wait: &mut Vec<RawEvent>, idx: u32) -> Result<()> {
+    unsafe fn set_arg(
+        &self,
+        kernel: &mut RawKernel,
+        wait: &mut Vec<RawEvent>,
+        idx: u32,
+    ) -> Result<()> {
         kernel.set_svm_argument::<T, Self>(idx, self)?;
 
         if Vec::allocator(self).is_coarse() {
@@ -125,17 +155,17 @@ unsafe impl<T: Sync, C: Context> KernelPointer<T> for SvmVec<T, C> where C: 'sta
     }
 
     #[inline]
-    fn complete (&self, event: &RawEvent) -> Result<()> {
+    fn complete(&self, event: &RawEvent) -> Result<()> {
         if Vec::allocator(self).is_coarse() {
-            let alloc = Svm::clone(Vec::allocator(self));
+            let alloc = Vec::allocator(self);
             let size = core::mem::size_of::<T>() * SvmPointer::<T>::len(self);
             let ptr = self.as_ptr() as *const T as usize;
-            
+
             unsafe {
-                let _ = alloc.map::<{opencl_sys::CL_MAP_READ | opencl_sys::CL_MAP_WRITE}>(
+                alloc.map_blocking::<{ opencl_sys::CL_MAP_READ | opencl_sys::CL_MAP_WRITE }>(
                     ptr as *mut _,
                     size,
-                    Some(core::slice::from_ref(event))
+                    Some(core::slice::from_ref(event)),
                 )?;
             }
         }
@@ -178,7 +208,7 @@ unsafe impl<T: Sync, P: SvmPointer<T>> KernelPointer<T> for P where P::Context: 
     fn complete (&self, event: &RawEvent) -> Result<()> {
         if self.allocator().is_coarse() {
             let size = core::mem::size_of::<T>() * self.len();
-            
+
             unsafe {
                 let _ = self.allocator().map::<&RawEvent, {CL_MAP_READ | CL_MAP_WRITE}>(self.as_ptr(), size, event)?;
             }
