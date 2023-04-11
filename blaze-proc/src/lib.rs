@@ -9,54 +9,63 @@ macro_rules! flat_mod {
     }
 }
 
-use cl::{Link};
+use cl::Link;
 use derive_syn_parse::Parse;
 use error::Error;
-use proc_macro2::{TokenStream, Ident};
-use quote::{ToTokens, quote, format_ident};
-use syn::{parse_macro_input, ItemStatic, Meta, DeriveInput, Generics, punctuated::Punctuated, Visibility, ItemType, WherePredicate, WhereClause, parse_quote};
+use proc_macro2::{Ident, TokenStream};
+use quote::{format_ident, quote, ToTokens};
+use syn::{
+    parse_macro_input, parse_quote, punctuated::Punctuated, DeriveInput, Generics, ItemStatic,
+    ItemType, Meta, Visibility, WhereClause, WherePredicate,
+};
 
 use crate::cl::Blaze;
 
+mod cl;
 mod context;
 mod error;
-mod utils;
-mod cl;
 mod num;
+mod utils;
 
 #[proc_macro_derive(NumOps, attributes(uninit))]
-pub fn derive_num_ops (items: proc_macro::TokenStream) -> proc_macro::TokenStream {
+pub fn derive_num_ops(items: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let items = parse_macro_input!(items as DeriveInput);
     num::derive_ops(items).into()
 }
 
 #[proc_macro_derive(NumOpsAssign, attributes(uninit))]
-pub fn derive_num_ops_assign (items: proc_macro::TokenStream) -> proc_macro::TokenStream {
+pub fn derive_num_ops_assign(items: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let items = parse_macro_input!(items as DeriveInput);
     num::derive_ops_assign(items).into()
 }
 
 #[proc_macro_attribute]
-pub fn global_context (_attrs: proc_macro::TokenStream, items: proc_macro::TokenStream) -> proc_macro::TokenStream {
+pub fn global_context(
+    _attrs: proc_macro::TokenStream,
+    items: proc_macro::TokenStream,
+) -> proc_macro::TokenStream {
     let items = parse_macro_input!(items as ItemStatic);
     context::global_context(items).into()
 }
 
 #[proc_macro]
-pub fn error (items: proc_macro::TokenStream) -> proc_macro::TokenStream {
+pub fn error(items: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let input = parse_macro_input!(items as Error);
     input.to_token_stream().into()
 }
 
 #[proc_macro_attribute]
-pub fn newtype (attrs: proc_macro::TokenStream, items: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    fn extra_where (where_generics: Option<&WhereClause>, extra: WherePredicate) -> WhereClause {
+pub fn newtype(
+    attrs: proc_macro::TokenStream,
+    items: proc_macro::TokenStream,
+) -> proc_macro::TokenStream {
+    fn extra_where(where_generics: Option<&WhereClause>, extra: WherePredicate) -> WhereClause {
         match where_generics {
             Some(x) => {
                 let mut x = x.clone();
                 x.predicates.push(extra);
-                return x
-            },
+                return x;
+            }
 
             None => {
                 let mut predicates = Punctuated::new();
@@ -64,17 +73,28 @@ pub fn newtype (attrs: proc_macro::TokenStream, items: proc_macro::TokenStream) 
 
                 WhereClause {
                     where_token: Default::default(),
-                    predicates
+                    predicates,
                 }
             }
         }
     }
 
     let inner_vis = parse_macro_input!(attrs as Visibility);
-    let ItemType { attrs, vis, ident, generics, ty, semi_token, .. } = parse_macro_input!(items as ItemType);
+    let ItemType {
+        attrs,
+        vis,
+        ident,
+        generics,
+        ty,
+        semi_token,
+        ..
+    } = parse_macro_input!(items as ItemType);
     let (impl_generics, ty_generics, where_generics) = generics.split_for_impl();
 
-    let consumer_generics = extra_where(r#where_generics, parse_quote! { #ty: blaze_rs::event::Consumer });
+    let consumer_generics = extra_where(
+        r#where_generics,
+        parse_quote! { #ty: blaze_rs::event::Consumer },
+    );
     let debug_generics = extra_where(r#where_generics, parse_quote! { #ty: ::core::fmt::Debug });
     let clone_generics = extra_where(r#where_generics, parse_quote! { #ty: ::core::clone::Clone });
     let copy_generics = extra_where(r#where_generics, parse_quote! { #ty: ::core::marker::Copy });
@@ -91,7 +111,7 @@ pub fn newtype (attrs: proc_macro::TokenStream, items: proc_macro::TokenStream) 
                 <#ty as blaze_rs::event::Consumer>::consume(self.0)
             }
         }
-        
+
         impl #impl_generics ::core::fmt::Debug for #ident #ty_generics #debug_generics {
             #[inline(always)]
             fn fmt (&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
@@ -107,14 +127,15 @@ pub fn newtype (attrs: proc_macro::TokenStream, items: proc_macro::TokenStream) 
         }
 
         impl #impl_generics ::core::marker::Copy for #ident #ty_generics #copy_generics {}
-    }.into()
+    }
+    .into()
 }
 
 #[proc_macro]
-pub fn join_various_blocking (items: proc_macro::TokenStream) -> proc_macro::TokenStream {
+pub fn join_various_blocking(items: proc_macro::TokenStream) -> proc_macro::TokenStream {
     #[derive(Parse)]
-    struct Input (#[call(Punctuated::parse_terminated)] Punctuated<syn::Expr, syn::Token![,]>);
-    
+    struct Input(#[call(Punctuated::parse_terminated)] Punctuated<syn::Expr, syn::Token![,]>);
+
     let item = parse_macro_input!(items as Input).0.into_iter();
     let idx = (0..item.len()).map(syn::Index::from).collect::<Vec<_>>();
 
@@ -128,11 +149,15 @@ pub fn join_various_blocking (items: proc_macro::TokenStream) -> proc_macro::Tok
                 ),*
             ))
         })
-    }}.into()
+    }}
+    .into()
 }
 
 #[proc_macro_attribute]
-pub fn blaze (attrs: proc_macro::TokenStream, items: proc_macro::TokenStream) -> proc_macro::TokenStream {
+pub fn blaze(
+    attrs: proc_macro::TokenStream,
+    items: proc_macro::TokenStream,
+) -> proc_macro::TokenStream {
     let ident = parse_macro_input!(attrs as BlazeIdent);
     let items = parse_macro_input!(items as Blaze);
 
@@ -142,19 +167,22 @@ pub fn blaze (attrs: proc_macro::TokenStream, items: proc_macro::TokenStream) ->
             let tokens = attr.tokens.clone().into();
             let link = parse_macro_input!(tokens as Link);
             inner = Some(link.meta);
-            break
+            break;
         }
     }
 
     if let Some(inner) = inner {
-        return cl::blaze_c(ident.vis, ident.ident, ident.generics, items, inner).into()
+        return cl::blaze_c(ident.vis, ident.ident, ident.generics, items, inner).into();
     }
 
     panic!("No source code specified");
 }
 
 #[proc_macro_attribute]
-pub fn docfg (attrs: proc_macro::TokenStream, items: proc_macro::TokenStream) -> proc_macro::TokenStream {
+pub fn docfg(
+    attrs: proc_macro::TokenStream,
+    items: proc_macro::TokenStream,
+) -> proc_macro::TokenStream {
     let attrs = parse_macro_input!(attrs as Meta);
     let items = parse_macro_input!(items as TokenStream);
 
@@ -162,12 +190,13 @@ pub fn docfg (attrs: proc_macro::TokenStream, items: proc_macro::TokenStream) ->
         #[cfg_attr(docsrs, doc(cfg(#attrs)))]
         #[cfg(#attrs)]
         #items
-    }.into()
+    }
+    .into()
 }
 
 #[derive(Parse)]
 struct BlazeIdent {
     vis: Visibility,
     ident: Ident,
-    generics: Generics
+    generics: Generics,
 }

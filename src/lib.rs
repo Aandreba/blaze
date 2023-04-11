@@ -1,5 +1,35 @@
 #![allow(macro_expanded_macro_exports_accessed_by_absolute_paths)]
-#![feature(mem_copy_fn, box_into_inner, nonzero_min_max, new_uninit, unsize, iterator_try_collect, is_some_and, result_flattening, alloc_layout_extra, array_try_map, extend_one, const_nonnull_new, int_roundings, const_maybe_uninit_zeroed, unboxed_closures, const_ptr_as_ref, layout_for_ptr, const_maybe_uninit_array_assume_init, maybe_uninit_array_assume_init, const_option_ext, maybe_uninit_uninit_array, const_option, nonzero_ops, associated_type_bounds, ptr_metadata, fn_traits, vec_into_raw_parts, const_trait_impl, drain_filter, allocator_api)]
+#![feature(
+    mem_copy_fn,
+    box_into_inner,
+    new_uninit,
+    unsize,
+    iterator_try_collect,
+    is_some_and,
+    result_flattening,
+    alloc_layout_extra,
+    array_try_map,
+    extend_one,
+    const_nonnull_new,
+    int_roundings,
+    const_maybe_uninit_zeroed,
+    unboxed_closures,
+    const_ptr_as_ref,
+    layout_for_ptr,
+    const_maybe_uninit_array_assume_init,
+    maybe_uninit_array_assume_init,
+    const_option_ext,
+    maybe_uninit_uninit_array,
+    const_option,
+    nonzero_ops,
+    associated_type_bounds,
+    ptr_metadata,
+    fn_traits,
+    vec_into_raw_parts,
+    const_trait_impl,
+    drain_filter,
+    allocator_api
+)]
 #![cfg_attr(feature = "svm", feature(strict_provenance))]
 #![cfg_attr(docsrs, feature(doc_cfg, proc_macro_hygiene))]
 #![cfg_attr(debug_assertions, feature(backtrace_frames))]
@@ -62,16 +92,18 @@ macro_rules! tri_panic {
     }};
 }
 
-mod blaze_rs { pub use crate::*; }
+mod blaze_rs {
+    pub use crate::*;
+}
 
 pub mod prelude {
+    pub use crate::buffer::rect::{RectBox2D, RectBuffer2D};
+    pub use crate::buffer::{flags::*, Buffer, RawBuffer};
+    pub use crate::context::{scope, Context, Global, RawContext, Scope, SimpleContext};
     pub use crate::core::*;
+    pub use crate::event::{Event, RawEvent};
     pub use crate::macros::*;
-    pub use crate::buffer::{RawBuffer, Buffer, flags::*};
-    pub use crate::context::{Context, Global, RawContext, SimpleContext, Scope, scope};
-    pub use crate::event::{RawEvent, Event};
     pub use crate::memobj::RawMemObject;
-    pub use crate::buffer::rect::{RectBuffer2D, RectBox2D};
     pub use crate::WaitList;
 }
 
@@ -93,26 +125,26 @@ pub extern crate blaze_proc;
 pub mod macros {
     #[doc = include_str!("../docs/src/program/README.md")]
     pub use blaze_proc::blaze;
-    pub use blaze_proc::{global_context};
+    pub use blaze_proc::global_context;
 
     /// Similar to [`Event::join_all_blocking`](crate::event::Event::join_all_blocking), but it can also join events with different [`Consumer`](crate::event::Consumer)s
     /// ```rust
     /// use blaze_rs::{prelude::*, macros::*};
     /// use std::ops::Deref;
-    /// 
+    ///
     /// #[global_context]
     /// static CONTEXT : SimpleContext = SimpleContext::default();
-    /// 
+    ///
     /// # fn main () -> Result<()> {
     ///   
     /// let buffer = Buffer::new(&[1, 2, 3, 4, 5], MemAccess::default(), false)?;
-    /// 
+    ///
     /// let (left, right) = scope(|s| {
     ///     let left = buffer.read(s, 2.., None)?;
     ///     let right = buffer.map(s, 2.., None)?;
     ///     return join_various_blocking!(left, right)
     /// })?;
-    /// 
+    ///
     /// assert_eq!(left.as_slice(), right.deref());
     /// # return Ok(())
     /// # }
@@ -120,16 +152,16 @@ pub mod macros {
     pub use blaze_proc::join_various_blocking;
 }
 
-#[doc = include_str!("../docs/src/raw.md")]
-pub mod core;
-#[doc = include_str!("../docs/src/context/README.md")]
-pub mod context;
-/// Generic memory object
-pub mod memobj;
 /// Blaze buffers
 pub mod buffer;
+#[doc = include_str!("../docs/src/context/README.md")]
+pub mod context;
+#[doc = include_str!("../docs/src/raw.md")]
+pub mod core;
 #[doc = include_str!("../docs/src/events/README.md")]
 pub mod event;
+/// Generic memory object
+pub mod memobj;
 
 #[cfg_attr(docsrs, doc(cfg(feature = "image")))]
 #[cfg(feature = "image")]
@@ -144,7 +176,7 @@ pub mod svm;
 /// # Error
 /// This method returns [`ErrorKind::InvalidEventWaitList`](core::ErrorKind::InvalidEventWaitList) if the list's size cannot fit inside a `u32`.
 #[inline]
-pub fn wait_list (v: WaitList) -> core::Result<(u32, *const opencl_sys::cl_event)> {
+pub fn wait_list(v: WaitList) -> core::Result<(u32, *const opencl_sys::cl_event)> {
     return match v {
         Some(v) => match v.len() {
             0 => Ok((0, ::core::ptr::null())),
@@ -152,17 +184,17 @@ pub fn wait_list (v: WaitList) -> core::Result<(u32, *const opencl_sys::cl_event
                 let len = <u32 as std::convert::TryFrom<usize>>::try_from(len)
                     .map_err(|e| core::Error::new(core::ErrorKind::InvalidEventWaitList, e))?;
 
-                return Ok((len, v.as_ptr().cast()))
-            },
+                return Ok((len, v.as_ptr().cast()));
+            }
         },
-        None => Ok((0, ::core::ptr::null()))
-    }
+        None => Ok((0, ::core::ptr::null())),
+    };
 }
 
 /// Creates a [`WaitList`] from a reference to a single [`RawEvent`]
 #[inline(always)]
-pub const fn wait_list_from_ref (evt: &RawEvent) -> WaitList {
-    return Some(::core::slice::from_ref(evt))
+pub const fn wait_list_from_ref(evt: &RawEvent) -> WaitList {
+    return Some(::core::slice::from_ref(evt));
 }
 
 /// A list of events to be awaited.
