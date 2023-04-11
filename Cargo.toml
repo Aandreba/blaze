@@ -1,7 +1,7 @@
 [package]
 name = "blaze-rs"
 description = "A Rustified OpenCL Experience"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 authors = ["Alex Andreba <aandrebafreelancer@gmail.com>"]
 license = "MIT"
@@ -9,7 +9,13 @@ homepage = "https://blaze-rs.com"
 repository = "https://github.com/Aandreba/blaze"
 readme = "docs/src/intro.md"
 keywords = ["opencl", "rust", "blaze", "gpgpu", "gpu"]
-categories = ["api-bindings", "concurrency", "hardware-support", "science", "rust-patterns"]
+categories = [
+    "api-bindings",
+    "concurrency",
+    "hardware-support",
+    "science",
+    "rust-patterns",
+]
 exclude = [".github", "Makefile", "TODO.md", "CHANGELOG.md", "blase"]
 build = "build.rs"
 
@@ -34,7 +40,7 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
-blaze-proc = { path = "blaze-proc", version = "0.1.0" }
+blaze-proc = { path = "blaze-proc", version = "0.1.1" }
 opencl-sys = { version = "0.2.1", default-features = false }
 futures = { version = "0.3.21", optional = true }
 # ffmpeg-sys-next = { version = "5.0.1", optional = true }
@@ -44,9 +50,9 @@ bytemuck = "1.10.0"
 bytemuck_derive = "1.1.1"
 crossbeam = "0.8.2"
 once_cell = "1.13.0"
-utils-atomics = "0.4.5"
+utils-atomics = "0.5.0"
 num-traits = "0.2.15"
-num_enum = "0.5.7"
+num_enum = "0.6.0"
 bitflags = "1"
 cfg-if = "1"
 bitvec = "1"
@@ -65,4 +71,3 @@ camino = "1.1.2"
 
 [workspace]
 members = ["blaze-proc", "blase"]
-

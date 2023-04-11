@@ -1,7 +1,7 @@
 #[global_context]
-static CONTEXT : SimpleContext = SimpleContext::default();
+static CONTEXT: SimpleContext = SimpleContext::default();
+use blaze_rs::prelude::*;
 use std::mem::MaybeUninit;
-use blaze_rs::{prelude::*};
 
 #[allow(dead_code)]
 static CODE : &str = "
@@ -24,31 +24,32 @@ static CODE : &str = "
 #[blaze(MatrixOps)]
 #[link = CODE]
 extern "C" {
+    /// Hi!
     #[link_name = "mul"]
-    fn matrix_mul (k: u32, lhs: *const f32, rhs: *const f32, out: *mut MaybeUninit<f32>);
+    fn matrix_mul(k: u32, lhs: *const f32, rhs: *const f32, out: *mut MaybeUninit<f32>);
 }
 
 #[test]
-fn buffer_mul () -> Result<()> {
+fn buffer_mul() -> Result<()> {
     let ops = MatrixOps::new(None)?;
 
-    let lhs = RectBuffer2D::<f32>::new(&[1.,2.,4.,5.,7.,8.], 2, MemAccess::READ_ONLY, false)?; // 3 x 2
-    let rhs = RectBuffer2D::<f32>::new(&[1.,2.,3.,4.,5.,6.], 3, MemAccess::READ_ONLY, false)?; // 2 x 3
+    let lhs = RectBuffer2D::<f32>::new(&[1., 2., 4., 5., 7., 8.], 2, MemAccess::READ_ONLY, false)?; // 3 x 2
+    let rhs = RectBuffer2D::<f32>::new(&[1., 2., 3., 4., 5., 6.], 3, MemAccess::READ_ONLY, false)?; // 2 x 3
     let mut result = RectBuffer2D::<f32>::new_uninit(3, 3, MemAccess::WRITE_ONLY, false)?; // 3 x 3
 
     unsafe {
         ops.matrix_mul_blocking(2, &lhs, &rhs, &mut result, [3, 3], None, None)?;
     }
-    
+
     let result = unsafe { result.assume_init() };
     println!("{:?}", result);
-    
+
     Ok(())
 }
 
 #[cfg(feature = "svm")]
 #[test]
-fn svm_mul () -> Result<()> {
+fn svm_mul() -> Result<()> {
     /*use blaze_rs::{buffer::rect::SvmRect2D, svm::Svm};
     let ops = MatrixOps::new(None)?;
 
@@ -61,7 +62,7 @@ fn svm_mul () -> Result<()> {
 
     let result = unsafe { result.assume_init() };
     println!("{:?}", result);
-    
+
     Ok(())*/
     Ok(())
 }
