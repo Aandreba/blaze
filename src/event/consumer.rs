@@ -149,7 +149,7 @@ impl<T, C: Consumer<Output = Result<T>>> Consumer for FlattenResult<C> {
 
     #[inline(always)]
     unsafe fn consume(self) -> Result<T> {
-        self.0.consume().flatten()
+        self.0.consume().and_then(core::convert::identity)
     }
 }
 

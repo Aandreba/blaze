@@ -1,6 +1,5 @@
 #![allow(macro_expanded_macro_exports_accessed_by_absolute_paths)]
 #![feature(
-    result_flattening,
     alloc_layout_extra,
     array_try_map,
     const_nonnull_new,
