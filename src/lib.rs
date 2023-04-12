@@ -1,6 +1,5 @@
 #![allow(macro_expanded_macro_exports_accessed_by_absolute_paths)]
 #![feature(
-    new_uninit,
     iterator_try_collect,
     result_flattening,
     alloc_layout_extra,
@@ -12,6 +11,7 @@
     ptr_metadata,
     const_trait_impl
 )]
+#![cfg_attr(feature = "nightly", feature(new_uninit))]
 #![cfg_attr(feature = "svm", feature(allocator_api, strict_provenance))]
 #![cfg_attr(docsrs, feature(doc_cfg, proc_macro_hygiene))]
 #![cfg_attr(debug_assertions, feature(backtrace_frames))]

@@ -1091,7 +1091,17 @@ impl RawDevice {
                 return Ok(Box::new([]));
             }
 
-            let mut result = Box::<[T]>::new_uninit_slice(len / core::mem::size_of::<T>());
+            let mut result;
+            cfg_if::cfg_if! {
+                if #[cfg(feature = "nightly")] {
+                    result = Box::<[T]>::new_uninit_slice(len / core::mem::size_of::<T>());
+                } else {
+                    let mut vec = Vec::<MaybeUninit<T>>::with_capacity(len / core::mem::size_of::<T>());
+                    vec.set_len(vec.capacity());
+                    result = vec.into_boxed_slice();
+                }
+            }
+
             tri!(clGetDeviceInfo(
                 self.id(),
                 ty,
@@ -1099,7 +1109,14 @@ impl RawDevice {
                 result.as_mut_ptr().cast(),
                 core::ptr::null_mut()
             ));
-            Ok(result.assume_init())
+
+            cfg_if::cfg_if! {
+                if #[cfg(feature = "nightly")] {
+                    Ok(result.assume_init())
+                } else {
+                    Ok(Box::from_raw(Box::into_raw(result) as *mut [T]))
+                }
+            }
         }
     }
 
