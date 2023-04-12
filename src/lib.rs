@@ -7,8 +7,7 @@
     maybe_uninit_array_assume_init,
     const_option_ext,
     maybe_uninit_uninit_array,
-    ptr_metadata,
-    const_trait_impl
+    ptr_metadata
 )]
 #![cfg_attr(feature = "nightly", feature(new_uninit))]
 #![cfg_attr(feature = "svm", feature(allocator_api, strict_provenance))]

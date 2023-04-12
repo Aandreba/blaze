@@ -910,10 +910,7 @@ impl<T: Clone, C: Context + Clone> Clone for Buffer<T, C> {
         self.try_clone(None).unwrap()
     }
 
-    fn clone_from(&mut self, source: &Self)
-    where
-        Self: ~const std::marker::Destruct,
-    {
+    fn clone_from(&mut self, source: &Self) {
         let len = self.len().unwrap();
         assert_eq!(len, source.len().unwrap());
 
