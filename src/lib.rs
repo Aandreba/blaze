@@ -1,6 +1,5 @@
 #![allow(macro_expanded_macro_exports_accessed_by_absolute_paths)]
 #![feature(
-    iterator_try_collect,
     result_flattening,
     alloc_layout_extra,
     array_try_map,
@@ -181,3 +180,19 @@ pub const fn wait_list_from_ref(evt: &RawEvent) -> WaitList {
 
 /// A list of events to be awaited.
 pub type WaitList<'a> = Option<&'a [prelude::RawEvent]>;
+
+pub(crate) fn try_collect<T, E, C: Default + Extend<T>>(
+    mut iter: impl Iterator<Item = Result<T, E>>,
+) -> Result<C, E> {
+    let mut result = C::default();
+
+    loop {
+        match iter.next() {
+            Some(Ok(x)) => result.extend(Some(x)),
+            Some(Err(e)) => return Err(e),
+            None => break,
+        }
+    }
+
+    return Ok(result);
+}

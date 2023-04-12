@@ -3,6 +3,7 @@ use crate::{
     context::{Context, Global},
     core::kernel::RawKernel,
     prelude::RawContext,
+    try_collect,
 };
 use blaze_proc::docfg;
 use box_iter::BoxIntoIter;
@@ -270,14 +271,14 @@ impl RawProgram {
     #[inline]
     pub fn devices(&self) -> Result<Vec<RawDevice>> {
         let devs = self.get_info_array::<cl_device_id>(CL_PROGRAM_DEVICES)?;
-        devs.into_iter()
-            .map(|dev| unsafe {
-                let dev = RawDevice::from_id(dev).unwrap();
-                #[cfg(feature = "cl1_2")]
-                dev.retain()?;
-                Ok(dev)
-            })
-            .try_collect()
+        let iter = devs.into_iter().map(|dev| unsafe {
+            let dev = RawDevice::from_id(dev).unwrap();
+            #[cfg(feature = "cl1_2")]
+            dev.retain()?;
+            Ok(dev)
+        });
+
+        return try_collect(iter);
     }
 
     /// Return the program source code

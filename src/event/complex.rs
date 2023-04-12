@@ -1,5 +1,5 @@
 use super::{CallbackHandle, EventStatus, ProfilingInfo, RawEvent, ScopedCallbackHandle};
-use crate::prelude::*;
+use crate::{prelude::*, try_collect};
 use blaze_proc::docfg;
 use opencl_sys::*;
 use std::{
@@ -552,10 +552,8 @@ impl<'a, C: 'a + Consumer> Event<C> {
             .unzip::<_, _, Vec<_>, Vec<_>>();
 
         RawEvent::join_all_by_ref(&raw)?;
-        return consumers
-            .into_iter()
-            .map(|x| unsafe { x.consume() })
-            .try_collect();
+        let iter = consumers.into_iter().map(|x| unsafe { x.consume() });
+        return try_collect(iter);
     }
 
     /// Blocks the current thread until all the events in the array have completed, returning their values in a new array.
