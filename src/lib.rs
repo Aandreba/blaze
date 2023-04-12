@@ -2,7 +2,6 @@
 #![feature(
     new_uninit,
     iterator_try_collect,
-    is_some_and,
     result_flattening,
     alloc_layout_extra,
     array_try_map,
