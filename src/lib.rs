@@ -1,33 +1,17 @@
 #![allow(macro_expanded_macro_exports_accessed_by_absolute_paths)]
 #![feature(
-    mem_copy_fn,
-    box_into_inner,
     new_uninit,
-    unsize,
     iterator_try_collect,
     is_some_and,
     result_flattening,
     alloc_layout_extra,
     array_try_map,
-    extend_one,
     const_nonnull_new,
-    int_roundings,
-    const_maybe_uninit_zeroed,
-    unboxed_closures,
-    const_ptr_as_ref,
-    layout_for_ptr,
-    const_maybe_uninit_array_assume_init,
     maybe_uninit_array_assume_init,
     const_option_ext,
     maybe_uninit_uninit_array,
-    const_option,
-    nonzero_ops,
-    associated_type_bounds,
     ptr_metadata,
-    fn_traits,
-    vec_into_raw_parts,
     const_trait_impl,
-    drain_filter,
     allocator_api
 )]
 #![cfg_attr(feature = "svm", feature(strict_provenance))]
