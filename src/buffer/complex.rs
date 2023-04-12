@@ -938,7 +938,17 @@ impl<T: PartialEq, C: Context> PartialEq for Buffer<T, C> {
         let [this, other] = local_scope(&self.ctx, |s| {
             let this = self.map(s, .., None)?;
             let other = other.map(s, .., None)?;
-            Event::join_sized_blocking([this, other])
+
+            #[cfg(feature = "nightly")]
+            return Event::join_sized_blocking([this, other]);
+            #[cfg(not(feature = "nightly"))]
+            {
+                let vec = Event::join_all_blocking([this, other])?;
+                match <[MapGuard<T, C>; 2] as TryFrom<Vec<MapGuard<T, C>>>>::try_from(vec) {
+                    Ok(x) => Ok(x),
+                    Err(_) => unsafe { core::hint::unreachable_unchecked() },
+                }
+            }
         })
         .unwrap();
 

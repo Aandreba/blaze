@@ -5,7 +5,6 @@ use opencl_sys::*;
 use std::{
     ffi::c_void,
     marker::PhantomData,
-    mem::MaybeUninit,
     ops::Deref,
     panic::{AssertUnwindSafe, UnwindSafe},
     time::{Duration, SystemTime},
@@ -558,8 +557,11 @@ impl<'a, C: 'a + Consumer> Event<C> {
 
     /// Blocks the current thread until all the events in the array have completed, returning their values in a new array.
     /// The order of the values in the result is the same as their parents inside the iterator.
+    #[docfg(feature = "nightly")]
     #[inline(always)]
     pub fn join_sized_blocking<const N: usize>(iter: [Self; N]) -> Result<[C::Output; N]> {
+        use std::mem::MaybeUninit;
+
         let mut raw = MaybeUninit::uninit_array::<N>();
         let mut consumers = MaybeUninit::uninit_array::<N>();
 
