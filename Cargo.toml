@@ -32,8 +32,9 @@ cl3 = ["cl2_2", "opencl-sys/CL_VERSION_3_0"]
 strict = []
 # half = ["dep:half"]
 # image = ["dep:ffmpeg-sys-next"]
-svm = ["cl2"]
+svm = ["nightly", "cl2", "utils-atomics/alloc_api"]
 futures = ["dep:futures", "utils-atomics/futures"]
+nightly = []
 
 [package.metadata.docs.rs]
 all-features = true

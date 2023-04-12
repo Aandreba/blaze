@@ -11,10 +11,9 @@
     const_option_ext,
     maybe_uninit_uninit_array,
     ptr_metadata,
-    const_trait_impl,
-    allocator_api
+    const_trait_impl
 )]
-#![cfg_attr(feature = "svm", feature(strict_provenance))]
+#![cfg_attr(feature = "svm", feature(allocator_api, strict_provenance))]
 #![cfg_attr(docsrs, feature(doc_cfg, proc_macro_hygiene))]
 #![cfg_attr(debug_assertions, feature(backtrace_frames))]
 #![doc = include_str!("../docs/src/intro.md")]
