@@ -1,7 +1,7 @@
 use derive_syn_parse::Parse;
-use proc_macro2::{TokenStream, Ident};
-use quote::{quote, format_ident, ToTokens};
-use syn::{Visibility, Token, Generics, parse_quote, Abi, punctuated::Punctuated, Attribute, Expr};
+use proc_macro2::{Ident, TokenStream};
+use quote::{format_ident, quote, ToTokens};
+use syn::{parse_quote, punctuated::Punctuated, Abi, Attribute, Expr, Generics, Token, Visibility};
 
 use crate::utils::to_pascal_case;
 
@@ -13,15 +13,21 @@ macro_rules! peek_and_parse {
         }
 
         v
-    }}
+    }};
 }
 
 flat_mod!(ty, kern, arg);
 
-pub fn blaze_c (prog_vis: Visibility, ident: Ident, generics: Generics, blaze: Blaze, content: Expr) -> TokenStream {
+pub fn blaze_c(
+    prog_vis: Visibility,
+    ident: Ident,
+    generics: Generics,
+    blaze: Blaze,
+    content: Expr,
+) -> TokenStream {
     let Blaze { vis, kernels, .. } = blaze;
     let kernel_vis = vis;
-    let vis = prog_vis; 
+    let vis = prog_vis;
 
     let phantom_generics = match generics.params.is_empty() {
         true => None,
@@ -30,28 +36,41 @@ pub fn blaze_c (prog_vis: Visibility, ident: Ident, generics: Generics, blaze: B
             let lt = generics.lifetimes().map(|p| quote! { &#p () });
 
             let iter = ty.chain(lt);
-            Some(quote! { #[doc(hidden)] __blaze_phtm__: ::core::marker::PhantomData::<(#(#iter),*)>,})
+            Some(
+                quote! { #[doc(hidden)] __blaze_phtm__: ::core::marker::PhantomData::<(#(#iter),*)>,},
+            )
         }
     };
-    let phantom_fill = phantom_generics.as_ref().map(|_| quote! { __blaze_phtm__: ::core::marker::PhantomData, });
+    let phantom_fill = phantom_generics
+        .as_ref()
+        .map(|_| quote! { __blaze_phtm__: ::core::marker::PhantomData, });
 
     let mut program_generics = generics.clone();
-    program_generics.params.push(parse_quote!(C: ::blaze_rs::context::Context = ::blaze_rs::context::Global));
+    program_generics.params.push(parse_quote!(
+        C: ::blaze_rs::context::Context = ::blaze_rs::context::Global
+    ));
     let (prog_imp, prog_ty, prog_wher) = program_generics.split_for_impl();
     let (glob_imp, glob_ty, glob_wher) = generics.split_for_impl();
 
     let kernel_names = kernels.iter().map(|x| &x.ident).collect::<Vec<_>>();
-    let kernel_attrs = kernels.iter().map(|x| x.attrs.attrs.as_slice()).collect::<Vec<_>>();
-    let kernel_extern_names = kernels.iter().map(|x| {
-        if let Some(ref name) = x.attrs.link_name { 
-            return name.to_token_stream() 
-        }
+    let kernel_attrs = kernels
+        .iter()
+        .map(|x| x.attrs.attrs.as_slice())
+        .collect::<Vec<_>>();
+    let kernel_extern_names = kernels
+        .iter()
+        .map(|x| {
+            if let Some(ref name) = x.attrs.link_name {
+                return name.to_token_stream();
+            }
 
-        let ident = &x.ident; 
-        quote! { stringify!(#ident) }
-    }).collect::<Vec<_>>();
+            let ident = &x.ident;
+            quote! { stringify!(#ident) }
+        })
+        .collect::<Vec<_>>();
 
-    let kernel_structs = kernels.iter()
+    let kernel_structs = kernels
+        .iter()
         .map(|x| create_kernel(&kernel_vis, &ident, &generics, &program_generics, x));
 
     let kernel_defs = kernels.iter().map(|x| {
@@ -82,19 +101,21 @@ pub fn blaze_c (prog_vis: Visibility, ident: Ident, generics: Generics, blaze: B
                 let (__blaze_inner__, __blaze_kernels__) = ::blaze_rs::core::RawProgram::from_source_in(&__blaze_ctx__, #content, options)?;
 
                 #(
+                    #[allow(unused_doc_comments)]
                     #(#kernel_attrs)*
                     let mut #kernel_names = None;
                 )*
 
                 for __blaze_kernel__ in __blaze_kernels__.into_iter() {
                     match __blaze_kernel__.name()?.as_str() {
-                        #(#(#kernel_attrs)* #kernel_extern_names => #kernel_names = unsafe { Some(__blaze_kernel__.clone()) }),*,
+                        #(#[allow(unused_doc_comments)] #(#kernel_attrs)* #kernel_extern_names => #kernel_names = unsafe { Some(__blaze_kernel__.clone()) }),*,
                         _ => {}
                         //__other => return Err(::blaze_rs::core::Error::new(::blaze_rs::core::ErrorKind::InvalidKernel, format!("unknown kernel '{}'", __other)))
                     }
                 }
 
                 #(
+                    #[allow(unused_doc_comments)]
                     #(#kernel_attrs)*
                     let #kernel_names = match #kernel_names {
                         Some(__x) => ::std::sync::Mutex::new(__x),
@@ -106,8 +127,14 @@ pub fn blaze_c (prog_vis: Visibility, ident: Ident, generics: Generics, blaze: B
                     __blaze_inner__,
                     __blaze_ctx__,
                     #phantom_fill
-                    #(#(#kernel_attrs)* #kernel_names),*
+                    #(#[allow(unused_doc_comments)] #(#kernel_attrs)* #kernel_names),*
                 })
+            }
+
+            /// Returns the context of the program
+            #[inline]
+            #vis fn context (&self) -> &C {
+                &self.__blaze_ctx__
             }
         }
 
@@ -124,8 +151,20 @@ pub fn blaze_c (prog_vis: Visibility, ident: Ident, generics: Generics, blaze: B
     }
 }
 
-fn create_kernel (default_vis: &Visibility, parent: &Ident, impl_generics: &Generics, parent_generics: &Generics, kernel: &Kernel) -> TokenStream {
-    let Kernel { attrs, vis, ident, args, .. } = kernel;
+fn create_kernel(
+    default_vis: &Visibility,
+    parent: &Ident,
+    impl_generics: &Generics,
+    parent_generics: &Generics,
+    kernel: &Kernel,
+) -> TokenStream {
+    let Kernel {
+        attrs,
+        vis,
+        ident,
+        args,
+        ..
+    } = kernel;
     let mut generics = parse_quote! { <'__scope__, '__env__: '__scope__> };
     let (parent_imp, parent_ty, parent_wher) = parent_generics.split_for_impl();
     let attrs = match attrs.attrs.is_empty() {
@@ -138,25 +177,46 @@ fn create_kernel (default_vis: &Visibility, parent: &Ident, impl_generics: &Gene
 
     let vis = match vis {
         Visibility::Inherited => default_vis,
-        other => other
+        other => other,
     };
 
     let name = args.iter().map(|x| x.name.clone()).collect::<Vec<_>>();
-    let new = args.iter().map(|x| x.ty(&mut generics, true)).collect::<Vec<_>>();
+    let new = args
+        .iter()
+        .map(|x| x.ty(&mut generics, true))
+        .collect::<Vec<_>>();
     assert_eq!(name.len(), new.len());
     //panic!("{name:?}: {new:?}");
 
-    let pointer_names = args.iter().filter_map(|x| if x.ty.is_pointer() { Some(&x.name) } else { None }).collect::<Vec<_>>();
-    let set = args.iter().enumerate().map(|(i, x)| set_arg(x, u32::try_from(i).unwrap())).collect::<Vec<_>>();
+    let pointer_names = args
+        .iter()
+        .filter_map(|x| {
+            if x.ty.is_pointer() {
+                Some(&x.name)
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<_>>();
+    let set = args
+        .iter()
+        .enumerate()
+        .map(|(i, x)| set_arg(x, u32::try_from(i).unwrap()))
+        .collect::<Vec<_>>();
     //generics.params.extend(impl_generics.params.iter().cloned());
 
     let blocking_ident = format_ident!("{ident}_blocking");
-    let mut blocking_generics : Generics = parse_quote! { <const N: usize> };
-    let blocking_new = args.iter().map(|x| x.ty(&mut blocking_generics, false)).collect::<Vec<_>>();();
+    let mut blocking_generics: Generics = parse_quote! { <const N: usize> };
+    let blocking_new = args
+        .iter()
+        .map(|x| x.ty(&mut blocking_generics, false))
+        .collect::<Vec<_>>();
+    ();
     let (blocking_impl, _, blocking_where) = blocking_generics.split_for_impl();
 
     // Remove `'scope` lifetime
-    let event_params = generics.params
+    let event_params = generics
+        .params
         .iter()
         .take(1)
         .chain(generics.params.iter().skip(2))
@@ -166,22 +226,25 @@ fn create_kernel (default_vis: &Visibility, parent: &Ident, impl_generics: &Gene
     event_generics.params = event_params;
     event_generics.where_clause = generics.where_clause.clone();
 
-    event_generics.params.extend(impl_generics.params.iter().cloned());
-    let event_new = new.iter()
+    event_generics
+        .params
+        .extend(impl_generics.params.iter().cloned());
+    let event_new = new
+        .iter()
         .map(|x| {
             let mut x = x.clone();
             if let syn::Type::Reference(ref mut rf) = x {
                 if rf.lifetime == Some(parse_quote! { '__env__ }) {
-                    rf.lifetime = Some(parse_quote! { '__scope__ });    
-                }   
+                    rf.lifetime = Some(parse_quote! { '__scope__ });
+                }
             }
-            return x
+            return x;
         })
         .chain(impl_generics.type_params().map(|x| {
             let mut x = x.clone();
             x.colon_token = None;
             x.bounds.clear();
-            return parse_quote! { #x }
+            return parse_quote! { #x };
         }))
         .collect::<Vec<_>>();
     let (_, event_type, _) = event_generics.split_for_impl();
@@ -253,7 +316,7 @@ fn create_kernel (default_vis: &Visibility, parent: &Ident, impl_generics: &Gene
     }
 }
 
-fn set_arg (arg: &Argument, idx: u32) -> TokenStream {
+fn set_arg(arg: &Argument, idx: u32) -> TokenStream {
     let Argument { name, .. } = arg;
 
     match arg.ty {
@@ -261,8 +324,10 @@ fn set_arg (arg: &Argument, idx: u32) -> TokenStream {
             ::blaze_rs::buffer::KernelPointer::set_arg(#name, &mut __blaze_kernel__, &mut wait, #idx)?
         },
 
-        Type::Image2d => quote! { __blaze_kernel__.set_argument(#idx, ::blaze_rs::image::DynImage2D::id_ref(#name))? },
-        _ => quote! { __blaze_kernel__.set_argument(#idx, #name)? }
+        Type::Image2d => {
+            quote! { __blaze_kernel__.set_argument(#idx, ::blaze_rs::image::DynImage2D::id_ref(#name))? }
+        }
+        _ => quote! { __blaze_kernel__.set_argument(#idx, #name)? },
     }
 }
 
@@ -276,11 +341,11 @@ pub struct Blaze {
     pub brace_token: syn::token::Brace,
     #[inside(brace_token)]
     #[call(Punctuated::parse_terminated)]
-    pub kernels: Punctuated<Kernel, Token![;]>
+    pub kernels: Punctuated<Kernel, Token![;]>,
 }
 
 #[derive(Parse)]
 pub struct Link {
     pub eq_token: Token![=],
-    pub meta: Expr
+    pub meta: Expr,
 }

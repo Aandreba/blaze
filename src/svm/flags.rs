@@ -1,29 +1,37 @@
-use opencl_sys::{cl_svm_mem_flags, CL_MEM_SVM_FINE_GRAIN_BUFFER, CL_MEM_SVM_ATOMICS};
 use crate::buffer::flags::MemAccess;
+use opencl_sys::{cl_svm_mem_flags, CL_MEM_SVM_ATOMICS, CL_MEM_SVM_FINE_GRAIN_BUFFER};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 #[non_exhaustive]
 pub struct SvmFlags {
     pub access: MemAccess,
-    pub utils: Option<SvmUtilsFlags>
+    pub utils: Option<SvmUtilsFlags>,
 }
 
 impl SvmFlags {
-    pub const DEFAULT : Self = Self::const_new(MemAccess::READ_WRITE, None);
+    pub const DEFAULT: Self = Self::const_new(MemAccess::READ_WRITE, None);
 
     #[inline(always)]
-    pub fn new (access: MemAccess, utils: impl Into<Option<SvmUtilsFlags>>) -> Self {
-        Self { access, utils: utils.into() }
+    pub fn new(access: MemAccess, utils: impl Into<Option<SvmUtilsFlags>>) -> Self {
+        Self {
+            access,
+            utils: utils.into(),
+        }
     }
 
     #[inline(always)]
-    pub const fn const_new (access: MemAccess, utils: Option<SvmUtilsFlags>) -> Self {
+    pub const fn const_new(access: MemAccess, utils: Option<SvmUtilsFlags>) -> Self {
         Self { access, utils }
     }
 
     #[inline(always)]
-    pub const fn to_bits (self) -> cl_svm_mem_flags {
-        self.access.to_bits() | self.utils.map_or(0, SvmUtilsFlags::to_bits)
+    pub const fn to_bits(self) -> cl_svm_mem_flags {
+        // self.utils.map_or(0, SvmUtilsFlags::to_bits)
+        self.access.to_bits()
+            | match self.utils {
+                Some(x) => SvmUtilsFlags::to_bits(x),
+                None => 0,
+            }
     }
 }
 
@@ -37,22 +45,22 @@ impl From<MemAccess> for SvmFlags {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SvmUtilsFlags {
     FineGrain,
-    Atomics
+    Atomics,
 }
 
 impl SvmUtilsFlags {
     #[inline(always)]
-    pub const fn to_bits (self) -> cl_svm_mem_flags {
-        const ATOMICS : cl_svm_mem_flags = CL_MEM_SVM_FINE_GRAIN_BUFFER | CL_MEM_SVM_ATOMICS;
+    pub const fn to_bits(self) -> cl_svm_mem_flags {
+        const ATOMICS: cl_svm_mem_flags = CL_MEM_SVM_FINE_GRAIN_BUFFER | CL_MEM_SVM_ATOMICS;
 
         match self {
             Self::FineGrain => CL_MEM_SVM_FINE_GRAIN_BUFFER,
-            Self::Atomics => ATOMICS
+            Self::Atomics => ATOMICS,
         }
     }
 
     #[inline(always)]
-    pub const fn from_bits (v: cl_svm_mem_flags) -> Option<Self> {
+    pub const fn from_bits(v: cl_svm_mem_flags) -> Option<Self> {
         if v & CL_MEM_SVM_FINE_GRAIN_BUFFER == 0 {
             return None;
         }
