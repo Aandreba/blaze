@@ -1,11 +1,15 @@
-use std::{alloc::Layout, sync::atomic::*, ops::{Deref, DerefMut}};
-use crate::context::{Context, Global};
-use super::{SvmBox, Svm, SvmUtilsFlags};
-use crate::prelude::*;
+use super::{Svm, SvmBox, SvmUtilsFlags};
 use crate::buffer::flags::MemAccess;
-use crate::svm::SvmFlags;
 use crate::buffer::KernelPointer;
+use crate::context::{Context, Global};
+use crate::prelude::*;
+use crate::svm::SvmFlags;
 use blaze_proc::docfg;
+use std::{
+    alloc::Layout,
+    ops::{Deref, DerefMut},
+    sync::atomic::*,
+};
 
 macro_rules! impl_atomic {
     ($($len:literal in $ty:ty => $atomic:ty as $svm:ident),+) => {
@@ -31,7 +35,7 @@ macro_rules! impl_atomic {
 
                     unsafe {
                         let ptr = alloc.alloc_with_flags(SvmFlags::new(MemAccess::default(), SvmUtilsFlags::Atomics), layout).unwrap();
-                        let ptr : *mut [$ty] = core::ptr::from_raw_parts_mut(ptr.cast(), v.len());
+                        let ptr : *mut [$ty] = ::core::ptr::slice_from_raw_parts_mut(ptr.cast(), v.len());
 
                         assert!(!ptr.is_null());
                         boxed = SvmBox::from_raw_in(ptr, alloc);
@@ -39,7 +43,7 @@ macro_rules! impl_atomic {
 
                     unsafe { Self::from_box(boxed) }
                 }
-                
+
                 #[inline(always)]
                 pub const unsafe fn from_box (v: SvmBox<[$ty], C>) -> Self {
                     Self(v)

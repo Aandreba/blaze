@@ -73,7 +73,8 @@ impl<T> Rect2D<T> {
                 v.len(),
             );
 
-            let raw = core::ptr::from_raw_parts_mut::<Rect2D<T>>(ptr as *mut (), v.len());
+            let raw =
+                core::ptr::slice_from_raw_parts_mut::<T>(ptr as *mut T, v.len()) as *mut Rect2D<T>;
             return Ok(Box::from_raw(raw));
         }
     }
@@ -91,8 +92,10 @@ impl<T> Rect2D<T> {
             _ => unsafe { NonNull::new(std::alloc::alloc(layout)).ok_or(AllocError)? },
         };
 
-        let raw =
-            core::ptr::from_raw_parts_mut::<Rect2D<MaybeUninit<T>>>(ptr.as_ptr() as *mut (), len);
+        let raw = core::ptr::slice_from_raw_parts_mut::<MaybeUninit<T>>(
+            ptr.as_ptr() as *mut MaybeUninit<T>,
+            len,
+        ) as *mut Rect2D<MaybeUninit<T>>;
         return unsafe { Ok(Box::from_raw(raw)) };
     }
 
@@ -117,7 +120,8 @@ impl<T> Rect2D<T> {
                 v.len(),
             );
 
-            let raw = core::ptr::from_raw_parts_mut::<Rect2D<T>>(ptr as *mut (), v.len());
+            let raw =
+                core::ptr::slice_from_raw_parts_mut::<T>(ptr as *mut T, v.len()) as *mut Rect2D<T>;
             return Ok(Box::from_raw_in(raw, alloc));
         }
     }
@@ -132,8 +136,10 @@ impl<T> Rect2D<T> {
         let (layout, _) = Self::calculate_layout(len)?;
 
         let ptr = alloc.allocate(layout)?;
-        let raw =
-            core::ptr::from_raw_parts_mut::<Rect2D<MaybeUninit<T>>>(ptr.as_ptr() as *mut (), len);
+        let raw = core::ptr::slice_from_raw_parts_mut::<MaybeUninit<T>>(
+            ptr.as_ptr() as *mut MaybeUninit<T>,
+            len,
+        ) as *mut Rect2D<MaybeUninit<T>>;
         return unsafe { Ok(Box::from_raw_in(raw, alloc)) };
     }
 
@@ -180,7 +186,7 @@ impl<T> Rect2D<T> {
 
     #[inline(always)]
     pub const fn len(&self) -> usize {
-        core::ptr::metadata(self)
+        self.inner.len()
     }
 
     #[inline(always)]

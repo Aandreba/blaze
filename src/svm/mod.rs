@@ -143,12 +143,13 @@ unsafe impl<C: Context> Allocator for Svm<C> {
     ) -> core::result::Result<std::ptr::NonNull<[u8]>, std::alloc::AllocError> {
         if layout.size() == 0 {
             let ptr: *mut [u8] =
-                core::ptr::from_raw_parts_mut(core::ptr::invalid_mut(layout.align()), 0);
+                core::ptr::slice_from_raw_parts_mut(core::ptr::invalid_mut(layout.align()), 0);
             return Ok(unsafe { NonNull::new_unchecked(ptr) });
         }
 
-        let alloc: *mut [u8] =
-            unsafe { core::ptr::from_raw_parts_mut(self.alloc(layout).cast(), layout.size()) };
+        let alloc: *mut [u8] = unsafe {
+            core::ptr::slice_from_raw_parts_mut(self.alloc(layout).cast(), layout.size())
+        };
         NonNull::new(alloc).ok_or(std::alloc::AllocError)
     }
 

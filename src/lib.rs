@@ -2,7 +2,6 @@
 #![allow(clippy::needless_return)]
 #![allow(macro_expanded_macro_exports_accessed_by_absolute_paths)]
 /* */
-#![feature(ptr_metadata)]
 #![cfg_attr(
     feature = "nightly",
     feature(new_uninit, const_nonnull_new, array_try_map)
