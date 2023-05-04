@@ -1,6 +1,7 @@
 use super::ContextProperties;
 use crate::{
     core::{device::DeviceType, *},
+    non_null_const,
     prelude::device::Version,
 };
 use blaze_proc::docfg;
@@ -133,7 +134,10 @@ impl RawContext {
 
     #[inline(always)]
     pub const unsafe fn from_id(v: cl_context) -> Option<Self> {
-        NonNull::new(v).map(Self)
+        match non_null_const(v) {
+            Some(x) => Some(Self(x)),
+            None => None,
+        }
     }
 
     #[inline(always)]

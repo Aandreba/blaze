@@ -2,6 +2,7 @@ use super::*;
 use crate::{
     context::{Context, Global},
     core::kernel::RawKernel,
+    non_null_const,
     prelude::RawContext,
     try_collect,
 };
@@ -171,7 +172,10 @@ impl RawProgram {
 
     #[inline(always)]
     pub const unsafe fn from_id(id: cl_program) -> Option<Self> {
-        NonNull::new(id).map(Self)
+        match non_null_const(id) {
+            Some(x) => Some(Self(x)),
+            None => None,
+        }
     }
 
     #[inline(always)]

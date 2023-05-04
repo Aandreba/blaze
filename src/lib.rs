@@ -1,12 +1,18 @@
+#![allow(clippy::all)]
 #![allow(clippy::needless_return)]
 #![allow(macro_expanded_macro_exports_accessed_by_absolute_paths)]
 /* */
-#![feature(const_nonnull_new, const_option_ext, ptr_metadata)]
-#![cfg_attr(feature = "nightly", feature(new_uninit, array_try_map))]
+#![feature(ptr_metadata)]
+#![cfg_attr(
+    feature = "nightly",
+    feature(new_uninit, const_nonnull_new, array_try_map)
+)]
 #![cfg_attr(feature = "svm", feature(allocator_api, strict_provenance))]
 #![cfg_attr(docsrs, feature(doc_cfg, proc_macro_hygiene))]
 #![cfg_attr(debug_assertions, feature(backtrace_frames))]
 #![doc = include_str!("../docs/src/intro.md")]
+
+use std::ptr::NonNull;
 
 use event::RawEvent;
 
@@ -187,4 +193,17 @@ pub(crate) fn try_collect<T, E, C: Default + Extend<T>>(
     }
 
     return Ok(result);
+}
+
+pub(crate) const fn non_null_const<T>(ptr: *mut T) -> Option<NonNull<T>> {
+    cfg_if::cfg_if! {
+        if #[cfg(feature = "nightly")] {
+            return NonNull::new(ptr)
+        } else {
+            if unsafe { ::core::mem::transmute::<*mut T, usize>(ptr) == 0 } {
+                return None;
+            }
+            return unsafe { Some(NonNull::new_unchecked(ptr)) };
+        }
+    }
 }

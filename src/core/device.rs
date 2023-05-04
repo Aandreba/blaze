@@ -1,5 +1,5 @@
 use super::*;
-use crate::buffer::flags::MemAccess;
+use crate::{buffer::flags::MemAccess, non_null_const};
 use blaze_proc::docfg;
 use core::{
     fmt::{Debug, Display},
@@ -53,7 +53,10 @@ impl RawDevice {
 
     #[inline(always)]
     pub const unsafe fn from_id(id: cl_device_id) -> Option<Self> {
-        NonNull::new(id).map(Self)
+        match non_null_const(id) {
+            Some(x) => Some(Self(x)),
+            None => None,
+        }
     }
 
     #[inline(always)]
@@ -1344,7 +1347,9 @@ impl PartitionProperty {
                 0,
             ]) as Box<_>,
             Self::Counts(x) => {
-                let mut result = Box::new_uninit_slice(2 + x.len());
+                let mut result = Vec::<MaybeUninit<_>>::with_capacity(2 * x.len());
+                unsafe { result.set_len(result.capacity()) };
+                let mut result = result.into_boxed_slice();
 
                 unsafe {
                     result[0].write(opencl_sys::CL_DEVICE_PARTITION_BY_COUNTS);
@@ -1359,7 +1364,9 @@ impl PartitionProperty {
                         .last_mut()
                         .unwrap_unchecked()
                         .write(opencl_sys::CL_DEVICE_PARTITION_BY_COUNTS_LIST_END);
-                    result.assume_init()
+
+                    Box::from_raw(Box::into_raw(result) as *mut [_])
+                    // result.assume_init()
                 }
             }
         }

@@ -1,5 +1,6 @@
 use super::*;
 use crate::context::RawContext;
+use crate::non_null_const;
 use blaze_proc::docfg;
 use opencl_sys::*;
 use std::ptr::addr_of_mut;
@@ -72,7 +73,10 @@ impl RawCommandQueue {
 
     #[inline(always)]
     pub const unsafe fn from_id(id: cl_command_queue) -> Option<Self> {
-        NonNull::new(id).map(Self)
+        match non_null_const(id) {
+            Some(x) => Some(Self(x)),
+            None => None,
+        }
     }
 
     #[inline(always)]

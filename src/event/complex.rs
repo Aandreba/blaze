@@ -5,7 +5,6 @@ use opencl_sys::*;
 use std::{
     ffi::c_void,
     marker::PhantomData,
-    mem::MaybeUninit,
     ops::Deref,
     panic::{AssertUnwindSafe, UnwindSafe},
     time::{Duration, SystemTime},
