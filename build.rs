@@ -6,7 +6,7 @@ pub fn main() {
 #[cfg(windows)]
 fn include_opencl() {
     if let Some(path) = option_env!("CUDA_PATH") {
-        let lib = Utf8Path::new(path).join("lib");
+        let lib = camino::Utf8Path::new(path).join("lib");
         #[cfg(target_pointer_width = "32")]
         let path = lib.join("Win32");
         #[cfg(target_pointer_width = "64")]
