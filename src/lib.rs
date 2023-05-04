@@ -1,11 +1,7 @@
+#![allow(clippy::needless_return)]
 #![allow(macro_expanded_macro_exports_accessed_by_absolute_paths)]
-#![feature(
-    const_nonnull_new,
-    maybe_uninit_array_assume_init,
-    const_option_ext,
-    maybe_uninit_uninit_array,
-    ptr_metadata
-)]
+/* */
+#![feature(const_nonnull_new, const_option_ext, ptr_metadata)]
 #![cfg_attr(feature = "nightly", feature(new_uninit, array_try_map))]
 #![cfg_attr(feature = "svm", feature(allocator_api, strict_provenance))]
 #![cfg_attr(docsrs, feature(doc_cfg, proc_macro_hygiene))]

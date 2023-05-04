@@ -5,6 +5,7 @@ use opencl_sys::*;
 use std::{
     ffi::c_void,
     marker::PhantomData,
+    mem::MaybeUninit,
     ops::Deref,
     panic::{AssertUnwindSafe, UnwindSafe},
     time::{Duration, SystemTime},
@@ -562,8 +563,8 @@ impl<'a, C: 'a + Consumer> Event<C> {
     pub fn join_sized_blocking<const N: usize>(iter: [Self; N]) -> Result<[C::Output; N]> {
         use std::mem::MaybeUninit;
 
-        let mut raw = MaybeUninit::uninit_array::<N>();
-        let mut consumers = MaybeUninit::uninit_array::<N>();
+        let mut raw = core::array::from_fn::<_, N, _>(|_| MaybeUninit::uninit());
+        let mut consumers = core::array::from_fn::<_, N, _>(|_| MaybeUninit::uninit());
 
         unsafe {
             for (i, event) in iter.into_iter().enumerate() {
@@ -571,8 +572,8 @@ impl<'a, C: 'a + Consumer> Event<C> {
                 consumers.get_unchecked_mut(i).write(event.consumer);
             }
 
-            let raw = MaybeUninit::array_assume_init(raw);
-            let consumers = MaybeUninit::array_assume_init(consumers);
+            let raw = raw.map(|x| x.assume_init());
+            let consumers = consumers.map(|x| x.assume_init());
 
             RawEvent::join_all_by_ref(&raw)?;
             return consumers.try_map(|x| x.consume());
