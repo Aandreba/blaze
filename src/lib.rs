@@ -140,6 +140,7 @@ pub mod core;
 pub mod event;
 /// Generic memory object
 pub mod memobj;
+pub(crate) mod thinfn;
 
 #[cfg_attr(docsrs, doc(cfg(feature = "image")))]
 #[cfg(feature = "image")]
