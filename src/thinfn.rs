@@ -119,7 +119,7 @@ impl<F: ?Sized + FnClosure> Drop for ThinFn<F> {
                 }
             }
 
-            let guard = DeallocGuard(self.inner.as_ptr(), Layout::for_value(self.deref()));
+            let guard = DeallocGuard(self.inner.as_ptr(), Layout::for_value(&*self.as_ptr()));
             core::ptr::drop_in_place(self.as_mut_ptr());
             drop(guard);
         }
