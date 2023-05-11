@@ -6,7 +6,6 @@ use crate::{
     thinfn::ThinFn,
 };
 use blaze_proc::docfg;
-use box_iter::BoxIntoIter;
 use opencl_sys::*;
 use std::ffi::CStr;
 use std::{
@@ -193,6 +192,7 @@ impl RawContext {
     pub fn devices(&self) -> Result<Vec<RawDevice>> {
         let devices = self.get_info_array::<cl_device_id>(CL_CONTEXT_DEVICES)?;
         Ok(devices
+            .into_vec()
             .into_iter()
             .map(|id| unsafe { RawDevice::from_id(id).unwrap() })
             .collect())
