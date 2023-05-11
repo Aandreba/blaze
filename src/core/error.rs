@@ -121,9 +121,6 @@ impl Display for Error {
             write!(f, ": {desc}")?;
         }
 
-        #[cfg(debug_assertions)]
-        write!(f, "\n{}", self.backtrace)?;
-
         Ok(())
     }
 }
