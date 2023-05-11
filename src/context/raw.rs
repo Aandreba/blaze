@@ -3,6 +3,7 @@ use crate::{
     core::{device::DeviceType, *},
     non_null_const,
     prelude::device::Version,
+    thinfn::ThinFn,
 };
 use blaze_proc::docfg;
 use box_iter::BoxIntoIter;
@@ -13,7 +14,6 @@ use std::{
     mem::MaybeUninit,
     ptr::{addr_of_mut, NonNull},
 };
-use thinnbox::ThinBox;
 
 /// A raw OpenCL context
 #[derive(Debug, PartialEq, Eq, Hash)]
@@ -60,9 +60,9 @@ impl RawContext {
 
         cfg_if::cfg_if! {
             if #[cfg(feature = "cl3")] {
-                let (pfn_notify, user_data) : (Option<unsafe extern "C" fn(*const std::ffi::c_char, *const c_void, usize, *mut c_void)>, Option<ThinBox<dyn Fn(&CStr) + Send>>) = match loger {
+                let (pfn_notify, user_data) : (Option<unsafe extern "C" fn(*const std::ffi::c_char, *const c_void, usize, *mut c_void)>, Option<ThinFn<dyn Fn(&CStr) + Send>>) = match loger {
                     Some(x) => {
-                        let f = ThinBox::<dyn 'static + Fn(&CStr) + Send>::new_unsize(x);
+                        let f = ThinFn::<dyn 'static + Fn(&CStr) + Send>::new(x);
                         (Some(context_error), Some(f))
                     },
 
@@ -74,7 +74,7 @@ impl RawContext {
         }
 
         let user_data_ptr = match user_data {
-            Some(ref x) => unsafe { x.as_raw().as_ptr() as *mut c_void },
+            Some(ref x) => unsafe { x.into_raw().as_ptr() as *mut c_void },
             None => core::ptr::null_mut(),
         };
 
@@ -392,10 +392,7 @@ unsafe impl Sync for RawContext {}
 #[doc(hidden)]
 #[cfg(feature = "cl3")]
 unsafe extern "C" fn destructor_callback(_context: cl_context, user_data: *mut c_void) {
-    use thinnbox::ThinBox;
-
-    let mut f =
-        ThinBox::<dyn 'static + FnMut() + Send>::from_raw(NonNull::new_unchecked(user_data.cast()));
+    let mut f = ThinFn::<dyn 'static + FnMut() + Send>::from_raw(user_data.cast());
     f()
 }
 
@@ -407,9 +404,7 @@ unsafe extern "C" fn context_error(
     _cb: usize,
     user_data: *mut c_void,
 ) {
-    use thinnbox::ThinBox;
-
-    let f = ThinBox::<dyn 'static + Fn(&CStr) + Send>::ref_from_raw(NonNull::new_unchecked(
+    let f = ThinFn::<dyn 'static + Fn(&CStr) + Send>::from_raw(NonNull::new_unchecked(
         user_data.cast(),
     )) as &(dyn 'static + Fn(&CStr) + Send);
     f(std::ffi::CStr::from_ptr(errinfo))
