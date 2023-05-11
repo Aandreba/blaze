@@ -3,9 +3,9 @@ use crate::{
     core::{device::DeviceType, *},
     non_null_const,
     prelude::device::Version,
+    thinfn::ThinFn,
 };
 use blaze_proc::docfg;
-use box_iter::BoxIntoIter;
 use opencl_sys::*;
 use std::ffi::CStr;
 use std::{
@@ -13,7 +13,6 @@ use std::{
     mem::MaybeUninit,
     ptr::{addr_of_mut, NonNull},
 };
-use thinnbox::ThinBox;
 
 /// A raw OpenCL context
 #[derive(Debug, PartialEq, Eq, Hash)]
@@ -46,7 +45,7 @@ impl RawContext {
         )
     }
 
-    fn inner_new<F: 'static + Fn(&CStr) + Send>(
+    fn inner_new<'a, F: 'static + Fn(&'a CStr) + Send>(
         props: ContextProperties,
         devices: &[RawDevice],
         #[cfg(feature = "cl3")] loger: Option<F>,
@@ -60,21 +59,21 @@ impl RawContext {
 
         cfg_if::cfg_if! {
             if #[cfg(feature = "cl3")] {
-                let (pfn_notify, user_data) : (Option<unsafe extern "C" fn(*const std::ffi::c_char, *const c_void, usize, *mut c_void)>, Option<ThinBox<dyn Fn(&CStr) + Send>>) = match loger {
+                let (pfn_notify, user_data) : (Option<unsafe extern "C" fn(*const std::ffi::c_char, *const c_void, usize, *mut c_void)>, Option<ThinFn<dyn 'static + Fn(&'a CStr) + Send>>) = match loger {
                     Some(x) => {
-                        let f = ThinBox::<dyn 'static + Fn(&CStr) + Send>::new_unsize(x);
+                        let f = ThinFn::<dyn 'static + Fn(&'a CStr) + Send>::new(x);
                         (Some(context_error), Some(f))
                     },
 
                     None => (None, None)
                 };
             } else {
-                let (pfn_notify, user_data) : (Option<unsafe extern "C" fn(*const std::ffi::c_char, *const c_void, usize, *mut c_void)>, Option<ThinBox<dyn Fn(&CStr) + Send>>) = (None, None);
+                let (pfn_notify, user_data) : (Option<unsafe extern "C" fn(*const std::ffi::c_char, *const c_void, usize, *mut c_void)>, Option<ThinFn<dyn 'static + Fn(&'a CStr) + Send>>) = (None, None);
             }
         }
 
         let user_data_ptr = match user_data {
-            Some(ref x) => unsafe { x.as_raw().as_ptr() as *mut c_void },
+            Some(ref x) => ThinFn::<dyn 'static + Fn(&'a CStr) + Send>::as_raw(x) as *mut c_void,
             None => core::ptr::null_mut(),
         };
 
@@ -97,7 +96,15 @@ impl RawContext {
         let this = unsafe { Self::from_id(id).unwrap() };
 
         #[cfg(feature = "cl3")]
-        this.on_destruct(move || drop(user_data))?;
+        {
+            let user_data = unsafe {
+                core::mem::transmute::<
+                    Option<ThinFn<dyn 'static + Fn(&'a CStr) + Send>>,
+                    Option<ThinFn<dyn 'static + Fn(&'static CStr) + Send>>,
+                >(user_data)
+            };
+            this.on_destruct(move || drop(user_data))?;
+        }
 
         Ok(this)
     }
@@ -185,6 +192,7 @@ impl RawContext {
     pub fn devices(&self) -> Result<Vec<RawDevice>> {
         let devices = self.get_info_array::<cl_device_id>(CL_CONTEXT_DEVICES)?;
         Ok(devices
+            .into_vec()
             .into_iter()
             .map(|id| unsafe { RawDevice::from_id(id).unwrap() })
             .collect())
@@ -337,18 +345,11 @@ impl RawContext {
 impl RawContext {
     #[inline(always)]
     pub fn on_destruct(&self, f: impl 'static + FnOnce() + Send) -> Result<()> {
-        cfg_if::cfg_if! {
-            if #[cfg(debug_assertions)] {
-                let f = ThinBox::<dyn 'static + FnMut() + Send>::from_once(f);
-            } else {
-                let f = unsafe { ThinBox::<dyn 'static + FnMut() + Send>::from_once_unchecked(f) };
-            }
-        }
-
+        let f = ThinFn::<dyn 'static + FnOnce() + Send>::new_once(f);
         unsafe {
-            let user_data = ThinBox::into_raw(f);
-            if let Err(e) = self.on_destruct_raw(destructor_callback, user_data.as_ptr().cast()) {
-                let _ = ThinBox::<dyn 'static + FnMut() + Send>::from_raw(user_data);
+            let user_data = ThinFn::into_raw(f);
+            if let Err(e) = self.on_destruct_raw(destructor_callback, user_data.cast()) {
+                let _ = ThinFn::<dyn 'static + FnOnce() + Send>::from_raw(user_data);
                 return Err(e);
             }
             return Ok(());
@@ -392,25 +393,19 @@ unsafe impl Sync for RawContext {}
 #[doc(hidden)]
 #[cfg(feature = "cl3")]
 unsafe extern "C" fn destructor_callback(_context: cl_context, user_data: *mut c_void) {
-    use thinnbox::ThinBox;
-
-    let mut f =
-        ThinBox::<dyn 'static + FnMut() + Send>::from_raw(NonNull::new_unchecked(user_data.cast()));
-    f()
+    let f = ThinFn::<dyn 'static + FnOnce() + Send>::from_raw(user_data.cast());
+    f.call_once(())
 }
 
 #[doc(hidden)]
 #[cfg(feature = "cl3")]
-unsafe extern "C" fn context_error(
+unsafe extern "C" fn context_error<'a>(
     errinfo: *const std::ffi::c_char,
     _private_info: *const c_void,
     _cb: usize,
     user_data: *mut c_void,
 ) {
-    use thinnbox::ThinBox;
-
-    let f = ThinBox::<dyn 'static + Fn(&CStr) + Send>::ref_from_raw(NonNull::new_unchecked(
-        user_data.cast(),
-    )) as &(dyn 'static + Fn(&CStr) + Send);
-    f(std::ffi::CStr::from_ptr(errinfo))
+    let f = ThinFn::<dyn 'static + Fn(&'a CStr) + Send>::from_raw(user_data.cast());
+    f.call((std::ffi::CStr::from_ptr(errinfo),));
+    core::mem::forget(f);
 }

@@ -65,46 +65,30 @@ impl From<::core::result::Result<ErrorKind, i32>> for ErrorCode {
 pub struct Error {
     pub ty: ErrorCode,
     pub desc: Option<Arc<dyn Send + Sync + Display>>,
-    #[cfg_attr(docsrs, doc(cfg(debug_assertions)))]
-    #[cfg(debug_assertions)]
-    pub backtrace: Arc<std::backtrace::Backtrace>,
 }
 
 impl Error {
-    #[cold]
     #[inline(always)]
     pub fn new<D: 'static + Send + Sync + Display>(ty: impl Into<ErrorCode>, desc: D) -> Self {
-        Self::from_parts(
-            ty,
-            Some(Arc::new(desc)),
-            #[cfg(debug_assertions)]
-            Arc::new(std::backtrace::Backtrace::capture()),
-        )
+        Self::from_parts(ty, Some(Arc::new(desc)))
     }
 
-    #[cold]
     #[inline(always)]
     pub fn from_parts(
         ty: impl Into<ErrorCode>,
         desc: Option<Arc<dyn Send + Sync + Display>>,
-        #[cfg(debug_assertions)] backtrace: Arc<std::backtrace::Backtrace>,
     ) -> Self {
         Self {
             ty: ty.into(),
             desc,
-            #[cfg(debug_assertions)]
-            backtrace,
         }
     }
 
-    #[cold]
     #[inline(always)]
     pub fn from_type(ty: impl Into<ErrorCode>) -> Self {
         Self {
             ty: ty.into(),
             desc: None,
-            #[cfg(debug_assertions)]
-            backtrace: Arc::new(std::backtrace::Backtrace::capture()),
         }
     }
 
@@ -136,9 +120,6 @@ impl Display for Error {
         if let Some(ref desc) = self.desc {
             write!(f, ": {desc}")?;
         }
-
-        #[cfg(debug_assertions)]
-        write!(f, "\n{}", self.backtrace)?;
 
         Ok(())
     }

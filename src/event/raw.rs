@@ -1,3 +1,4 @@
+use crate::thinfn::ThinFn;
 use crate::{core::*, non_null_const};
 use blaze_proc::docfg;
 use opencl_sys::*;
@@ -8,7 +9,6 @@ use std::panic::resume_unwind;
 use std::sync::mpsc::TryRecvError;
 use std::time::{Duration, SystemTime};
 use std::{mem::MaybeUninit, ptr::NonNull};
-use thinnbox::ThinBox;
 
 use super::ext::NoopEvent;
 use super::{CommandType, Consumer, Event, EventStatus, ProfilingInfo};
@@ -303,18 +303,13 @@ impl RawEvent {
         status: EventStatus,
         f: impl 'static + FnOnce(RawEvent, Result<EventStatus>) + Send,
     ) -> Result<()> {
-        cfg_if::cfg_if! {
-            if #[cfg(debug_assertions)] {
-                let r#fn = ThinBox::<dyn 'static + Send + FnMut(RawEvent, Result<EventStatus>)>::from_once(f);
-            } else {
-                let r#fn = unsafe { ThinBox::<dyn 'static + Send + FnMut(RawEvent, Result<EventStatus>)>::from_once_unchecked(f) };
-            }
-        }
-        let user_data = ThinBox::into_raw(r#fn);
+        let r#fn =
+            ThinFn::<dyn 'static + Send + FnOnce(RawEvent, Result<EventStatus>)>::new_once(f);
+        let user_data = ThinFn::into_raw(r#fn);
 
         unsafe {
-            if let Err(e) = self.on_status_raw(status, event_listener, user_data.as_ptr().cast()) {
-                let _ = ThinBox::<dyn 'static + FnMut(RawEvent, Result<EventStatus>)>::from_raw(
+            if let Err(e) = self.on_status_raw(status, event_listener, user_data.cast()) {
+                let _ = ThinFn::<dyn 'static + FnOnce(RawEvent, Result<EventStatus>)>::from_raw(
                     user_data,
                 ); // drop user data
                 return Err(e);
@@ -416,12 +411,12 @@ pub(crate) unsafe extern "C" fn event_listener(
     event_command_status: cl_int,
     user_data: *mut c_void,
 ) {
-    let mut f = ThinBox::<dyn 'static + Send + FnMut(RawEvent, Result<EventStatus>)>::from_raw(
-        NonNull::new_unchecked(user_data.cast()),
+    let f = ThinFn::<dyn 'static + Send + FnOnce(RawEvent, Result<EventStatus>)>::from_raw(
+        user_data.cast(),
     );
     let event = RawEvent::from_id_unchecked(event);
     let status = EventStatus::try_from(event_command_status);
-    f(event, status)
+    f.call_once((event, status))
 }
 
 pub type CallbackHandle<T> = ScopedCallbackHandle<'static, T>;

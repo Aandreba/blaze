@@ -7,7 +7,6 @@ use crate::{
     try_collect,
 };
 use blaze_proc::docfg;
-use box_iter::BoxIntoIter;
 use core::{mem::MaybeUninit, num::NonZeroUsize};
 use opencl_sys::*;
 use std::{
@@ -78,6 +77,7 @@ impl RawProgram {
 
         let kernels = this
             .kernels()?
+            .into_vec()
             .into_iter()
             .map(|id| unsafe { RawKernel::from_id(id).unwrap() })
             .collect::<Box<[_]>>();
@@ -128,6 +128,7 @@ impl RawProgram {
 
         let kernels = this
             .kernels()?
+            .into_vec()
             .into_iter()
             .map(|id| unsafe { RawKernel::from_id(id).unwrap() })
             .collect::<Box<[_]>>();
@@ -159,6 +160,7 @@ impl RawProgram {
 
         let kernels = this
             .kernels()?
+            .into_vec()
             .into_iter()
             .map(|id| unsafe { RawKernel::from_id(id).unwrap() })
             .collect::<Box<[_]>>();
@@ -275,7 +277,7 @@ impl RawProgram {
     #[inline]
     pub fn devices(&self) -> Result<Vec<RawDevice>> {
         let devs = self.get_info_array::<cl_device_id>(CL_PROGRAM_DEVICES)?;
-        let iter = devs.into_iter().map(|dev| unsafe {
+        let iter = devs.into_vec().into_iter().map(|dev| unsafe {
             let dev = RawDevice::from_id(dev).unwrap();
             #[cfg(feature = "cl1_2")]
             dev.retain()?;

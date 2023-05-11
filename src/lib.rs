@@ -8,7 +8,6 @@
 )]
 #![cfg_attr(feature = "svm", feature(allocator_api, strict_provenance))]
 #![cfg_attr(docsrs, feature(doc_cfg, proc_macro_hygiene))]
-#![cfg_attr(debug_assertions, feature(backtrace_frames))]
 #![doc = include_str!("../docs/src/intro.md")]
 
 use std::ptr::NonNull;
@@ -140,6 +139,7 @@ pub mod core;
 pub mod event;
 /// Generic memory object
 pub mod memobj;
+pub(crate) mod thinfn;
 
 #[cfg_attr(docsrs, doc(cfg(feature = "image")))]
 #[cfg(feature = "image")]
