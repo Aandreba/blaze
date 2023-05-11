@@ -2,7 +2,7 @@ use std::{
     alloc::{Layout, LayoutError},
     marker::PhantomData,
     mem::ManuallyDrop,
-    ops::{Deref, DerefMut},
+    ops::Deref,
     ptr::NonNull,
 };
 
@@ -28,7 +28,7 @@ pub struct ThinFn<F: ?Sized + FnClosure> {
 impl<T: ?Sized + FnClosure> ThinFn<T> {
     pub fn new<F: IntoFnClosure<T>>(f: F) -> Self
     where
-        F: FnClosureNew,
+        T: FnClosureNew,
     {
         let (layout, f_offset) = calculate_layout::<F>().expect("unexpected layout error");
         let Some(ptr) = NonNull::new(unsafe { std::alloc::alloc(layout) }) else { std::alloc::handle_alloc_error(layout) };
@@ -62,6 +62,11 @@ impl<T: ?Sized + FnClosure> ThinFn<T> {
     }
 
     #[inline]
+    pub fn as_raw(&self) -> *mut () {
+        return self.inner.as_ptr().cast();
+    }
+
+    #[inline]
     pub fn metadata(&self) -> *const () {
         unsafe {
             self.inner
@@ -72,7 +77,7 @@ impl<T: ?Sized + FnClosure> ThinFn<T> {
         }
     }
 
-    pub fn as_ptr(&self) -> *const T {
+    pub fn as_ptr(&self) -> *const T::Ptr {
         unsafe {
             PtrRepr {
                 components: PtrComponents {
@@ -84,7 +89,7 @@ impl<T: ?Sized + FnClosure> ThinFn<T> {
         }
     }
 
-    pub fn as_mut_ptr(&mut self) -> *mut T {
+    pub fn as_mut_ptr(&mut self) -> *mut T::Ptr {
         unsafe {
             PtrRepr {
                 components: PtrComponents {
@@ -94,22 +99,6 @@ impl<T: ?Sized + FnClosure> ThinFn<T> {
             }
             .mut_ptr
         }
-    }
-}
-
-impl<F: ?Sized + FnClosure> Deref for ThinFn<F> {
-    type Target = F;
-
-    #[inline]
-    fn deref(&self) -> &Self::Target {
-        unsafe { &*self.as_ptr() }
-    }
-}
-
-impl<F: ?Sized + FnClosure> DerefMut for ThinFn<F> {
-    #[inline]
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        unsafe { &mut *self.as_mut_ptr() }
     }
 }
 
@@ -141,7 +130,9 @@ unsafe impl<F: ?Sized + FnClosure + Send> Send for ThinFn<F> {}
 unsafe impl<F: ?Sized + FnClosure + Sync> Sync for ThinFn<F> {}
 
 #[doc(hidden)]
-pub unsafe trait FnClosure: sealed::Sealed {}
+pub unsafe trait FnClosure: sealed::Sealed {
+    type Ptr: ?Sized;
+}
 #[doc(hidden)]
 pub trait FnClosureNew: FnClosure {}
 
@@ -161,7 +152,16 @@ macro_rules! impl_fn_closure {
         impl<'a, $($arg,)* __T__> FnClosureNew for dyn 'a + $($trait+)* Fn($($arg),*) -> __T__ {}
         impl<'a, $($arg,)* __T__> FnClosureNew for dyn 'a + $($trait+)* FnMut($($arg),*) -> __T__ {}
 
-        unsafe impl<'a, $($arg,)* __T__> FnClosure for dyn 'a + $($trait+)* Fn($($arg),*) -> __T__ {}
+        unsafe impl<'a, $($arg,)* __T__> FnClosure for dyn 'a + $($trait+)* FnOnce($($arg),*) -> __T__ {
+            type Ptr = dyn 'a + $($trait+)* FnMut($($arg),*) -> __T__;
+        }
+        unsafe impl<'a, $($arg,)* __T__> FnClosure for dyn 'a + $($trait+)* Fn($($arg),*) -> __T__ {
+            type Ptr = Self;
+        }
+        unsafe impl<'a, $($arg,)* __T__> FnClosure for dyn 'a + $($trait+)* FnMut($($arg),*) -> __T__ {
+            type Ptr = Self;
+        }
+
         unsafe impl<'a, $($arg,)* __T__, __F__: 'a + $($trait+)* Fn($($arg),*) -> __T__> IntoFnClosure<dyn 'a + $($trait+)* Fn($($arg),*) -> __T__> for __F__ {
             unsafe fn metadata(&self) -> *const () {
                 PtrRepr {
@@ -170,7 +170,6 @@ macro_rules! impl_fn_closure {
             }
         }
 
-        unsafe impl<'a, $($arg,)* __T__> FnClosure for dyn 'a + $($trait+)* FnMut($($arg),*) -> __T__ {}
         unsafe impl<'a, $($arg,)* __T__, __F__: 'a + $($trait+)* FnMut($($arg),*) -> __T__> IntoFnClosure<dyn 'a + $($trait+)* FnMut($($arg),*) -> __T__> for __F__ {
             unsafe fn metadata(&self) -> *const () {
                 PtrRepr {
@@ -179,7 +178,6 @@ macro_rules! impl_fn_closure {
             }
         }
 
-        unsafe impl<'a, $($arg,)* __T__> FnClosure for dyn 'a + $($trait+)* FnOnce($($arg),*) -> __T__ {}
         unsafe impl<'a, $($arg,)* __T__, __F__: 'a + $($trait+)* FnOnce($($arg),*) -> __T__> IntoFnClosure<dyn 'a + $($trait+)* FnOnce($($arg),*) -> __T__> for __F__ {
             unsafe fn metadata(&self) -> *const () {
                 PtrRepr {
@@ -188,18 +186,18 @@ macro_rules! impl_fn_closure {
             }
         }
 
-        #[allow(non_snake_case)]
+        #[allow(non_snake_case, dead_code)]
         impl<'a, $($arg,)* __T__> ThinFn<dyn 'a + $($trait+)* FnOnce($($arg),*) -> __T__> {
             pub fn new_once<__F__: 'a + $($trait+)* FnOnce($($arg),*) -> __T__>(f: __F__) -> Self
             {
                 #[inline(always)]
-                fn cast_ptr_to<T, F> (ptr: *mut T, f: &F) -> *mut F {
+                fn cast_ptr_to<T, F> (ptr: *mut T, _f: &F) -> *mut F {
                     ptr.cast::<F>()
                 }
 
-                let mut f = ManuallyDrop::new(f);
+                let mut f = Some(f);
                 let f = move |$($arg),*| unsafe {
-                    (ManuallyDrop::take(&mut f))($($arg),*)
+                    (f.take().unwrap_unchecked())($($arg),*)
                 };
 
                 let metadata = unsafe {
@@ -226,25 +224,24 @@ macro_rules! impl_fn_closure {
             }
 
             #[inline]
-            pub fn call_once (self, ($($arg,)*): ($($arg,)*)) -> __T__ {
-                // execute as fnmut
-                todo!()
+            pub fn call_once (mut self, ($($arg,)*): ($($arg,)*)) -> __T__ {
+                (unsafe { &mut *self.as_mut_ptr() })($($arg),*)
             }
         }
 
-        #[allow(non_snake_case)]
+        #[allow(non_snake_case, dead_code)]
         impl<'a, $($arg,)* __T__> ThinFn<dyn 'a + $($trait+)* Fn($($arg),*) -> __T__> {
             #[inline]
             pub fn call (&self, ($($arg,)*): ($($arg,)*)) -> __T__ {
-                (self.deref())($($arg),*)
+                (unsafe { &*self.as_ptr() })($($arg),*)
             }
         }
 
-        #[allow(non_snake_case)]
+        #[allow(non_snake_case, dead_code)]
         impl<'a, $($arg,)* __T__> ThinFn<dyn 'a + $($trait+)* FnMut($($arg),*) -> __T__> {
             #[inline]
             pub fn call_mut (&mut self, ($($arg,)*): ($($arg,)*)) -> __T__ {
-                (self.deref_mut())($($arg),*)
+                (unsafe { &mut *self.as_mut_ptr() })($($arg),*)
             }
         }
     };
@@ -305,7 +302,7 @@ fn calculate_layout<F>() -> Result<(Layout, usize), LayoutError> {
     return Ok((layout.pad_to_align(), f));
 }
 
-fn calculate_layout_of<F>(f: &F) -> Result<(Layout, usize), LayoutError> {
+fn calculate_layout_of<F: ?Sized>(f: &F) -> Result<(Layout, usize), LayoutError> {
     let layout = Layout::new::<*const ()>(); // metadata
     let (layout, f) = layout.extend(Layout::for_value(f))?;
     return Ok((layout.pad_to_align(), f));
