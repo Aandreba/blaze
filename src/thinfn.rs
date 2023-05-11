@@ -228,7 +228,7 @@ macro_rules! impl_fn_closure {
             #[inline]
             pub fn call_once (self, ($($arg,)*): ($($arg,)*)) -> __T__ {
                 // execute as fnmut
-                (self.deref())($($arg),*)
+                todo!()
             }
         }
 
