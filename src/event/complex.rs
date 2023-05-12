@@ -52,6 +52,8 @@ pub(crate) mod ext {
     /// Event for [`join_all`](super::Event::join_all).
     #[docfg(feature = "cl1_1")]
     pub type JoinAllEvent<C> = Event<JoinAll<C>>;
+    /// Event for [`taking`](super::Event::taking).
+    pub type TakingEvent<Prev, T> = Event<Taking<Prev, T>>;
 }
 
 use super::consumer::*;
@@ -270,6 +272,21 @@ impl<C: Consumer> Event<C> {
         InspectEvent {
             inner: self.inner,
             consumer: Inspect(self.consumer, f),
+            send: self.send,
+        }
+    }
+
+    /// Returns an event that will consume `t` when consumed or dropped.
+    ///
+    /// The event still returns the same output the previous consumer provided.
+    #[inline(always)]
+    pub fn taking<T>(self, t: T) -> TakingEvent<C, T> {
+        TakingEvent {
+            inner: self.inner,
+            consumer: Taking {
+                prev: self.consumer,
+                _take: t,
+            },
             send: self.send,
         }
     }
