@@ -149,43 +149,6 @@ impl<'a, T, C: Context> BufMut<'a, T, C> {
     }
 }
 
-impl<'env, T: 'static + Send + Sync + Copy, C: Context> BufMut<'env, T, C> {
-    // may have to pin
-    pub fn into_event<
-        'scope,
-        F: FnOnce(&'env mut Buffer<T, C>) -> Result<Event<Con>>,
-        Con: Consumer,
-    >(
-        mut self,
-        f: F,
-    ) -> Result<TakingEvent<Con, Self>> {
-        unsafe {
-            let this: &'env mut Buffer<T, C> = &mut *(self.deref_mut() as *mut Buffer<T, C>);
-            return Ok(f(this)?.taking(self));
-        }
-    }
-
-    pub fn into_event_pinned<
-        'scope,
-        D: DerefMut<Target = Self>,
-        F: FnOnce(&'env mut Buffer<T, C>) -> Result<Event<Con>>,
-        Con: Consumer,
-    >(
-        mut this: Pin<D>,
-        f: F,
-    ) -> Result<TakingEvent<Con, Pin<D>>>
-    where
-        Self: Unpin,
-        C: 'env,
-    {
-        unsafe {
-            let this_buf: &'env mut Buffer<T, C> =
-                &mut *(this.deref_mut().deref_mut() as *mut Buffer<T, C>);
-            return Ok(f(this_buf)?.taking(this));
-        }
-    }
-}
-
 impl<'a, T, C: Context> Deref for BufMut<'a, T, C> {
     type Target = Buffer<T, C>;
 
