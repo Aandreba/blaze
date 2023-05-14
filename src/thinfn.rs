@@ -2,7 +2,6 @@ use std::{
     alloc::{Layout, LayoutError},
     marker::PhantomData,
     mem::ManuallyDrop,
-    ops::Deref,
     ptr::NonNull,
 };
 
@@ -26,6 +25,7 @@ pub struct ThinFn<F: ?Sized + FnClosure> {
 }
 
 impl<T: ?Sized + FnClosure> ThinFn<T> {
+    #[allow(dead_code)]
     pub fn new<F: IntoFnClosure<T>>(f: F) -> Self
     where
         T: FnClosureNew,
@@ -296,12 +296,14 @@ impl_fn_closure! {
     (A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U)
 }
 
+#[allow(dead_code)]
 fn calculate_layout<F>() -> Result<(Layout, usize), LayoutError> {
     let layout = Layout::new::<*const ()>(); // metadata
     let (layout, f) = layout.extend(Layout::new::<F>())?;
     return Ok((layout.pad_to_align(), f));
 }
 
+#[allow(dead_code)]
 fn calculate_layout_of<F: ?Sized>(f: &F) -> Result<(Layout, usize), LayoutError> {
     let layout = Layout::new::<*const ()>(); // metadata
     let (layout, f) = layout.extend(Layout::for_value(f))?;
