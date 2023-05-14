@@ -1,39 +1,16 @@
+#![allow(clippy::all)]
+#![allow(clippy::needless_return)]
 #![allow(macro_expanded_macro_exports_accessed_by_absolute_paths)]
-#![feature(
-    mem_copy_fn,
-    box_into_inner,
-    new_uninit,
-    unsize,
-    iterator_try_collect,
-    is_some_and,
-    result_flattening,
-    alloc_layout_extra,
-    array_try_map,
-    extend_one,
-    const_nonnull_new,
-    int_roundings,
-    const_maybe_uninit_zeroed,
-    unboxed_closures,
-    const_ptr_as_ref,
-    layout_for_ptr,
-    const_maybe_uninit_array_assume_init,
-    maybe_uninit_array_assume_init,
-    const_option_ext,
-    maybe_uninit_uninit_array,
-    const_option,
-    nonzero_ops,
-    associated_type_bounds,
-    ptr_metadata,
-    fn_traits,
-    vec_into_raw_parts,
-    const_trait_impl,
-    drain_filter,
-    allocator_api
+/* */
+#![cfg_attr(
+    feature = "nightly",
+    feature(new_uninit, const_nonnull_new, array_try_map)
 )]
-#![cfg_attr(feature = "svm", feature(strict_provenance))]
+#![cfg_attr(feature = "svm", feature(allocator_api, strict_provenance))]
 #![cfg_attr(docsrs, feature(doc_cfg, proc_macro_hygiene))]
-#![cfg_attr(debug_assertions, feature(backtrace_frames))]
 #![doc = include_str!("../docs/src/intro.md")]
+
+use std::ptr::NonNull;
 
 use event::RawEvent;
 
@@ -162,6 +139,7 @@ pub mod core;
 pub mod event;
 /// Generic memory object
 pub mod memobj;
+pub(crate) mod thinfn;
 
 #[cfg_attr(docsrs, doc(cfg(feature = "image")))]
 #[cfg(feature = "image")]
@@ -199,3 +177,32 @@ pub const fn wait_list_from_ref(evt: &RawEvent) -> WaitList {
 
 /// A list of events to be awaited.
 pub type WaitList<'a> = Option<&'a [prelude::RawEvent]>;
+
+pub(crate) fn try_collect<T, E, C: Default + Extend<T>>(
+    mut iter: impl Iterator<Item = Result<T, E>>,
+) -> Result<C, E> {
+    let mut result = C::default();
+
+    loop {
+        match iter.next() {
+            Some(Ok(x)) => result.extend(Some(x)),
+            Some(Err(e)) => return Err(e),
+            None => break,
+        }
+    }
+
+    return Ok(result);
+}
+
+pub(crate) const fn non_null_const<T>(ptr: *mut T) -> Option<NonNull<T>> {
+    cfg_if::cfg_if! {
+        if #[cfg(feature = "nightly")] {
+            return NonNull::new(ptr)
+        } else {
+            if unsafe { ::core::mem::transmute::<*mut T, usize>(ptr) == 0 } {
+                return None;
+            }
+            return unsafe { Some(NonNull::new_unchecked(ptr)) };
+        }
+    }
+}

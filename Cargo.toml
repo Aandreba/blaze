@@ -32,8 +32,9 @@ cl3 = ["cl2_2", "opencl-sys/CL_VERSION_3_0"]
 strict = []
 # half = ["dep:half"]
 # image = ["dep:ffmpeg-sys-next"]
-svm = ["cl2"]
+svm = ["nightly", "cl2", "utils-atomics/alloc_api"]
 futures = ["dep:futures", "utils-atomics/futures"]
+nightly = []
 
 [package.metadata.docs.rs]
 all-features = true
@@ -45,21 +46,17 @@ opencl-sys = { version = "0.2.1", default-features = false }
 futures = { version = "0.3.21", optional = true }
 # ffmpeg-sys-next = { version = "5.0.1", optional = true }
 # half = { version = "2", features = ["num-traits", "bytemuck"], optional = true }
-box-iter = "0.1.0"
 bytemuck = "1.10.0"
 bytemuck_derive = "1.1.1"
 crossbeam = "0.8.2"
 once_cell = "1.13.0"
-utils-atomics = "0.5.0"
+utils-atomics = "1.0.0"
 num-traits = "0.2.15"
 num_enum = "0.6.0"
 bitflags = "1"
 cfg-if = "1"
 bitvec = "1"
 elor = "1"
-ouroboros = "0.15.5"
-thin_trait_object = "1.1.2"
-thinnbox = "0.1.2"
 pin-project = "1.0.12"
 
 [dev-dependencies]

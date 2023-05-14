@@ -1,34 +1,37 @@
-use std::{sync::Arc, fmt::{Display, Debug}};
 use blaze_proc::error;
+use std::{
+    fmt::{Debug, Display},
+    sync::Arc,
+};
 
 pub type Result<T> = ::core::result::Result<T, Error>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ErrorCode {
-    Kind (ErrorKind),
-    Unknown (i32)
+    Kind(ErrorKind),
+    Unknown(i32),
 }
 
 impl ErrorCode {
     #[inline(always)]
-    pub const fn as_i32 (self) -> i32 {
+    pub const fn as_i32(self) -> i32 {
         return match self {
             Self::Kind(x) => x as i32,
-            Self::Unknown(x) => x
-        }
+            Self::Unknown(x) => x,
+        };
     }
-    
+
     #[inline]
-    pub fn try_into_known (&mut self) -> Option<ErrorKind> {
+    pub fn try_into_known(&mut self) -> Option<ErrorKind> {
         match *self {
             Self::Kind(x) => Some(x),
             Self::Unknown(id) => match ErrorKind::try_from(id) {
                 Ok(x) => {
                     *self = Self::Kind(x);
-                    return Some(x)
-                },
-                Err(_) => return None 
-            }
+                    return Some(x);
+                }
+                Err(_) => return None,
+            },
         }
     }
 }
@@ -52,7 +55,7 @@ impl From<::core::result::Result<ErrorKind, i32>> for ErrorCode {
     fn from(x: ::core::result::Result<ErrorKind, i32>) -> Self {
         match x {
             Ok(x) => Self::Kind(x),
-            Err(e) => Self::Unknown(e)
+            Err(e) => Self::Unknown(e),
         }
     }
 }
@@ -62,43 +65,36 @@ impl From<::core::result::Result<ErrorKind, i32>> for ErrorCode {
 pub struct Error {
     pub ty: ErrorCode,
     pub desc: Option<Arc<dyn Send + Sync + Display>>,
-    #[cfg_attr(docsrs, doc(cfg(debug_assertions)))]
-    #[cfg(debug_assertions)]
-    pub backtrace: Arc<std::backtrace::Backtrace>
 }
 
 impl Error {
-    #[cold]
     #[inline(always)]
-    pub fn new<D: 'static + Send + Sync + Display> (ty: impl Into<ErrorCode>, desc: D) -> Self {
-        Self::from_parts(ty, Some(Arc::new(desc)), #[cfg(debug_assertions)] Arc::new(std::backtrace::Backtrace::capture()))
+    pub fn new<D: 'static + Send + Sync + Display>(ty: impl Into<ErrorCode>, desc: D) -> Self {
+        Self::from_parts(ty, Some(Arc::new(desc)))
     }
 
-    #[cold]
     #[inline(always)]
-    pub fn from_parts (ty: impl Into<ErrorCode>, desc: Option<Arc<dyn Send + Sync + Display>>, #[cfg(debug_assertions)] backtrace: Arc<std::backtrace::Backtrace>) -> Self {
-        Self { 
+    pub fn from_parts(
+        ty: impl Into<ErrorCode>,
+        desc: Option<Arc<dyn Send + Sync + Display>>,
+    ) -> Self {
+        Self {
             ty: ty.into(),
             desc,
-            #[cfg(debug_assertions)]
-            backtrace
         }
     }
 
-    #[cold]
     #[inline(always)]
-    pub fn from_type (ty: impl Into<ErrorCode>) -> Self {
-        Self { 
+    pub fn from_type(ty: impl Into<ErrorCode>) -> Self {
+        Self {
             ty: ty.into(),
             desc: None,
-            #[cfg(debug_assertions)]
-            backtrace: Arc::new(std::backtrace::Backtrace::capture())
         }
     }
 
     #[inline(always)]
-    pub fn as_i32 (self) -> i32 {
-        return self.ty.as_i32()
+    pub fn as_i32(self) -> i32 {
+        return self.ty.as_i32();
     }
 }
 
@@ -120,19 +116,49 @@ impl Display for Error {
     #[inline]
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         Debug::fmt(&self.ty, f)?;
-        
+
         if let Some(ref desc) = self.desc {
             write!(f, ": {desc}")?;
         }
-
-        #[cfg(debug_assertions)]
-        write!(f, "\n{}", self.backtrace)?;
 
         Ok(())
     }
 }
 
-#[deprecated(since="0.1.0", note="use `ErrorKind` instead")]
+impl Display for ErrorCode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ErrorCode::Kind(e) => write!(f, "{e}"),
+            ErrorCode::Unknown(e) => write!(f, "Unknown error: {e}"),
+        }
+    }
+}
+
+impl Display for ErrorKind {
+    #[inline]
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        Display::fmt(&(*self as i32), f)
+    }
+}
+
+impl std::error::Error for Error {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(&self.ty)
+    }
+}
+
+impl std::error::Error for ErrorCode {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            ErrorCode::Kind(e) => Some(e),
+            ErrorCode::Unknown(_) => None,
+        }
+    }
+}
+
+impl std::error::Error for ErrorKind {}
+
+#[deprecated(since = "0.1.0", note = "use `ErrorKind` instead")]
 pub type ErrorType = ErrorKind;
 
 error! {
@@ -198,11 +224,11 @@ error! {
         const CL_INVALID_BUFFER_SIZE,
         const CL_INVALID_MIP_LEVEL,
         const CL_INVALID_GLOBAL_WORK_SIZE,
-        
+
         // #ifdef CL_VERSION_1_1
         const CL_INVALID_PROPERTY,
         // #endif
-        
+
         // #ifdef CL_VERSION_1_2
         const CL_INVALID_IMAGE_DESCRIPTOR,
         const CL_INVALID_COMPILER_OPTIONS,
@@ -224,7 +250,7 @@ error! {
     }
 }
 
-const fn min_value<const N: usize> (iter: [i32;N]) -> i32 {
+const fn min_value<const N: usize>(iter: [i32; N]) -> i32 {
     let mut min = i32::MAX;
     let mut i = 0;
 
@@ -239,7 +265,7 @@ const fn min_value<const N: usize> (iter: [i32;N]) -> i32 {
     min
 }
 
-const fn max_value<const N: usize> (iter: [i32;N]) -> i32 {
+const fn max_value<const N: usize>(iter: [i32; N]) -> i32 {
     let mut max = i32::MIN;
     let mut i = 0;
 

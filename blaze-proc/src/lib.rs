@@ -1,4 +1,4 @@
-#![feature(extend_one, iter_advance_by, pattern)]
+#![allow(clippy::all)]
 
 macro_rules! flat_mod {
     ($($i:ident),+) => {
