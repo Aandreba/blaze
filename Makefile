@@ -2,13 +2,13 @@ features := cl1_1 cl1_2 cl2 cl2_1 cl2_2 cl3 svm futures
 
 check:
 	cargo clippy --no-deps --all-targets --no-default-features -- -Dwarnings
-	$(foreach x, $(features), cargo clippy --features $(x);)
-	$(foreach x, $(features), cargo clippy --features strict,$(x);)
-	cargo clippy --all-features
-	cargo clippy --no-default-features --release
-	$(foreach x, $(features), cargo clippy --release --features $(x);)
-	$(foreach x, $(features), cargo clippy --release --features strict,$(x);)
-	cargo clippy --release --all-features
+	$(foreach x, $(features), cargo clippy --no-deps --all-targets --features $(x) -- -Dwarnings;)
+	$(foreach x, $(features), cargo clippy --no-deps --all-targets --features strict,$(x) -- -Dwarnings;)
+	cargo clippy --no-deps --all-targets --all-features -- -Dwarnings
+	cargo clippy --no-deps --all-targets --no-default-features --release -- -Dwarnings
+	$(foreach x, $(features), cargo clippy --no-deps --all-targets --release --features $(x) -- -Dwarnings;)
+	$(foreach x, $(features), cargo clippy --no-deps --all-targets --release --features strict,$(x) -- -Dwarnings;)
+	cargo clippy --no-deps --all-targets --release --all-features -- -Dwarnings
 
 test:
 	cargo test --no-default-features
