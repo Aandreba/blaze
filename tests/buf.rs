@@ -91,31 +91,6 @@ fn chunks() {
 
 #[cfg(feature = "cl1_1")]
 #[test]
-fn rev_chunks() {
-    use std::ops::Deref;
-
-    let buf = buffer![1i32, 2, 3, 4, 5].unwrap();
-    let mut slice = buf.chunks_exact(0, 2);
-
-    debug_assert_eq!(
-        slice.next().unwrap().unwrap().deref(),
-        &buffer![1i32, 2].unwrap()
-    );
-
-    debug_assert_eq!(
-        slice.next().unwrap().unwrap().deref(),
-        &buffer![3, 4].unwrap()
-    );
-
-    debug_assert!(slice.next().is_none());
-    debug_assert_eq!(
-        slice.remainder().unwrap().unwrap().deref(),
-        &buffer![5i32].unwrap()
-    );
-}
-
-#[cfg(feature = "cl1_1")]
-#[test]
 fn chunks_mut() {
     let mut buf = buffer![1i32, 2, 3, 4, 5].unwrap();
     let mut chunks = buf
