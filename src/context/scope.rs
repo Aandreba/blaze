@@ -96,10 +96,7 @@ impl<'scope, 'env: 'scope, C: 'env + Context> Scope<'scope, 'env, C> {
         let queue_size = queue.size.clone();
         let scope_data = self.data.clone();
         let scope_thread = self.thread.clone();
-
-        // TODO HANDLE ERROR
-        // ALSO, we are not getting into the callback
-        evt.on_complete_silent(move |_, res| {
+        let res = evt.on_complete_silent(move |_, res| {
             let _ = queue_size.fetch_sub(1, Ordering::AcqRel);
 
             if let Err(e) = res {
@@ -112,8 +109,12 @@ impl<'scope, 'env: 'scope, C: 'env + Context> Scope<'scope, 'env, C> {
             }
 
             Self::reduce_items(&scope_data, &scope_thread)
-        })
-        .unwrap();
+        });
+
+        if let Err(e) = res {
+            queue.size.fetch_sub(1, Ordering::AcqRel);
+            return Err(e);
+        }
 
         return Ok(evt);
     }

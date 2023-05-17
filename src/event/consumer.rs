@@ -211,3 +211,19 @@ impl<C: Consumer> Consumer for JoinAll<C> {
         return crate::try_collect(iter);
     }
 }
+
+/// Consumer for [`taking`](super::Event::taking) event.
+#[derive(Debug, Clone)]
+pub struct Taking<Prev, T> {
+    pub(super) prev: Prev,
+    pub(super) _take: T,
+}
+
+impl<T, Prev: Consumer> Consumer for Taking<Prev, T> {
+    type Output = Prev::Output;
+
+    #[inline]
+    unsafe fn consume(self) -> Result<Self::Output> {
+        self.prev.consume()
+    }
+}

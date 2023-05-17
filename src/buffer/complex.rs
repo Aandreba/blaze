@@ -270,15 +270,51 @@ impl<T, C: Context> Buffer<T, C> {
     /// Creates a shared slice of this buffer.
     #[docfg(feature = "cl1_1")]
     #[inline(always)]
-    pub fn slice<R: IntoRange>(&self, range: R) -> Result<super::Buf<'_, T, C>> {
+    pub fn slice<R: IntoRange>(&self, range: R) -> Result<super::Buf<'_, T, C>>
+    where
+        C: Clone,
+    {
         super::Buf::new(self, range)
     }
 
     /// Creates a mutable slice of this buffer.
     #[docfg(feature = "cl1_1")]
     #[inline(always)]
-    pub fn slice_mut<R: IntoRange>(&mut self, range: R) -> Result<super::BufMut<'_, T, C>> {
+    pub fn slice_mut<R: IntoRange>(&mut self, range: R) -> Result<super::BufMut<'_, T, C>>
+    where
+        C: Clone,
+    {
         super::BufMut::new(self, range)
+    }
+
+    /// Returns an iterator over chunks of size `len` of the buffer, starting at `offset`.
+    #[docfg(feature = "cl1_1")]
+    #[inline(always)]
+    pub fn chunks_exact(&self, offset: usize, len: usize) -> super::ChunksExact<'_, T, C>
+    where
+        C: Clone,
+    {
+        return super::ChunksExact {
+            buffer: self,
+            offset,
+            len,
+        };
+    }
+
+    /// Returns an iterator over mutable chunks of size `len` of the buffer, starting at `offset`.
+    ///
+    /// This is usefull for situations where you want to write to the same buffer in parallel, in regions that don't overlap.
+    #[docfg(feature = "cl1_1")]
+    #[inline(always)]
+    pub fn chunks_exact_mut(&mut self, offset: usize, len: usize) -> super::ChunksExactMut<'_, T, C>
+    where
+        C: Clone,
+    {
+        return super::ChunksExactMut {
+            buffer: self,
+            offset,
+            len,
+        };
     }
 
     /// Reinterprets the bits of the buffer to another type.

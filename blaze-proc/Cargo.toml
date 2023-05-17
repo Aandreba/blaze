@@ -1,6 +1,6 @@
 [package]
 name = "blaze-proc"
-version = "0.1.1"
+version = "1.0.0"
 edition = "2021"
 description = "Blaze internal/external proc macros"
 license = "MIT"

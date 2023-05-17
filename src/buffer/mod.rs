@@ -2,7 +2,7 @@ flat_mod!(raw, complex, range);
 pub mod map;
 
 #[cfg(feature = "cl1_1")]
-flat_mod!(slice);
+flat_mod!(slice, chunks);
 
 use crate::prelude::{Context, RawEvent, RawKernel, Result};
 use blaze_proc::docfg;

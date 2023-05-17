@@ -1,36 +1,70 @@
-use std::{marker::PhantomData, ops::{Deref, DerefMut}, fmt::Debug};
-use crate::prelude::*;
 use super::IntoRange;
+use crate::prelude::*;
+use std::{
+    fmt::Debug,
+    marker::PhantomData,
+    ops::{Deref, DerefMut},
+};
 
 /// An immutable slice of a [`Buffer`]
 #[cfg_attr(docsrs, doc(cfg(feature = "cl1_1")))]
 #[repr(transparent)]
 pub struct Buf<'a, T, C: Context = Global> {
-    inner: Buffer<T, &'a C>,
-    phtm: PhantomData<&'a Buffer<T, C>>
+    inner: Buffer<T, C>,
+    phtm: PhantomData<&'a Buffer<T, C>>,
 }
 
 impl<'a, T, C: Context> Buf<'a, T, C> {
     #[inline]
-    pub fn new<R: IntoRange> (parent: &'a Buffer<T, C>, range: R) -> Result<Self> {
+    pub fn new<R: IntoRange>(parent: &'a Buffer<T, C>, range: R) -> Result<Self>
+    where
+        C: Clone,
+    {
         if parent.associated_memobject()?.is_some() {
-            return Err(Error::new(ErrorKind::InvalidMemObject, "cannot create slice of a slice"))
+            return Err(Error::new(
+                ErrorKind::InvalidMemObject,
+                "cannot create slice of a slice",
+            ));
         }
 
         let region = range.into_range::<T>(parent)?;
-        let inner = unsafe {
-            parent.create_sub_buffer(MemAccess::READ_ONLY, region)?
-        };
+        let inner = unsafe { parent.create_sub_buffer(MemAccess::READ_ONLY, region)? };
 
-        return Ok(Self { 
-            inner: Buffer { inner, ctx: &parent.ctx, phtm: PhantomData }, 
-            phtm: PhantomData
-        })
-    } 
+        return Ok(Self {
+            inner: Buffer {
+                inner,
+                ctx: parent.ctx.clone(),
+                phtm: PhantomData,
+            },
+            phtm: PhantomData,
+        });
+    }
+
+    #[inline]
+    pub unsafe fn from_raw<R: IntoRange>(parent: &RawBuffer, range: R, ctx: C) -> Result<Self> {
+        if parent.associated_memobject()?.is_some() {
+            return Err(Error::new(
+                ErrorKind::InvalidMemObject,
+                "cannot create slice of slice",
+            ));
+        }
+
+        let region = range.into_range::<T>(parent)?;
+        let inner = unsafe { parent.create_sub_buffer(MemAccess::READ_ONLY, region)? };
+
+        return Ok(Self {
+            inner: Buffer {
+                inner,
+                ctx,
+                phtm: PhantomData,
+            },
+            phtm: PhantomData,
+        });
+    }
 }
 
 impl<'a, T, C: Context> Deref for Buf<'a, T, C> {
-    type Target = Buffer<T, &'a C>;
+    type Target = Buffer<T, C>;
 
     #[inline(always)]
     fn deref(&self) -> &Self::Target {
@@ -58,31 +92,61 @@ impl<T: Eq, C: Context> Eq for Buf<'_, T, C> {}
 #[cfg_attr(docsrs, doc(cfg(feature = "cl1_1")))]
 #[repr(transparent)]
 pub struct BufMut<'a, T, C: Context = Global> {
-    inner: Buffer<T, &'a C>,
-    phtm: PhantomData<&'a mut Buffer<T, C>>
+    inner: Buffer<T, C>,
+    phtm: PhantomData<&'a mut Buffer<T, C>>,
 }
 
 impl<'a, T, C: Context> BufMut<'a, T, C> {
     #[inline]
-    pub fn new<R: IntoRange> (parent: &'a mut Buffer<T, C>, range: R) -> Result<Self> {
+    pub fn new<R: IntoRange>(parent: &'a mut Buffer<T, C>, range: R) -> Result<Self>
+    where
+        C: Clone,
+    {
         if parent.associated_memobject()?.is_some() {
-            return Err(Error::new(ErrorKind::InvalidMemObject, "cannot create slice of slice"))
+            return Err(Error::new(
+                ErrorKind::InvalidMemObject,
+                "cannot create slice of slice",
+            ));
         }
-        
-        let region = range.into_range::<T>(parent)?;
-        let inner = unsafe {
-            parent.create_sub_buffer(MemAccess::READ_WRITE, region)?
-        };
 
-        return Ok(Self { 
-            inner: Buffer { inner, ctx: &parent.ctx, phtm: PhantomData }, 
-            phtm: PhantomData
-        })
-    } 
+        let region = range.into_range::<T>(parent)?;
+        let inner = unsafe { parent.create_sub_buffer(MemAccess::READ_WRITE, region)? };
+
+        return Ok(Self {
+            inner: Buffer {
+                inner,
+                ctx: parent.ctx.clone(),
+                phtm: PhantomData,
+            },
+            phtm: PhantomData,
+        });
+    }
+
+    #[inline]
+    pub unsafe fn from_raw<R: IntoRange>(parent: &RawBuffer, range: R, ctx: C) -> Result<Self> {
+        if parent.associated_memobject()?.is_some() {
+            return Err(Error::new(
+                ErrorKind::InvalidMemObject,
+                "cannot create slice of slice",
+            ));
+        }
+
+        let region = range.into_range::<T>(parent)?;
+        let inner = unsafe { parent.create_sub_buffer(MemAccess::READ_WRITE, region)? };
+
+        return Ok(Self {
+            inner: Buffer {
+                inner,
+                ctx,
+                phtm: PhantomData,
+            },
+            phtm: PhantomData,
+        });
+    }
 }
 
 impl<'a, T, C: Context> Deref for BufMut<'a, T, C> {
-    type Target = Buffer<T, &'a C>;
+    type Target = Buffer<T, C>;
 
     #[inline(always)]
     fn deref(&self) -> &Self::Target {
