@@ -1,13 +1,9 @@
 use super::IntoRange;
-use crate::{
-    event::{consumer::TakingEvent, Consumer},
-    prelude::*,
-};
+use crate::prelude::*;
 use std::{
     fmt::Debug,
     marker::PhantomData,
     ops::{Deref, DerefMut},
-    pin::Pin,
 };
 
 /// An immutable slice of a [`Buffer`]

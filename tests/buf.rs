@@ -54,7 +54,7 @@ fn write() -> Result<()> {
 #[test]
 fn slice() -> Result<()> {
     let buf = buffer![1, 2, 3, 4, 5]?;
-    let slice = buf.slice(1..)?;
+    let _ = buf.slice(1..)?;
     Ok(())
 }
 
@@ -65,7 +65,7 @@ fn slice() -> Result<()> {
 fn double_slice() {
     let buf = buffer![1, 2, 3, 4, 5].unwrap();
     let slice = buf.slice(1..).unwrap();
-    let slice2 = slice.slice(..2).unwrap();
+    let _ = slice.slice(..2).unwrap();
 }
 
 #[cfg(feature = "cl1_1")]
