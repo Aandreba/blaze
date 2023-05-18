@@ -62,11 +62,19 @@ impl RawProgram {
         };
 
         let source = source.as_ref();
-        let len = [source.len()].as_ptr();
-        let strings = [source.as_ptr().cast()].as_ptr();
+        let len = [source.len()];
+        let strings = [source.as_ptr().cast()];
 
         let mut err = 0;
-        let id = unsafe { clCreateProgramWithSource(ctx.as_raw().id(), 1, strings, len, &mut err) };
+        let id = unsafe {
+            clCreateProgramWithSource(
+                ctx.as_raw().id(),
+                1,
+                strings.as_ptr(),
+                len.as_ptr(),
+                &mut err,
+            )
+        };
 
         if err != 0 {
             return Err(Error::from(err));
