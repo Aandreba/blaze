@@ -46,6 +46,7 @@ impl RawProgram {
         source: impl AsRef<str>,
         options: Option<&str>,
     ) -> Result<(Self, Box<[RawKernel]>)> {
+        println!("Hi");
         let options: Option<Cow<'static, str>> = match options {
             Some(x) => {
                 let mut x = x.to_string();
@@ -61,12 +62,24 @@ impl RawProgram {
             None => None,
         };
 
+        println!("{options:?}");
         let source = source.as_ref();
-        let len = [source.len()].as_ptr();
-        let strings = [source.as_ptr().cast()].as_ptr();
+        let len = [source.len()];
+        println!("{len:?}");
+        let strings = [source.as_ptr().cast()];
+        println!("{strings:?}");
 
         let mut err = 0;
-        let id = unsafe { clCreateProgramWithSource(ctx.as_raw().id(), 1, strings, len, &mut err) };
+        let id = unsafe {
+            clCreateProgramWithSource(
+                ctx.as_raw().id(),
+                1,
+                strings.as_ptr(),
+                len.as_ptr(),
+                &mut err,
+            )
+        };
+        println!("{id:?}");
 
         if err != 0 {
             return Err(Error::from(err));
