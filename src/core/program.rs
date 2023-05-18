@@ -46,7 +46,6 @@ impl RawProgram {
         source: impl AsRef<str>,
         options: Option<&str>,
     ) -> Result<(Self, Box<[RawKernel]>)> {
-        println!("Hi");
         let options: Option<Cow<'static, str>> = match options {
             Some(x) => {
                 let mut x = x.to_string();
@@ -62,12 +61,9 @@ impl RawProgram {
             None => None,
         };
 
-        println!("{options:?}");
         let source = source.as_ref();
         let len = [source.len()];
-        println!("{len:?}");
         let strings = [source.as_ptr().cast()];
-        println!("{strings:?}");
 
         let mut err = 0;
         let id = unsafe {
@@ -79,7 +75,6 @@ impl RawProgram {
                 &mut err,
             )
         };
-        println!("{id:?}");
 
         if err != 0 {
             return Err(Error::from(err));
