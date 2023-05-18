@@ -1,7 +1,6 @@
-use blaze_rs::{
-    buffer,
-    prelude::{blaze, global_context, Buffer, MemAccess, Result, SimpleContext},
-};
+#![allow(clippy::all)]
+
+use blaze_rs::prelude::{blaze, global_context, Result, SimpleContext};
 use std::mem::MaybeUninit;
 
 #[global_context]
@@ -32,10 +31,6 @@ const KERNEL: &str = r#"
 
 #[test]
 fn gemm() -> Result<()> {
-    const M: usize = 5;
-    const N: usize = 3;
-    const K: usize = 2;
-
     let tanh = FloatTanh::new(None)?;
     std::hint::black_box(tanh);
 
